@@ -13,6 +13,14 @@ outlook-cli mail search <query>            # search emails by keyword
 outlook-cli mail search colgate -n 10      # with result limit
 outlook-cli mail read <n>                  # read email by index from last unread/search
 outlook-cli mail read <full-id>            # read by Outlook message ID
+outlook-cli mail mark-read <n>             # mark email as read
+outlook-cli mail mark-unread <n>           # mark email as unread
+outlook-cli mail archive <n>               # archive email
+outlook-cli mail folders                   # list mail folders
+outlook-cli mail move <n> --folder <folder> # move email
+outlook-cli mail attachments <n>           # list attachments
+outlook-cli mail download-attachments <n>  # download attachments
+outlook-cli mail send --to <email> -s "Subject" -b "Body" # send email
 
 # Create drafts
 outlook-cli draft create --to <email> -s "Subject" -b "Body text"
@@ -23,6 +31,7 @@ outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
 # Manage drafts
 outlook-cli draft list                     # list all drafts
 outlook-cli draft show <n>                 # show draft by index (1, 2, ...)
+outlook-cli draft send <n>                 # send draft by index
 outlook-cli draft delete <n>               # delete draft by index
 
 # Manage calendar
@@ -33,6 +42,9 @@ outlook-cli cal agenda --json              # JSON agenda
 outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal show <n> --json            # JSON event details with recurrence metadata
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
+outlook-cli cal rooms                      # find rooms
+outlook-cli cal availability --attendee <email> --start "..." --end "..."
+outlook-cli cal find-time --attendee <email> --start "..." --end "..."
 outlook-cli cal update <n> --start "..." --end "..." # update event fields
 outlook-cli cal delete <n>                 # delete event by cached index or full ID
 outlook-cli cal accept <n>                 # accept event invitation
@@ -43,22 +55,29 @@ outlook-cli cal cancel <n>                 # cancel event you organize
 # Manage tasks
 outlook-cli task create "<name>"           # create a new task
 outlook-cli task list                      # list active tasks
+outlook-cli task update <n> --due "..." --importance High
 outlook-cli task complete <n>              # mark task as done
 outlook-cli task delete <n>                # delete task
 
 # Search contacts
 outlook-cli contact search <query>         # search by name or email
 outlook-cli contact search ross -n 20      # with result limit
+outlook-cli contact create --name <name> --email <email>
+outlook-cli contact update <n> --company <company>
 
 # Browse Teams chats (read-only)
 outlook-cli teams list -n 20               # list chats
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
+outlook-cli teams send <chat-ref> "Message" # send message, affects real people
 
 # Auth and config
 outlook-cli auth                           # force headless re-authentication
 outlook-cli auth status                    # show token status
 outlook-cli auth clear                     # delete local token cache
+outlook-cli auth scopes                    # list safe token metadata/scopes
+outlook-cli mailbox show                   # show mailbox settings
+outlook-cli mailbox update --timezone "GMT Standard Time"
 outlook-cli config check                   # validate local config without printing secrets
 ```
 
@@ -74,7 +93,7 @@ outlook-cli config check                   # validate local config without print
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
-- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages read-only via Microsoft Graph.
+- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams send` sends a real message and should not be live-tested without explicit approval.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
 

@@ -19,8 +19,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from html import escape
@@ -32,7 +34,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import config
-from .cache import CAL_CACHE, MAIL_CACHE, TASK_CACHE, load_cache, save_cache
+from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache, save_cache
 from .commands import calendar as calendar_commands
 from .commands import contacts as contacts_commands
 from .commands import mail as mail_commands
@@ -324,6 +326,65 @@ def cmd_delete(args: argparse.Namespace) -> None:
     console.print("[green]Draft deleted.[/]")
 
 
+def cmd_send_draft(args: argparse.Namespace) -> None:
+    """Send an existing draft message."""
+    client = _get_client()
+    draft_id = _resolve_draft_id(client, args.draft_id)
+    try:
+        client.send_message(draft_id)
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to send draft: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    console.print("[green]Draft sent.[/]")
+
+
+def _parse_recipients(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    return [email.strip() for value in values for email in value.split(",") if email.strip()]
+
+
+def cmd_send_mail(args: argparse.Namespace) -> None:
+    """Send a new email immediately."""
+    body = _load_body(args)
+    to = _parse_recipients(args.to)
+    cc = _parse_recipients(args.cc)
+    bcc = _parse_recipients(args.bcc)
+    if args.signature != "none":
+        signature_file = config.SIGNATURE_REPLY_FILE if args.signature == "reply" else config.SIGNATURE_NEW_FILE
+        body = _compose_email_html(
+            body,
+            is_html=args.html,
+            signature_html=_load_signature(signature_file),
+        )
+        content_type = "HTML"
+    else:
+        content_type = "HTML" if args.html else "Text"
+
+    client = _get_client()
+    try:
+        client.send_mail(
+            subject=args.subject,
+            body=body,
+            to=to,
+            cc=cc or None,
+            bcc=bcc or None,
+            content_type=content_type,
+            save_to_sent_items=not args.no_save,
+            importance=args.importance,
+        )
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to send email: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    console.print(f"[green]Email sent:[/] {args.subject}")
+
+
 # ── Object cache (persisted to disk for cross-invocation read) ────────────
 
 
@@ -392,6 +453,20 @@ def _format_datetime(value: str) -> str:
 
 
 
+def _resolve_contact_id(ref: str) -> str:
+    if ref.isdigit():
+        idx = int(ref)
+        cached = load_cache(CONTACT_CACHE)
+        if cached and 1 <= idx <= len(cached):
+            return cached[idx - 1]["Id"]
+        if not cached:
+            console.print("[red]No contacts cached. Run 'outlook-cli contact search <query>' first.[/]")
+        else:
+            console.print(f"[red]Index {idx} out of range.[/]")
+        sys.exit(1)
+    return ref
+
+
 def _resolve_task_id(client: OutlookClient, ref: str) -> str:
     if ref.isdigit():
         idx = int(ref)
@@ -422,6 +497,12 @@ def _resolve_cal_id(client: OutlookClient, ref: str) -> str:
             console.print(f"[red]Index {idx} out of range.[/]")
         sys.exit(1)
     return ref
+
+
+def _decode_token_claims(token: str) -> dict[str, object]:
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))
 
 
 def _token_status(domain: str, label: str) -> dict[str, object]:
@@ -471,6 +552,32 @@ def cmd_auth(args: argparse.Namespace) -> None:
             console.print(f"[green]Deleted token cache:[/] {config.TOKENS_FILE}")
         else:
             console.print("[dim]No token cache found.[/]")
+        return
+    if command == "scopes":
+        if not config.TOKENS_FILE.exists():
+            console.print("[red]No token cache found. Run 'outlook-cli auth' first.[/]")
+            sys.exit(1)
+        data = json.loads(config.TOKENS_FILE.read_text())
+        output = []
+        for domain, token in data.get("tokens", {}).items():
+            claims = _decode_token_claims(token)
+            scopes = str(claims.get("scp", "")).split()
+            output.append({
+                "domain": domain,
+                "audience": claims.get("aud", ""),
+                "tenant": claims.get("tid", ""),
+                "appId": claims.get("appid", ""),
+                "expiresInSeconds": int(float(claims.get("exp", 0)) - time.time()),
+                "scopes": scopes,
+                "roles": claims.get("roles", []),
+            })
+        if args.json:
+            print(json.dumps(output, indent=2))
+            return
+        for item in output:
+            console.print(f"[bold]{item['domain']}[/] ({item['audience']})")
+            for scope in item["scopes"]:
+                console.print(f"  - {scope}")
         return
 
     tm = TokenManager()
@@ -532,6 +639,57 @@ def cmd_config_check(args: argparse.Namespace) -> None:
         console.print(table)
     if not all(bool(item["ok"]) for item in items):
         sys.exit(1)
+
+
+def cmd_mailbox_show(args: argparse.Namespace) -> None:
+    client = _get_client()
+    try:
+        settings = client.get_mailbox_settings()
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to get mailbox settings: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+    if args.json:
+        print(json.dumps(settings, indent=2))
+        return
+    table = Table(title="Mailbox settings", box=box.SIMPLE)
+    table.add_column("Setting")
+    table.add_column("Value")
+    for key in ("TimeZone", "Language", "DateFormat", "TimeFormat"):
+        if key in settings:
+            table.add_row(key, str(settings[key]))
+    auto = settings.get("AutomaticRepliesSetting") or {}
+    if auto:
+        table.add_row("Automatic replies", str(auto.get("Status", "")))
+    console.print(table)
+
+
+def cmd_mailbox_update(args: argparse.Namespace) -> None:
+    if not any([args.timezone, args.auto_reply_status, args.internal_reply, args.external_reply]):
+        console.print("[red]Provide at least one mailbox setting to update.[/]")
+        sys.exit(1)
+    automatic_replies = None
+    if any([args.auto_reply_status, args.internal_reply, args.external_reply]):
+        automatic_replies = {}
+        if args.auto_reply_status:
+            automatic_replies["Status"] = args.auto_reply_status
+        if args.internal_reply is not None:
+            automatic_replies["InternalReplyMessage"] = args.internal_reply
+        if args.external_reply is not None:
+            automatic_replies["ExternalReplyMessage"] = args.external_reply
+    client = _get_client()
+    try:
+        client.update_mailbox_settings(
+            time_zone=args.timezone,
+            automatic_replies=automatic_replies,
+        )
+        console.print("[green]Mailbox settings updated.[/]")
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to update mailbox settings: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
 
 
 def _resolve_draft_id(client: OutlookClient, ref: str) -> str:
@@ -610,6 +768,10 @@ def main() -> None:
     cmd_draft_del.add_argument("draft_id", help="Draft ID, index, or ID suffix")
     cmd_draft_del.set_defaults(func=cmd_delete)
 
+    cmd_draft_send = draft_sub.add_parser("send", help="Send an existing draft")
+    cmd_draft_send.add_argument("draft_id", help="Draft ID, index, or ID suffix")
+    cmd_draft_send.set_defaults(func=cmd_send_draft)
+
     mail_ctx = mail_commands.build_ctx(
         console=console,
         get_client=_get_client,
@@ -620,6 +782,7 @@ def main() -> None:
     contacts_ctx = contacts_commands.build_ctx(
         console=console,
         get_client=_get_client,
+        resolve_contact_id=_resolve_contact_id,
     )
 
     # ── Mail ──────────────────────────────────────────────────────────
@@ -639,6 +802,50 @@ def main() -> None:
     cmd_mail_read.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_read.set_defaults(func=mail_commands.cmd_read, _mail_ctx=mail_ctx)
 
+    cmd_mail_mark_read = mail_sub.add_parser("mark-read", help="Mark an email as read")
+    cmd_mail_mark_read.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_mark_read.set_defaults(func=mail_commands.cmd_mark_read, _mail_ctx=mail_ctx)
+
+    cmd_mail_mark_unread = mail_sub.add_parser("mark-unread", help="Mark an email as unread")
+    cmd_mail_mark_unread.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_mark_unread.set_defaults(func=mail_commands.cmd_mark_unread, _mail_ctx=mail_ctx)
+
+    cmd_mail_archive = mail_sub.add_parser("archive", help="Archive an email")
+    cmd_mail_archive.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_archive.set_defaults(func=mail_commands.cmd_archive, _mail_ctx=mail_ctx)
+
+    cmd_mail_move = mail_sub.add_parser("move", help="Move an email to another folder")
+    cmd_mail_move.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_move.add_argument("--folder", "-f", required=True, help="Folder index, well-known name, folder name, or folder ID")
+    cmd_mail_move.set_defaults(func=mail_commands.cmd_move, _mail_ctx=mail_ctx)
+
+    cmd_mail_folders = mail_sub.add_parser("folders", help="List mail folders")
+    cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
+    cmd_mail_folders.set_defaults(func=mail_commands.cmd_folders, _mail_ctx=mail_ctx)
+
+    cmd_mail_attachments = mail_sub.add_parser("attachments", help="List message attachments")
+    cmd_mail_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_attachments.set_defaults(func=mail_commands.cmd_attachments, _mail_ctx=mail_ctx)
+
+    cmd_mail_download_attachments = mail_sub.add_parser("download-attachments", help="Download message attachments")
+    cmd_mail_download_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_download_attachments.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_mail_download_attachments.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments, _mail_ctx=mail_ctx)
+
+    cmd_mail_send = mail_sub.add_parser("send", help="Send a new email immediately")
+    cmd_mail_send.add_argument("--to", required=True, action="append", help="Recipient (repeatable, comma-separated ok)")
+    cmd_mail_send.add_argument("--cc", action="append", help="CC recipient")
+    cmd_mail_send.add_argument("--bcc", action="append", help="BCC recipient")
+    cmd_mail_send.add_argument("--subject", "-s", required=True, help="Subject line")
+    cmd_mail_send.add_argument("--body", "-b", help="Body text (inline)")
+    cmd_mail_send.add_argument("--body-file", "-f", help="Read body from file")
+    cmd_mail_send.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_mail_send.add_argument("--signature", choices=["none", "new", "reply"], default="none", help="Append saved signature")
+    cmd_mail_send.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
+    cmd_mail_send.add_argument("--no-save", action="store_true", help="Do not save to Sent Items")
+    cmd_mail_send.set_defaults(func=cmd_send_mail)
+
     tasks_ctx = tasks_commands.build_ctx(
         console=console,
         get_client=_get_client,
@@ -656,6 +863,14 @@ def main() -> None:
     cmd_task_c = task_sub.add_parser("create", help="Create a task")
     cmd_task_c.add_argument("subject", help="Task description")
     cmd_task_c.set_defaults(func=tasks_commands.cmd_task_create, _tasks_ctx=tasks_ctx)
+
+    cmd_task_update_cmd = task_sub.add_parser("update", help="Update a task")
+    cmd_task_update_cmd.add_argument("task_id", help="Task index or full ID")
+    cmd_task_update_cmd.add_argument("--subject", help="New task subject")
+    cmd_task_update_cmd.add_argument("--due", help="Due date/time")
+    cmd_task_update_cmd.add_argument("--importance", choices=["Low", "Normal", "High"], help="Task importance")
+    cmd_task_update_cmd.add_argument("--status", choices=["NotStarted", "InProgress", "Completed", "WaitingOnOthers", "Deferred"], help="Task status")
+    cmd_task_update_cmd.set_defaults(func=tasks_commands.cmd_task_update, _tasks_ctx=tasks_ctx)
 
     cmd_task_complete_cmd = task_sub.add_parser("complete", help="Mark task complete")
     cmd_task_complete_cmd.add_argument("task_id", help="Task index or full ID")
@@ -697,6 +912,28 @@ def main() -> None:
     cmd_cal_create_cmd.add_argument("--body", "-b", help="Event description")
     cmd_cal_create_cmd.add_argument("--attendee", dest="attendees", action="append", help="Attendee email (repeatable)")
     cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
+
+    cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
+    cmd_cal_rooms_cmd.add_argument("--room-list", help="Optional room list email/address")
+    cmd_cal_rooms_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_cal_rooms_cmd.set_defaults(func=calendar_commands.cmd_cal_rooms, _calendar_ctx=calendar_ctx)
+
+    cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
+    cmd_cal_availability_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd_cal_availability_cmd.add_argument("--start", required=True, help="Start time")
+    cmd_cal_availability_cmd.add_argument("--end", required=True, help="End time")
+    cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
+    cmd_cal_availability_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_cal_availability_cmd.set_defaults(func=calendar_commands.cmd_cal_availability, _calendar_ctx=calendar_ctx)
+
+    cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
+    cmd_cal_find_time_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd_cal_find_time_cmd.add_argument("--start", required=True, help="Window start time")
+    cmd_cal_find_time_cmd.add_argument("--end", required=True, help="Window end time")
+    cmd_cal_find_time_cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
+    cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
+    cmd_cal_find_time_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_cal_find_time_cmd.set_defaults(func=calendar_commands.cmd_cal_find_time, _calendar_ctx=calendar_ctx)
 
     cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
     cmd_cal_update_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
@@ -770,6 +1007,25 @@ def main() -> None:
     cmd_contact_search.add_argument("--count", "-n", type=int, default=10, help="Max results")
     cmd_contact_search.set_defaults(func=contacts_commands.cmd_contacts, _contacts_ctx=contacts_ctx)
 
+    cmd_contact_create = contact_sub.add_parser("create", help="Create a personal contact")
+    cmd_contact_create.add_argument("--name", required=True, help="Display name")
+    cmd_contact_create.add_argument("--email", required=True, help="Email address")
+    cmd_contact_create.add_argument("--given-name", help="Given name")
+    cmd_contact_create.add_argument("--surname", help="Surname")
+    cmd_contact_create.add_argument("--company", help="Company name")
+    cmd_contact_create.add_argument("--mobile", help="Mobile phone")
+    cmd_contact_create.set_defaults(func=contacts_commands.cmd_contact_create, _contacts_ctx=contacts_ctx)
+
+    cmd_contact_update = contact_sub.add_parser("update", help="Update a personal contact")
+    cmd_contact_update.add_argument("contact_id", help="Contact index from search or full ID")
+    cmd_contact_update.add_argument("--name", help="Display name")
+    cmd_contact_update.add_argument("--email", help="Email address")
+    cmd_contact_update.add_argument("--given-name", help="Given name")
+    cmd_contact_update.add_argument("--surname", help="Surname")
+    cmd_contact_update.add_argument("--company", help="Company name")
+    cmd_contact_update.add_argument("--mobile", help="Mobile phone")
+    cmd_contact_update.set_defaults(func=contacts_commands.cmd_contact_update, _contacts_ctx=contacts_ctx)
+
     # ── Teams ─────────────────────────────────────────────────────────
     p_teams = sub.add_parser("teams", help="Browse Teams chats and messages")
     teams_sub = p_teams.add_subparsers(dest="command", required=True)
@@ -794,12 +1050,31 @@ def main() -> None:
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
     cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
 
+    cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message")
+    cmd_teams_send_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")
+    cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
+    cmd_teams_send_cmd.set_defaults(func=teams_commands.cmd_teams_send, _teams_ctx=teams_ctx)
+
+    # ── Mailbox ───────────────────────────────────────────────────────
+    p_mailbox = sub.add_parser("mailbox", help="Manage mailbox settings")
+    mailbox_sub = p_mailbox.add_subparsers(dest="command", required=True)
+    cmd_mailbox_show_parser = mailbox_sub.add_parser("show", help="Show mailbox settings")
+    cmd_mailbox_show_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_mailbox_show_parser.set_defaults(func=cmd_mailbox_show)
+    cmd_mailbox_update_parser = mailbox_sub.add_parser("update", help="Update mailbox settings")
+    cmd_mailbox_update_parser.add_argument("--timezone", help="Mailbox timezone")
+    cmd_mailbox_update_parser.add_argument("--auto-reply-status", choices=["Disabled", "AlwaysEnabled", "Scheduled"], help="Automatic replies status")
+    cmd_mailbox_update_parser.add_argument("--internal-reply", help="Internal auto-reply message")
+    cmd_mailbox_update_parser.add_argument("--external-reply", help="External auto-reply message")
+    cmd_mailbox_update_parser.set_defaults(func=cmd_mailbox_update)
+
     # ── Auth ──────────────────────────────────────────────────────────
     p_auth = sub.add_parser("auth", help="Manage authentication")
     p_auth.add_argument(
         "auth_command",
         nargs="?",
-        choices=["login", "status", "clear"],
+        choices=["login", "status", "clear", "scopes"],
         default="login",
         help="Auth action to run",
     )
@@ -808,7 +1083,7 @@ def main() -> None:
         action="store_true",
         help="Open a visible browser instead of running fully headless",
     )
-    p_auth.add_argument("--json", action="store_true", help="Output machine-readable JSON for status")
+    p_auth.add_argument("--json", action="store_true", help="Output machine-readable JSON for status/scopes")
 
     # ── Config ────────────────────────────────────────────────────────
     p_config = sub.add_parser("config", help="Inspect local configuration")

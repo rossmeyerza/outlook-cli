@@ -203,6 +203,24 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
     console.print(Panel("\n".join(lines), title="Teams chat", border_style="blue"))
 
 
+def cmd_teams_send(args: argparse.Namespace) -> None:
+    console = _console(args)
+    client = _get_graph_client(args)
+    chat_id = _resolve_teams_chat_id(args, args.chat_id)
+    try:
+        client.send_teams_message(
+            chat_id,
+            args.message,
+            content_type="html" if args.html else "text",
+        )
+        console.print("[green]Teams message sent.[/]")
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to send Teams message: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
 def cmd_teams_messages(args: argparse.Namespace) -> None:
     console = _console(args)
     client = _get_graph_client(args)

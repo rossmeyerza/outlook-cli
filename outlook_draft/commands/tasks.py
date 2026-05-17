@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import datetime
+
+import dateutil.parser
 from typing import Any, Callable
 
 from rich.console import Console
 from rich.table import Table
 
+from ..calendar_time import outlook_datetime
 from ..cache import TASK_CACHE, save_cache
 from ..errors import OutlookAPIError
 
@@ -90,6 +93,36 @@ def cmd_task_create(args: argparse.Namespace) -> None:
         _console(args).print(f"[green]Created task:[/] {args.subject}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to create task: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_task_update(args: argparse.Namespace) -> None:
+    """Update a task."""
+    if not any([args.subject, args.due, args.importance, args.status]):
+        _console(args).print("[red]Provide at least one field to update.[/]")
+        sys.exit(1)
+    due_dt = None
+    if args.due:
+        try:
+            due_dt = outlook_datetime(dateutil.parser.parse(args.due))
+        except Exception as e:
+            _console(args).print(f"[red]Failed to parse due date: {e}[/]")
+            sys.exit(1)
+    client = _get_client(args)
+    task_id = _resolve_task_id(args, client, args.task_id)
+    try:
+        client.update_task(
+            task_id,
+            subject=args.subject,
+            due_dt=due_dt,
+            importance=args.importance,
+            status=args.status,
+        )
+        _console(args).print("[green]Task updated.[/]")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to update task: {e}[/]")
         sys.exit(1)
     finally:
         client.close()

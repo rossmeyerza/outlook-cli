@@ -290,6 +290,92 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
         client.close()
 
 
+def _availability_summary(item: JsonDict) -> str:
+    schedule = item.get("ScheduleId", "")
+    error = item.get("Error", {})
+    if error:
+        return f"{schedule}: ERROR {error.get('Message', error)}"
+    return f"{schedule}: {item.get('AvailabilityView', '')}"
+
+
+def cmd_cal_rooms(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        rooms = client.find_rooms(room_list=args.room_list)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to find rooms: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+    if args.json:
+        _print_json(rooms)
+        return
+    table = Table(title=f"Rooms ({len(rooms)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Name", ratio=1)
+    table.add_column("Address", ratio=1)
+    for i, room in enumerate(rooms, 1):
+        table.add_row(str(i), room.get("Name", ""), room.get("Address", ""))
+    _console(args).print(table)
+
+
+def cmd_cal_availability(args: argparse.Namespace) -> None:
+    start_local, end_local = _parse_event_datetimes(args)
+    client = _get_client(args)
+    try:
+        availability = client.get_schedule(
+            schedules=args.attendee,
+            start_dt=start_local,
+            end_dt=end_local,
+            interval_minutes=args.interval,
+        )
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to get availability: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+    if args.json:
+        _print_json(availability)
+        return
+    for item in availability:
+        _console(args).print(_availability_summary(item))
+
+
+def cmd_cal_find_time(args: argparse.Namespace) -> None:
+    start_local, end_local = _parse_event_datetimes(args)
+    client = _get_client(args)
+    try:
+        suggestions = client.find_meeting_times(
+            attendees=args.attendee,
+            start_dt=start_local,
+            end_dt=end_local,
+            duration_minutes=args.duration,
+            max_candidates=args.count,
+        )
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to find meeting times: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+    if args.json:
+        _print_json(suggestions)
+        return
+    table = Table(title=f"Meeting suggestions ({len(suggestions)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Start", ratio=1)
+    table.add_column("End", ratio=1)
+    table.add_column("Confidence", width=12)
+    for i, suggestion in enumerate(suggestions, 1):
+        slot = suggestion.get("MeetingTimeSlot", {})
+        table.add_row(
+            str(i),
+            slot.get("Start", {}).get("DateTime", ""),
+            slot.get("End", {}).get("DateTime", ""),
+            str(suggestion.get("Confidence", "")),
+        )
+    _console(args).print(table)
+
+
 def cmd_cal_update(args: argparse.Namespace) -> None:
     """Update a calendar event."""
     if not any([args.subject, args.start, args.end, args.location is not None, args.body is not None]):

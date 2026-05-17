@@ -35,6 +35,14 @@ outlook-cli mail search "update" -n 10      # with result limit
 
 outlook-cli mail read 1                     # read by index from last search
 outlook-cli mail read <full-id>             # read by message ID
+outlook-cli mail mark-read 1                # mark email as read
+outlook-cli mail mark-unread 1              # mark email as unread
+outlook-cli mail archive 1                  # archive email
+outlook-cli mail folders                    # list mail folders
+outlook-cli mail move 1 --folder Archive    # move email to folder
+outlook-cli mail attachments 1              # list attachments
+outlook-cli mail download-attachments 1 -d ./attachments
+outlook-cli mail send --to someone@example.com -s "Hello" -b "Hi there"
 ```
 
 Results from `mail unread` or `mail search` are cached to disk, so `mail read <n>` works in a separate invocation. Those cached message refs can also be used with `draft reply <n>`.
@@ -54,8 +62,9 @@ outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
 outlook-cli draft list
 outlook-cli draft list -n 50
 
-# View or delete
+# View, send, or delete
 outlook-cli draft show 1          # by index from list
+outlook-cli draft send 1          # send existing draft
 outlook-cli draft delete 1        # by index
 ```
 
@@ -72,6 +81,9 @@ outlook-cli cal show <event-id>         # show by full ID
 outlook-cli cal show 1 --json           # machine-readable JSON with recurrence metadata
 
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
+outlook-cli cal rooms --json               # find rooms
+outlook-cli cal availability --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
+outlook-cli cal find-time --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
 outlook-cli cal update 1 --start "2026-04-10 15:00" --end "2026-04-10 15:30" --location "Teams"
 outlook-cli cal delete 1                # delete by index from agenda
 outlook-cli cal accept 1                # accept an invitation
@@ -81,13 +93,14 @@ outlook-cli cal accept 1 --no-send-response            # accept without emailing
 outlook-cli cal cancel 1 -m "Cancelled due to conflict" # cancel an event you organize
 ```
 
-Results from `cal agenda` are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations.
+Results from `cal agenda` are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations.
 
 ### Tasks
 
 ```bash
 outlook-cli task create "Buy milk"        # create a new task
 outlook-cli task list                     # list incomplete tasks
+outlook-cli task update 1 --due "2026-05-20" --importance High
 outlook-cli task complete 1               # mark task as done by index
 outlook-cli task delete 1                 # delete task by index
 ```
@@ -97,9 +110,11 @@ outlook-cli task delete 1                 # delete task by index
 ```bash
 outlook-cli contact search ross
 outlook-cli contact search "john smith" -n 20
+outlook-cli contact create --name "Ada Lovelace" --email ada@example.com
+outlook-cli contact update 1 --company "Analytical Engines Ltd"
 ```
 
-Searches the org directory and recent contacts. Shows name, email, and contact type.
+Searches the org directory and recent contacts. Personal contact create/update uses Outlook contacts.
 
 ### Teams
 
@@ -107,9 +122,10 @@ Searches the org directory and recent contacts. Shows name, email, and contact t
 outlook-cli teams list -n 20
 outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
+outlook-cli teams send 1 "Hello team"      # sends a real Teams message
 ```
 
-Lists Teams chats, shows chat details, and reads chat messages. This is read-only.
+Lists Teams chats, shows chat details, reads messages, and can send chat messages. `teams send` affects real people, so use it deliberately.
 
 ### Auth and config
 
@@ -118,6 +134,9 @@ outlook-cli auth                         # run headless login
 outlook-cli auth status                  # show token status
 outlook-cli auth status --json           # machine-readable token status
 outlook-cli auth clear                   # delete local token cache
+outlook-cli auth scopes                  # list safe token metadata and scopes
+outlook-cli mailbox show                 # show mailbox settings
+outlook-cli mailbox update --timezone "GMT Standard Time"
 outlook-cli config check                 # validate local setup without printing secrets
 outlook-cli config check --json
 ```

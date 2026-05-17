@@ -231,6 +231,59 @@ class OutlookClient:
         )
         return resp.json()
 
+    def find_rooms(self, room_list: str | None = None) -> list[dict[str, Any]]:
+        """Find available rooms, optionally within a room list."""
+        params = {"roomList": room_list} if room_list else None
+        resp = self._request("GET", "/me/findRooms", params=params)
+        return resp.json().get("value", [])
+
+    def get_schedule(
+        self,
+        *,
+        schedules: list[str],
+        start_dt: str,
+        end_dt: str,
+        interval_minutes: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Get free/busy availability for users or rooms."""
+        payload = {
+            "Schedules": schedules,
+            "StartTime": {"DateTime": start_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
+            "EndTime": {"DateTime": end_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
+            "AvailabilityViewInterval": interval_minutes,
+        }
+        resp = self._request("POST", "/me/calendar/getSchedule", json_body=payload)
+        return resp.json().get("value", [])
+
+    def find_meeting_times(
+        self,
+        *,
+        attendees: list[str],
+        start_dt: str,
+        end_dt: str,
+        duration_minutes: int = 30,
+        max_candidates: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Ask Outlook to suggest meeting times for attendees."""
+        payload = {
+            "Attendees": [
+                {"EmailAddress": {"Address": email}, "Type": "Required"}
+                for email in attendees
+            ],
+            "TimeConstraint": {
+                "Timeslots": [
+                    {
+                        "Start": {"DateTime": start_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
+                        "End": {"DateTime": end_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
+                    }
+                ]
+            },
+            "MeetingDuration": f"PT{duration_minutes}M",
+            "MaxCandidates": max_candidates,
+        }
+        resp = self._request("POST", "/me/findMeetingTimes", json_body=payload)
+        return resp.json().get("MeetingTimeSuggestions", [])
+
     def create_event(
         self,
         subject: str,
@@ -370,6 +423,85 @@ class OutlookClient:
         )
         return resp.json()
 
+    def update_message_read_state(self, message_id: str, *, is_read: bool) -> None:
+        """Mark a message read or unread."""
+        self._request("PATCH", f"/me/messages/{message_id}", json_body={"IsRead": is_read})
+
+    def send_message(self, message_id: str) -> None:
+        """Send an existing draft message."""
+        self._request("POST", f"/me/messages/{message_id}/send")
+
+    def send_mail(
+        self,
+        *,
+        subject: str,
+        body: str,
+        to: list[str],
+        cc: list[str] | None = None,
+        bcc: list[str] | None = None,
+        content_type: str = "Text",
+        save_to_sent_items: bool = True,
+        importance: str = "Normal",
+    ) -> None:
+        """Send a new email immediately."""
+        def _addr(email: str) -> dict:
+            return {"EmailAddress": {"Address": email.strip()}}
+
+        message: dict[str, Any] = {
+            "Subject": subject,
+            "Body": {"ContentType": content_type, "Content": body},
+            "ToRecipients": [_addr(a) for a in to],
+            "Importance": importance,
+        }
+        if cc:
+            message["CcRecipients"] = [_addr(a) for a in cc]
+        if bcc:
+            message["BccRecipients"] = [_addr(a) for a in bcc]
+        self._request(
+            "POST",
+            "/me/sendmail",
+            json_body={"Message": message, "SaveToSentItems": save_to_sent_items},
+        )
+
+    def list_mail_folders(self, top: int = 100) -> list[dict[str, Any]]:
+        """List top-level mail folders."""
+        resp = self._request(
+            "GET",
+            "/me/mailfolders",
+            params={
+                "$top": str(top),
+                "$select": "id,displayName,parentFolderId,totalItemCount,unreadItemCount,wellKnownName",
+            },
+        )
+        return resp.json().get("value", [])
+
+    def move_message(self, message_id: str, destination_id: str) -> dict[str, Any]:
+        """Move a message to another mail folder."""
+        resp = self._request(
+            "POST",
+            f"/me/messages/{message_id}/move",
+            json_body={"DestinationId": destination_id},
+        )
+        return resp.json()
+
+    def archive_message(self, message_id: str) -> dict[str, Any]:
+        """Move a message to the archive folder."""
+        return self.move_message(message_id, "archive")
+
+    def list_message_attachments(self, message_id: str) -> list[dict[str, Any]]:
+        """List message attachments."""
+        resp = self._request(
+            "GET",
+            f"/me/messages/{message_id}/attachments",
+            params={"$select": "id,name,contentType,size,isInline"},
+        )
+        return resp.json().get("value", [])
+
+    def get_message_attachment(self, message_id: str, attachment_id: str) -> dict[str, Any]:
+        """Get a message attachment, including contentBytes for file attachments."""
+        resp = self._request("GET", f"/me/messages/{message_id}/attachments/{attachment_id}")
+        return resp.json()
+
     # ── Teams chats / messages ────────────────────────────────────────
 
     def list_teams_chats(self, top: int = 20) -> list[dict[str, Any]]:
@@ -414,6 +546,15 @@ class OutlookClient:
         )
         return resp.json().get("value", [])
 
+    def send_teams_message(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
+        """Send a message to a Teams chat."""
+        resp = self._request(
+            "POST",
+            f"/chats/{chat_id}/messages",
+            json_body={"body": {"contentType": content_type, "content": content}},
+        )
+        return resp.json()
+
     # ── People / contacts ─────────────────────────────────────────────
 
     def search_people(self, query: str, top: int = 10) -> list[dict[str, Any]]:
@@ -428,6 +569,104 @@ class OutlookClient:
             params={"$search": f'"{query}"', "$top": str(top)},
         )
         return resp.json().get("value", [])
+
+    def create_contact(
+        self,
+        *,
+        display_name: str,
+        email: str,
+        given_name: str | None = None,
+        surname: str | None = None,
+        company: str | None = None,
+        mobile_phone: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a personal Outlook contact."""
+        payload: dict[str, Any] = {
+            "DisplayName": display_name,
+            "EmailAddresses": [{"Address": email, "Name": display_name}],
+        }
+        if given_name is not None:
+            payload["GivenName"] = given_name
+        if surname is not None:
+            payload["Surname"] = surname
+        if company is not None:
+            payload["CompanyName"] = company
+        if mobile_phone is not None:
+            payload["MobilePhone1"] = mobile_phone
+        resp = self._request("POST", "/me/contacts", json_body=payload)
+        return resp.json()
+
+    def update_contact(
+        self,
+        contact_id: str,
+        *,
+        display_name: str | None = None,
+        email: str | None = None,
+        given_name: str | None = None,
+        surname: str | None = None,
+        company: str | None = None,
+        mobile_phone: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a personal Outlook contact."""
+        payload: dict[str, Any] = {}
+        if display_name is not None:
+            payload["DisplayName"] = display_name
+        if email is not None:
+            payload["EmailAddresses"] = [{"Address": email, "Name": display_name or email}]
+        if given_name is not None:
+            payload["GivenName"] = given_name
+        if surname is not None:
+            payload["Surname"] = surname
+        if company is not None:
+            payload["CompanyName"] = company
+        if mobile_phone is not None:
+            payload["MobilePhone1"] = mobile_phone
+        resp = self._request("PATCH", f"/me/contacts/{contact_id}", json_body=payload)
+        return resp.json() if resp.content else {}
+
+    # ── Mailbox settings ──────────────────────────────────────────────
+
+    def get_mailbox_settings(self) -> dict[str, Any]:
+        """Get mailbox settings."""
+        resp = self._request("GET", "/me/mailboxSettings")
+        return resp.json()
+
+    def update_mailbox_settings(
+        self,
+        *,
+        time_zone: str | None = None,
+        automatic_replies: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Update mailbox settings."""
+        payload: dict[str, Any] = {}
+        if time_zone is not None:
+            payload["TimeZone"] = time_zone
+        if automatic_replies is not None:
+            payload["AutomaticRepliesSetting"] = automatic_replies
+        resp = self._request("PATCH", "/me/mailboxSettings", json_body=payload)
+        return resp.json() if resp.content else {}
+
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        subject: str | None = None,
+        due_dt: str | None = None,
+        importance: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a task."""
+        payload: dict[str, Any] = {}
+        if subject is not None:
+            payload["Subject"] = subject
+        if due_dt is not None:
+            payload["DueDateTime"] = {"DateTime": due_dt, "TimeZone": config.OUTLOOK_TIMEZONE}
+        if importance is not None:
+            payload["Importance"] = importance
+        if status is not None:
+            payload["Status"] = status
+        resp = self._request("PATCH", f"/me/tasks/{task_id}", json_body=payload)
+        return resp.json() if resp.content else {}
 
     def update_draft(
         self,

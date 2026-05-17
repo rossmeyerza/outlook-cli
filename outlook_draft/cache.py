@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 
 MAIL_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-mail-cache.json"
+MAIL_FOLDER_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-mail-folder-cache.json"
+CONTACT_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-contact-cache.json"
 CAL_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-cal-cache.json"
 TASK_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-task-cache.json"
 TEAMS_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-teams-cache.json"

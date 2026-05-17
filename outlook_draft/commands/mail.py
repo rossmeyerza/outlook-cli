@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import re
 import sys
+from pathlib import Path
 from typing import Any, Callable
 
 from rich.panel import Panel
 from rich.table import Table
 
-from ..cache import MAIL_CACHE, load_cache, save_cache
+from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 
 
@@ -71,7 +74,7 @@ def _render_message_table(args: argparse.Namespace, messages: list[JsonDict], ti
         from_name = from_obj.get("Name", from_obj.get("Address", ""))
         subject = msg.get("Subject", "(no subject)")
         read = msg.get("IsRead", True)
-        attach = "\U0001f4ce" if msg.get("HasAttachments") else ""
+        attach = "📎" if msg.get("HasAttachments") else ""
         style = "" if read else "bold"
         table.add_row(
             str(i),
@@ -83,7 +86,31 @@ def _render_message_table(args: argparse.Namespace, messages: list[JsonDict], ti
         )
 
     _console(args).print(table)
-    _console(args).print("[dim]Use 'outlook-cli read <n>' to read an email.[/]")
+    _console(args).print("[dim]Use 'outlook-cli mail read <n>' to read an email.[/]")
+
+
+def _resolve_folder_id(args: argparse.Namespace, ref: str) -> str:
+    if ref in {"inbox", "archive", "drafts", "sentitems", "deleteditems", "junkemail"}:
+        return ref
+    cached = load_cache(MAIL_FOLDER_CACHE)
+    if ref.isdigit():
+        idx = int(ref)
+        if cached and 1 <= idx <= len(cached):
+            return cached[idx - 1]["Id"]
+        _console(args).print("[red]No matching cached folder. Run 'outlook-cli mail folders' first.[/]")
+        sys.exit(1)
+    matches = [item for item in cached if item.get("DisplayName", "").lower() == ref.lower()]
+    if len(matches) == 1:
+        return matches[0]["Id"]
+    if len(matches) > 1:
+        _console(args).print(f"[red]Ambiguous folder name '{ref}'. Use folder index or ID.[/]")
+        sys.exit(1)
+    return ref
+
+
+def _safe_filename(name: str) -> str:
+    name = re.sub(r"[\\/:*?\"<>|]+", "_", name).strip()
+    return name or "attachment"
 
 
 def cmd_unread(args: argparse.Namespace) -> None:
@@ -166,3 +193,153 @@ def cmd_read(args: argparse.Namespace) -> None:
     lines.append(body_content)
 
     _console(args).print(Panel("\n".join(lines), title="Email", border_style="cyan"))
+
+
+def cmd_mark_read(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        client.update_message_read_state(message_id, is_read=True)
+        _console(args).print("[green]Marked email as read.[/]")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to mark email read: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_mark_unread(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        client.update_message_read_state(message_id, is_read=False)
+        _console(args).print("[green]Marked email as unread.[/]")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to mark email unread: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_archive(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        client.archive_message(message_id)
+        _console(args).print("[green]Archived email.[/]")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to archive email: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_move(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    folder_id = _resolve_folder_id(args, args.folder)
+    try:
+        moved = client.move_message(message_id, folder_id)
+        _console(args).print(f"[green]Moved email:[/] {moved.get('Subject', message_id)}")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to move email: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_folders(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    try:
+        folders = client.list_mail_folders(top=args.count)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to list folders: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    save_cache(MAIL_FOLDER_CACHE, folders)
+    table = Table(title=f"Mail folders ({len(folders)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Name", ratio=1)
+    table.add_column("Unread", width=8)
+    table.add_column("Total", width=8)
+    table.add_column("ID", style="dim", width=16, no_wrap=True)
+    for i, folder in enumerate(folders, 1):
+        table.add_row(
+            str(i),
+            folder.get("DisplayName", ""),
+            str(folder.get("UnreadItemCount", "")),
+            str(folder.get("TotalItemCount", "")),
+            folder.get("Id", "")[-16:],
+        )
+    _console(args).print(table)
+
+
+def cmd_attachments(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        attachments = client.list_message_attachments(message_id)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to list attachments: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    if not attachments:
+        _console(args).print("[dim]No attachments found.[/]")
+        return
+
+    table = Table(title=f"Attachments ({len(attachments)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Name", ratio=1)
+    table.add_column("Type", width=28)
+    table.add_column("Size", width=10)
+    table.add_column("Inline", width=8)
+    for i, attachment in enumerate(attachments, 1):
+        table.add_row(
+            str(i),
+            attachment.get("Name", ""),
+            attachment.get("ContentType", ""),
+            str(attachment.get("Size", "")),
+            "yes" if attachment.get("IsInline") else "no",
+        )
+    _console(args).print(table)
+
+
+def cmd_download_attachments(args: argparse.Namespace) -> None:
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    out_dir = Path(args.dir).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        attachments = client.list_message_attachments(message_id)
+        downloaded = []
+        for attachment in attachments:
+            full = client.get_message_attachment(message_id, attachment.get("Id", ""))
+            content = full.get("ContentBytes")
+            if not content:
+                continue
+            filename = _safe_filename(full.get("Name", "attachment"))
+            path = out_dir / filename
+            if path.exists() and not args.overwrite:
+                stem = path.stem
+                suffix = path.suffix
+                n = 2
+                while (out_dir / f"{stem}-{n}{suffix}").exists():
+                    n += 1
+                path = out_dir / f"{stem}-{n}{suffix}"
+            path.write_bytes(base64.b64decode(content))
+            downloaded.append(path)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to download attachments: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    if not downloaded:
+        _console(args).print("[dim]No downloadable file attachments found.[/]")
+        return
+    for path in downloaded:
+        _console(args).print(f"[green]Downloaded:[/] {path}")
