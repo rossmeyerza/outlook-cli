@@ -90,7 +90,7 @@ outlook-cli config check                   # validate local config without print
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
-- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. Teams sending is intentionally disabled for agent safety.
+- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
 

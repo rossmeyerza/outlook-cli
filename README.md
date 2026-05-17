@@ -122,7 +122,7 @@ outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
 ```
 
-Lists Teams chats, shows chat details, and reads messages. Teams sending is intentionally disabled for agent safety.
+Lists Teams chats, shows chat details, and reads messages. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
 
 ### Auth and config
 
