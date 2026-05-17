@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from . import config
+from .calendar_time import outlook_timezone_prefer_header
 from .errors import OutlookAPIError
 from .token_manager import TokenManager
 
@@ -195,7 +196,7 @@ class OutlookClient:
     # ── Calendar ───────────────────────────────────────────────────────
 
     def _calendar_headers(self) -> dict[str, str]:
-        return {"Prefer": f'outlook.timezone="{config.OUTLOOK_TIMEZONE}"'}
+        return {"Prefer": outlook_timezone_prefer_header()}
 
     def get_agenda(self, days: int = 7, top: int = 20) -> list[dict[str, Any]]:
         """Get upcoming calendar events."""
@@ -260,6 +261,10 @@ class OutlookClient:
     def delete_event(self, event_id: str) -> None:
         """Delete a calendar event from the user's calendar."""
         self._request("DELETE", f"/me/events/{event_id}")
+
+    def cancel_event(self, event_id: str, *, comment: str = "") -> None:
+        """Cancel a calendar event as organizer and notify attendees."""
+        self._request("POST", f"/me/events/{event_id}/cancel", json_body={"Comment": comment})
 
     def respond_to_event(
         self,

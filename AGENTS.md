@@ -32,7 +32,9 @@ outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
 outlook-cli cal delete <n>                 # delete event by cached index or full ID
 outlook-cli cal accept <n>                 # accept event invitation
+outlook-cli cal tentative <n>              # tentatively accept event invitation
 outlook-cli cal decline <n>                # decline event invitation
+outlook-cli cal cancel <n>                 # cancel event you organize
 
 # Manage tasks
 outlook-cli task create "<name>"           # create a new task
@@ -57,7 +59,7 @@ outlook-cli auth                           # force headless re-authentication
 
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
-- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work in a separate invocation. Shows attendee responses. Calendar creation uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
+- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Shows attendee responses. Calendar creation uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
@@ -78,6 +80,7 @@ outlook-cli auth                           # force headless re-authentication
   session_state/                # Local token cache, ignored by git
   outlook_draft/
     auth.py                     # Built-in Playwright auth and token capture
+    calendar_time.py            # Calendar timezone parsing and Outlook headers
     cli.py                      # CLI entry point
     config.py                   # Config and local paths
     errors.py                   # Exceptions

@@ -644,6 +644,26 @@ def main() -> None:
         send_response=True,
     )
 
+    cmd_cal_tentative_cmd = cal_sub.add_parser("tentative", help="Tentatively accept an event invitation")
+    cmd_cal_tentative_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_tentative_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_tentative_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_tentative_cmd.set_defaults(
+        func=calendar_commands.cmd_cal_tentative,
+        _calendar_ctx=calendar_ctx,
+        send_response=True,
+    )
+
+    cmd_cal_cancel_cmd = cal_sub.add_parser("cancel", help="Cancel an event you organize")
+    cmd_cal_cancel_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_cancel_cmd.add_argument("--comment", "-m", help="Optional cancellation comment")
+    cmd_cal_cancel_cmd.set_defaults(func=calendar_commands.cmd_cal_cancel, _calendar_ctx=calendar_ctx)
+
     # ── Contacts ──────────────────────────────────────────────────────
     p_contact = sub.add_parser("contact", help="Manage contacts")
     contact_sub = p_contact.add_subparsers(dest="command", required=True)

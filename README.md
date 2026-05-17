@@ -71,11 +71,13 @@ outlook-cli cal show <event-id>         # show by full ID
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
 outlook-cli cal delete 1                # delete by index from agenda
 outlook-cli cal accept 1                # accept an invitation
+outlook-cli cal tentative 1             # tentatively accept an invitation
 outlook-cli cal decline 1 -m "Sorry, I can't make it"  # decline with comment
 outlook-cli cal accept 1 --no-send-response            # accept without emailing organizer
+outlook-cli cal cancel 1 -m "Cancelled due to conflict" # cancel an event you organize
 ```
 
-Results from `cal agenda` are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work across invocations.
+Results from `cal agenda` are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations.
 
 ### Tasks
 
@@ -146,6 +148,7 @@ Draft bodies are sent as HTML and wrapped with Aptos styling before the saved si
 ```
 outlook_draft/
   auth.py            # Built-in Playwright auth and token capture
+  calendar_time.py   # Calendar timezone parsing and Outlook timezone headers
   cli.py             # CLI with argparse subcommands
   config.py          # Paths and env vars
   errors.py          # Exception types

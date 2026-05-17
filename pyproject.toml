@@ -13,5 +13,14 @@ dependencies = [
     "requests>=2.31",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["outlook_draft*"]
+exclude = ["session_state*", "tests*"]
+
 [project.scripts]
 outlook-cli = "outlook_draft.cli:main"

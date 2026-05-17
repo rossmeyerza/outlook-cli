@@ -4,13 +4,11 @@ import argparse
 import sys
 from datetime import datetime
 from typing import Any, Callable
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import dateutil.parser
 from rich.panel import Panel
 from rich.table import Table
 
-from .. import config
+from ..calendar_time import outlook_datetime, parse_local_datetime
 from ..cache import CAL_CACHE, save_cache
 from ..errors import OutlookAPIError
 
@@ -94,21 +92,6 @@ def _event_when(event: JsonDict) -> str:
 
 def _format_datetime_placeholder(value: str) -> str:
     return value
-
-
-def _local_timezone() -> ZoneInfo:
-    try:
-        return ZoneInfo(config.LOCAL_TIMEZONE)
-    except ZoneInfoNotFoundError:
-        raise ValueError(f"Unknown LOCAL_TIMEZONE: {config.LOCAL_TIMEZONE}")
-
-
-def _as_local_datetime(value: str) -> datetime:
-    parsed = dateutil.parser.parse(value)
-    local_tz = _local_timezone()
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=local_tz)
-    return parsed.astimezone(local_tz)
 
 
 def cmd_cal_agenda(args: argparse.Namespace) -> None:
@@ -207,15 +190,15 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
 def cmd_cal_create(args: argparse.Namespace) -> None:
     """Create a calendar event."""
     try:
-        start_dt = _as_local_datetime(args.start)
-        end_dt = _as_local_datetime(args.end)
+        start_dt = parse_local_datetime(args.start)
+        end_dt = parse_local_datetime(args.end)
     except Exception as e:
         _console(args).print(f"[red]Failed to parse dates: {e}[/]")
         _console(args).print("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
         sys.exit(1)
 
-    start_local = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
-    end_local = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    start_local = outlook_datetime(start_dt)
+    end_local = outlook_datetime(end_dt)
 
     client = _get_client(args)
     try:
@@ -277,3 +260,23 @@ def cmd_cal_accept(args: argparse.Namespace) -> None:
 def cmd_cal_decline(args: argparse.Namespace) -> None:
     """Decline a calendar event."""
     _respond_to_event(args, "decline", "Declined")
+
+
+def cmd_cal_tentative(args: argparse.Namespace) -> None:
+    """Tentatively accept a calendar event."""
+    _respond_to_event(args, "tentativelyAccept", "Tentatively accepted")
+
+
+def cmd_cal_cancel(args: argparse.Namespace) -> None:
+    """Cancel a calendar event as organizer."""
+    client = _get_client(args)
+    event_id = _resolve_cal_id(args, client, args.event_id)
+    try:
+        event = client.get_event(event_id)
+        client.cancel_event(event_id, comment=args.comment or "")
+        _console(args).print(f"[green]Cancelled event:[/] {event.get('Subject', event_id)}")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to cancel event: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
