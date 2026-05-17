@@ -6,19 +6,20 @@ Authentication is shared with the other Microsoft projects (onedrive-fuse, share
 
 ## Installation
 
-Already installed globally via symlink:
+Clone the private repo and install it into a local virtualenv:
 
 ```bash
-outlook-cli --help
-```
-
-If you need to reinstall:
-
-```bash
-cd /home/ross/.local/lib/outlook-draft-cli
+git clone git@github.com:rossmeyerza/outlook-draft-cli.git
+cd outlook-draft-cli
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ln -sf $(pwd)/.venv/bin/outlook-cli ~/.local/bin/outlook-cli
+```
+
+Check the command is available:
+
+```bash
+outlook-cli --help
 ```
 
 ## Usage
