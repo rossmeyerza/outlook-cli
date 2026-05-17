@@ -22,5 +22,10 @@ dev = [
 include = ["outlook_draft*"]
 exclude = ["session_state*", "tests*"]
 
+[tool.pytest.ini_options]
+markers = [
+    "live: tests that mutate live Outlook data and require OUTLOOK_CLI_LIVE=1",
+]
+
 [project.scripts]
 outlook-cli = "outlook_draft.cli:main"
