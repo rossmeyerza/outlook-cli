@@ -194,6 +194,9 @@ class OutlookClient:
 
     # ── Calendar ───────────────────────────────────────────────────────
 
+    def _calendar_headers(self) -> dict[str, str]:
+        return {"Prefer": f'outlook.timezone="{config.OUTLOOK_TIMEZONE}"'}
+
     def get_agenda(self, days: int = 7, top: int = 20) -> list[dict[str, Any]]:
         """Get upcoming calendar events."""
         from datetime import datetime, timezone, timedelta
@@ -211,6 +214,7 @@ class OutlookClient:
                 "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled",
                 "$orderby": "start/dateTime",
             },
+            extra_headers=self._calendar_headers(),
         )
         return resp.json().get("value", [])
 
@@ -222,6 +226,7 @@ class OutlookClient:
             params={
                 "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,body,attendees",
             },
+            extra_headers=self._calendar_headers(),
         )
         return resp.json()
 
@@ -234,11 +239,11 @@ class OutlookClient:
         body: str | None = None,
         attendees: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Create a new calendar event (times must be ISO UTC)."""
+        """Create a new calendar event using the configured Outlook timezone."""
         payload: dict[str, Any] = {
             "Subject": subject,
-            "Start": {"DateTime": start_dt, "TimeZone": "UTC"},
-            "End": {"DateTime": end_dt, "TimeZone": "UTC"},
+            "Start": {"DateTime": start_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
+            "End": {"DateTime": end_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
         }
         if location:
             payload["Location"] = {"DisplayName": location}

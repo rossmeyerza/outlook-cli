@@ -57,7 +57,7 @@ outlook-cli auth                           # force headless re-authentication
 
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
-- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work in a separate invocation. Shows attendee responses.
+- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work in a separate invocation. Shows attendee responses. Calendar creation uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
@@ -73,7 +73,7 @@ outlook-cli auth                           # force headless re-authentication
 
 ```
 /home/ross/.local/lib/outlook-draft-cli/
-  .env                          # MS_EMAIL and MS_PASSWORD, ignored by git
+  .env                          # MS_EMAIL, MS_PASSWORD, timezone config, ignored by git
   .env.example                  # Example local config
   session_state/                # Local token cache, ignored by git
   outlook_draft/

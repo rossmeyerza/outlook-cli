@@ -126,9 +126,13 @@ outlook-cli auth --headed
 ```
 MS_EMAIL=your.email@company.com
 MS_PASSWORD=your-password
+LOCAL_TIMEZONE=Europe/London
+OUTLOOK_TIMEZONE=GMT Standard Time
 ```
 
 The token file is local to this repo at `session_state/tokens.json`. Both `.env` and `session_state/` are ignored by git.
+
+`LOCAL_TIMEZONE` is the Python timezone used to interpret calendar times you type. `OUTLOOK_TIMEZONE` is the Microsoft timezone sent to Outlook. For the UK, use `Europe/London` and `GMT Standard Time`.
 
 Draft signatures are loaded automatically from:
 

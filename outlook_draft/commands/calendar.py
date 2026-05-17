@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import dateutil.parser
 from rich.panel import Panel
 from rich.table import Table
 
+from .. import config
 from ..cache import CAL_CACHE, save_cache
 from ..errors import OutlookAPIError
 
@@ -92,6 +94,21 @@ def _event_when(event: JsonDict) -> str:
 
 def _format_datetime_placeholder(value: str) -> str:
     return value
+
+
+def _local_timezone() -> ZoneInfo:
+    try:
+        return ZoneInfo(config.LOCAL_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        raise ValueError(f"Unknown LOCAL_TIMEZONE: {config.LOCAL_TIMEZONE}")
+
+
+def _as_local_datetime(value: str) -> datetime:
+    parsed = dateutil.parser.parse(value)
+    local_tz = _local_timezone()
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=local_tz)
+    return parsed.astimezone(local_tz)
 
 
 def cmd_cal_agenda(args: argparse.Namespace) -> None:
@@ -190,27 +207,22 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
 def cmd_cal_create(args: argparse.Namespace) -> None:
     """Create a calendar event."""
     try:
-        start_dt = dateutil.parser.parse(args.start)
-        end_dt = dateutil.parser.parse(args.end)
+        start_dt = _as_local_datetime(args.start)
+        end_dt = _as_local_datetime(args.end)
     except Exception as e:
         _console(args).print(f"[red]Failed to parse dates: {e}[/]")
         _console(args).print("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
         sys.exit(1)
 
-    if start_dt.tzinfo is None:
-        start_dt = start_dt.astimezone()
-    if end_dt.tzinfo is None:
-        end_dt = end_dt.astimezone()
-
-    start_utc = start_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    end_utc = end_dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    start_local = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    end_local = end_dt.strftime("%Y-%m-%dT%H:%M:%S")
 
     client = _get_client(args)
     try:
         client.create_event(
             subject=args.subject,
-            start_dt=start_utc,
-            end_dt=end_utc,
+            start_dt=start_local,
+            end_dt=end_local,
             location=args.location,
             body=args.body,
             attendees=args.attendees,

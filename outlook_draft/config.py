@@ -10,6 +10,8 @@ load_dotenv(_project_root / ".env")
 
 MS_EMAIL: str = os.environ.get("MS_EMAIL", "")
 MS_PASSWORD: str = os.environ.get("MS_PASSWORD", "")
+LOCAL_TIMEZONE: str = os.environ.get("LOCAL_TIMEZONE", "Europe/London")
+OUTLOOK_TIMEZONE: str = os.environ.get("OUTLOOK_TIMEZONE", "GMT Standard Time")
 SESSION_DIR: Path = _project_root / "session_state"
 TOKENS_FILE: Path = SESSION_DIR / "tokens.json"
 
