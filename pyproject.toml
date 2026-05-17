@@ -1,0 +1,15 @@
+[project]
+name = "outlook-draft-cli"
+version = "0.1.0"
+description = "CLI to create and manage Outlook email drafts via Outlook REST API"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "pyjwt>=2.8",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "python-dateutil>=2.9.0",
+]
+
+[project.scripts]
+outlook-cli = "outlook_draft.cli:main"
