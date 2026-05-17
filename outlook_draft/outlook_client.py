@@ -499,6 +499,15 @@ class OutlookClient:
 
     # ── Teams chats / messages ────────────────────────────────────────
 
+    def get_current_user(self) -> dict[str, Any]:
+        """Get the current Graph user profile."""
+        resp = self._request(
+            "GET",
+            "/me",
+            params={"$select": "id,displayName,mail,userPrincipalName"},
+        )
+        return resp.json()
+
     def list_teams_chats(self, top: int = 20) -> list[dict[str, Any]]:
         """List Teams chats for the current user."""
         resp = self._request(
@@ -533,6 +542,20 @@ class OutlookClient:
 
     def list_teams_messages(self, chat_id: str, top: int = 20) -> list[dict[str, Any]]:
         """List messages for a Teams chat."""
+        resp = self._request(
+            "GET",
+            f"/chats/{chat_id}/messages",
+            params={"$top": str(top)},
+            extra_headers={"Prefer": "include-unknown-enum-members"},
+        )
+        return resp.json().get("value", [])
+
+    def list_teams_message_metadata(self, chat_id: str, top: int = 10) -> list[dict[str, Any]]:
+        """List Teams message metadata for sorting.
+
+        Graph does not allow `$select` on this endpoint in this tenant, so this
+        fetches the normal message objects and callers only inspect metadata.
+        """
         resp = self._request(
             "GET",
             f"/chats/{chat_id}/messages",

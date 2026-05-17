@@ -110,6 +110,34 @@ def _teams_sender(message: JsonDict) -> str:
     return "Unknown"
 
 
+def _message_user_id(message: JsonDict) -> str:
+    from_obj = message.get("from") or {}
+    user = from_obj.get("user") or {}
+    return user.get("id", "")
+
+
+def _is_received_user_message(message: JsonDict, self_user_id: str) -> bool:
+    if message.get("deletedDateTime"):
+        return False
+    if message.get("messageType") != "message":
+        return False
+    sender_id = _message_user_id(message)
+    return not sender_id or sender_id != self_user_id
+
+
+def _latest_received_message_time(client: Any, chat_id: str, self_user_id: str) -> str:
+    try:
+        messages = client.list_teams_message_metadata(chat_id, top=50)
+    except OutlookAPIError:
+        return ""
+    received = [
+        message.get("createdDateTime", "")
+        for message in messages
+        if _is_received_user_message(message, self_user_id)
+    ]
+    return max(received) if received else ""
+
+
 def _teams_body(args: argparse.Namespace, message: JsonDict) -> str:
     if message.get("deletedDateTime"):
         return "[deleted message]"
@@ -133,7 +161,24 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
     console = _console(args)
     client = _get_graph_client(args)
     try:
-        chats = client.list_teams_chats(top=args.count)
+        candidate_count = max(args.count * 5, 50)
+        chats = client.list_teams_chats(top=candidate_count)
+        try:
+            current_user = client.get_current_user()
+            self_user_id = current_user.get("id", "")
+        except OutlookAPIError:
+            self_user_id = ""
+        for chat in chats:
+            chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
+                client,
+                chat["id"],
+                self_user_id,
+            )
+        chats.sort(
+            key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
+            reverse=True,
+        )
+        chats = chats[:args.count]
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
         console.print(f"[red]Failed to list Teams chats: {e}[/]")
@@ -147,7 +192,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
 
     table = Table(title=f"Teams chats ({len(chats)})")
     table.add_column("#", style="dim", width=3)
-    table.add_column("Updated", style="dim", width=12)
+    table.add_column("Last received", style="dim", width=12)
     table.add_column("Type", width=12)
     table.add_column("Chat", ratio=1)
     table.add_column("ID", style="dim", width=16, no_wrap=True)
@@ -163,7 +208,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                     members = []
             table.add_row(
                 str(i),
-                _format_datetime(args, chat.get("lastUpdatedDateTime") or chat.get("createdDateTime", "")),
+                _format_datetime(args, chat.get("_lastReceivedMessageDateTime", "")),
                 chat.get("chatType", ""),
                 _chat_title(chat, members),
                 chat.get("id", "")[-16:],
