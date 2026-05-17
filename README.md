@@ -42,7 +42,6 @@ outlook-cli mail folders                    # list mail folders
 outlook-cli mail move 1 --folder Archive    # move email to folder
 outlook-cli mail attachments 1              # list attachments
 outlook-cli mail download-attachments 1 -d ./attachments
-outlook-cli mail send --to someone@example.com -s "Hello" -b "Hi there"
 ```
 
 Results from `mail unread` or `mail search` are cached to disk, so `mail read <n>` works in a separate invocation. Those cached message refs can also be used with `draft reply <n>`.
@@ -62,9 +61,8 @@ outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
 outlook-cli draft list
 outlook-cli draft list -n 50
 
-# View, send, or delete
+# View or delete
 outlook-cli draft show 1          # by index from list
-outlook-cli draft send 1          # send existing draft
 outlook-cli draft delete 1        # by index
 ```
 
@@ -122,10 +120,9 @@ Searches the org directory and recent contacts. Personal contact create/update u
 outlook-cli teams list -n 20
 outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
-outlook-cli teams send 1 "Hello team"      # sends a real Teams message
 ```
 
-Lists Teams chats, shows chat details, reads messages, and can send chat messages. `teams send` affects real people, so use it deliberately.
+Lists Teams chats, shows chat details, and reads messages. Teams sending is intentionally disabled for agent safety.
 
 ### Auth and config
 

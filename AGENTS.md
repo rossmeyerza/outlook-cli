@@ -20,7 +20,6 @@ outlook-cli mail folders                   # list mail folders
 outlook-cli mail move <n> --folder <folder> # move email
 outlook-cli mail attachments <n>           # list attachments
 outlook-cli mail download-attachments <n>  # download attachments
-outlook-cli mail send --to <email> -s "Subject" -b "Body" # send email
 
 # Create drafts
 outlook-cli draft create --to <email> -s "Subject" -b "Body text"
@@ -31,7 +30,6 @@ outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
 # Manage drafts
 outlook-cli draft list                     # list all drafts
 outlook-cli draft show <n>                 # show draft by index (1, 2, ...)
-outlook-cli draft send <n>                 # send draft by index
 outlook-cli draft delete <n>               # delete draft by index
 
 # Manage calendar
@@ -69,7 +67,6 @@ outlook-cli contact update <n> --company <company>
 outlook-cli teams list -n 20               # list chats
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
-outlook-cli teams send <chat-ref> "Message" # send message, affects real people
 
 # Auth and config
 outlook-cli auth                           # force headless re-authentication
@@ -93,7 +90,7 @@ outlook-cli config check                   # validate local config without print
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
-- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams send` sends a real message and should not be live-tested without explicit approval.
+- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. Teams sending is intentionally disabled for agent safety.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
 

@@ -768,9 +768,9 @@ def main() -> None:
     cmd_draft_del.add_argument("draft_id", help="Draft ID, index, or ID suffix")
     cmd_draft_del.set_defaults(func=cmd_delete)
 
-    cmd_draft_send = draft_sub.add_parser("send", help="Send an existing draft")
-    cmd_draft_send.add_argument("draft_id", help="Draft ID, index, or ID suffix")
-    cmd_draft_send.set_defaults(func=cmd_send_draft)
+    # Sending existing drafts is intentionally not exposed to agents.
+    # Implementation is preserved in cmd_send_draft / OutlookClient.send_message,
+    # but the parser is disabled for safety.
 
     mail_ctx = mail_commands.build_ctx(
         console=console,
@@ -833,18 +833,9 @@ def main() -> None:
     cmd_mail_download_attachments.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
     cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments, _mail_ctx=mail_ctx)
 
-    cmd_mail_send = mail_sub.add_parser("send", help="Send a new email immediately")
-    cmd_mail_send.add_argument("--to", required=True, action="append", help="Recipient (repeatable, comma-separated ok)")
-    cmd_mail_send.add_argument("--cc", action="append", help="CC recipient")
-    cmd_mail_send.add_argument("--bcc", action="append", help="BCC recipient")
-    cmd_mail_send.add_argument("--subject", "-s", required=True, help="Subject line")
-    cmd_mail_send.add_argument("--body", "-b", help="Body text (inline)")
-    cmd_mail_send.add_argument("--body-file", "-f", help="Read body from file")
-    cmd_mail_send.add_argument("--html", action="store_true", help="Treat body input as HTML")
-    cmd_mail_send.add_argument("--signature", choices=["none", "new", "reply"], default="none", help="Append saved signature")
-    cmd_mail_send.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
-    cmd_mail_send.add_argument("--no-save", action="store_true", help="Do not save to Sent Items")
-    cmd_mail_send.set_defaults(func=cmd_send_mail)
+    # Direct email sending is intentionally not exposed to agents.
+    # Implementation is preserved in cmd_send_mail / OutlookClient.send_mail,
+    # but the parser is disabled for safety.
 
     tasks_ctx = tasks_commands.build_ctx(
         console=console,
@@ -1050,11 +1041,9 @@ def main() -> None:
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
     cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
 
-    cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message")
-    cmd_teams_send_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
-    cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")
-    cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
-    cmd_teams_send_cmd.set_defaults(func=teams_commands.cmd_teams_send, _teams_ctx=teams_ctx)
+    # Teams sending is intentionally not exposed to agents. Teams reading stays enabled.
+    # Implementation is preserved in cmd_teams_send / OutlookClient.send_teams_message,
+    # but the parser is disabled for safety.
 
     # ── Mailbox ───────────────────────────────────────────────────────
     p_mailbox = sub.add_parser("mailbox", help="Manage mailbox settings")

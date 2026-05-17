@@ -13,6 +13,10 @@ class TokenNotFoundError(OutlookDraftError):
     """No token file found."""
 
 
+class SendingDisabledError(OutlookDraftError):
+    """Sending email or Teams messages is intentionally disabled."""
+
+
 class OutlookAPIError(OutlookDraftError):
     """Outlook REST API returned an error."""
 
