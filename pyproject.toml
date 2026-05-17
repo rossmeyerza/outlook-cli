@@ -1,8 +1,16 @@
 [project]
 name = "outlook-draft-cli"
 version = "0.1.0"
-description = "CLI to create and manage Outlook email drafts via Outlook REST API"
+description = "CLI for Outlook mail, drafts, calendar, tasks, contacts, and Teams browsing"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Ross Meyer" }]
 requires-python = ">=3.12"
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "httpx>=0.27",
     "pyjwt>=2.8",
@@ -16,7 +24,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.8",
 ]
+
+[project.urls]
+Repository = "https://github.com/rossmeyerza/outlook-draft-cli"
 
 [tool.setuptools.packages.find]
 include = ["outlook_draft*"]

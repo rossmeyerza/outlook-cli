@@ -19,12 +19,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from html import escape
 from pathlib import Path
 
 from rich.console import Console
+from rich import box
 from rich.panel import Panel
 from rich.table import Table
 
@@ -421,13 +424,113 @@ def _resolve_cal_id(client: OutlookClient, ref: str) -> str:
     return ref
 
 
+def _token_status(domain: str, label: str) -> dict[str, object]:
+    tm = TokenManager(token_domain=domain, token_label=label)
+    tm.force_reload()
+    return {
+        "label": label,
+        "domain": domain,
+        "present": tm.expires_in != -1,
+        "expired": tm.is_expired,
+        "expiresInSeconds": int(tm.expires_in),
+    }
+
+
 def cmd_auth(args: argparse.Namespace) -> None:
-    """Force re-authentication."""
+    """Manage authentication."""
+    command = args.auth_command or "login"
+    if command == "status":
+        statuses = [
+            _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
+            _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
+        ]
+        if args.json:
+            print(json.dumps(statuses, indent=2))
+            return
+        table = Table(title="Auth status", box=box.SIMPLE)
+        table.add_column("Token")
+        table.add_column("Domain")
+        table.add_column("Status")
+        table.add_column("Expires")
+        for item in statuses:
+            if not item["present"]:
+                status = "[red]missing[/]"
+                expires = ""
+            elif item["expired"]:
+                status = "[red]expired[/]"
+                expires = "expired"
+            else:
+                status = "[green]valid[/]"
+                expires = f"{int(item['expiresInSeconds']) // 60} min"
+            table.add_row(str(item["label"]), str(item["domain"]), status, expires)
+        console.print(table)
+        return
+    if command == "clear":
+        if config.TOKENS_FILE.exists():
+            config.TOKENS_FILE.unlink()
+            console.print(f"[green]Deleted token cache:[/] {config.TOKENS_FILE}")
+        else:
+            console.print("[dim]No token cache found.[/]")
+        return
+
     tm = TokenManager()
     if tm.run_reauth(headless=not args.headed):
         console.print(f"[green]Authenticated. Token expires in {tm.expires_in / 60:.0f} minutes.[/]")
     else:
         console.print("[red]Authentication failed.[/]")
+        sys.exit(1)
+
+
+def _config_check_items() -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+
+    def add(name: str, ok: bool, detail: str = "") -> None:
+        items.append({"name": name, "ok": ok, "detail": detail})
+
+    add("MS_EMAIL", bool(config.MS_EMAIL), "set" if config.MS_EMAIL else "missing")
+    add("MS_PASSWORD", bool(config.MS_PASSWORD), "set" if config.MS_PASSWORD else "missing")
+    try:
+        ZoneInfo(config.LOCAL_TIMEZONE)
+        add("LOCAL_TIMEZONE", True, config.LOCAL_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        add("LOCAL_TIMEZONE", False, f"invalid: {config.LOCAL_TIMEZONE}")
+    add("OUTLOOK_TIMEZONE", bool(config.OUTLOOK_TIMEZONE), config.OUTLOOK_TIMEZONE or "missing")
+    add("SIGNATURE_NEW_FILE", config.SIGNATURE_NEW_FILE.exists(), str(config.SIGNATURE_NEW_FILE))
+    add("SIGNATURE_REPLY_FILE", config.SIGNATURE_REPLY_FILE.exists(), str(config.SIGNATURE_REPLY_FILE))
+    try:
+        config.SESSION_DIR.mkdir(exist_ok=True)
+        probe = config.SESSION_DIR / ".write-test"
+        probe.write_text("ok")
+        probe.unlink()
+        add("session_state writable", True, str(config.SESSION_DIR))
+    except Exception as e:
+        add("session_state writable", False, str(e))
+    try:
+        import playwright.sync_api  # noqa: F401
+        add("playwright", True, "installed")
+    except Exception as e:
+        add("playwright", False, str(e))
+    return items
+
+
+def cmd_config_check(args: argparse.Namespace) -> None:
+    """Validate local CLI configuration without printing secrets."""
+    items = _config_check_items()
+    if args.json:
+        print(json.dumps(items, indent=2))
+    else:
+        table = Table(title="Config check", box=box.SIMPLE)
+        table.add_column("Item")
+        table.add_column("Status")
+        table.add_column("Detail")
+        for item in items:
+            table.add_row(
+                str(item["name"]),
+                "[green]ok[/]" if item["ok"] else "[red]fail[/]",
+                str(item["detail"]),
+            )
+        console.print(table)
+    if not all(bool(item["ok"]) for item in items):
         sys.exit(1)
 
 
@@ -577,10 +680,13 @@ def main() -> None:
     cmd_cal_agenda = cal_sub.add_parser("agenda", help="List upcoming calendar events")
     cmd_cal_agenda.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
     cmd_cal_agenda.add_argument("--count", "-n", type=int, default=20, help="Max events")
+    cmd_cal_agenda.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_cal_agenda.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
     cmd_cal_agenda.set_defaults(func=calendar_commands.cmd_cal_agenda, _calendar_ctx=calendar_ctx)
 
     cmd_cal_show = cal_sub.add_parser("show", help="Show event details")
     cmd_cal_show.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_show.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_show.set_defaults(func=calendar_commands.cmd_cal_show, _calendar_ctx=calendar_ctx)
 
     cmd_cal_create_cmd = cal_sub.add_parser("create", help="Create an event")
@@ -591,6 +697,15 @@ def main() -> None:
     cmd_cal_create_cmd.add_argument("--body", "-b", help="Event description")
     cmd_cal_create_cmd.add_argument("--attendee", dest="attendees", action="append", help="Attendee email (repeatable)")
     cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
+
+    cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
+    cmd_cal_update_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_update_cmd.add_argument("--subject", help="New event subject")
+    cmd_cal_update_cmd.add_argument("--start", help="New start time")
+    cmd_cal_update_cmd.add_argument("--end", help="New end time")
+    cmd_cal_update_cmd.add_argument("--location", help="New location, use empty string to clear")
+    cmd_cal_update_cmd.add_argument("--body", help="New event body, use empty string to clear")
+    cmd_cal_update_cmd.set_defaults(func=calendar_commands.cmd_cal_update, _calendar_ctx=calendar_ctx)
 
     cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")
     cmd_cal_delete_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
@@ -680,12 +795,27 @@ def main() -> None:
     cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
 
     # ── Auth ──────────────────────────────────────────────────────────
-    p_auth = sub.add_parser("auth", help="Force re-authentication")
+    p_auth = sub.add_parser("auth", help="Manage authentication")
+    p_auth.add_argument(
+        "auth_command",
+        nargs="?",
+        choices=["login", "status", "clear"],
+        default="login",
+        help="Auth action to run",
+    )
     p_auth.add_argument(
         "--headed",
         action="store_true",
         help="Open a visible browser instead of running fully headless",
     )
+    p_auth.add_argument("--json", action="store_true", help="Output machine-readable JSON for status")
+
+    # ── Config ────────────────────────────────────────────────────────
+    p_config = sub.add_parser("config", help="Inspect local configuration")
+    config_sub = p_config.add_subparsers(dest="command", required=True)
+    cmd_config_check_parser = config_sub.add_parser("check", help="Validate local configuration")
+    cmd_config_check_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    cmd_config_check_parser.set_defaults(func=cmd_config_check)
 
     args = parser.parse_args()
 

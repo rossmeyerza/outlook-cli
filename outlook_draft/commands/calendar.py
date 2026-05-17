@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
 from typing import Any, Callable
@@ -49,49 +50,96 @@ def _html_to_text(args: argparse.Namespace, html: str) -> str:
     return _ctx(args)["html_to_text"](html)
 
 
-def _format_datetime(args: argparse.Namespace, value: str) -> str:
-    return _ctx(args)["format_datetime"](value)
-
-
 def _resolve_cal_id(args: argparse.Namespace, client: Any, ref: str) -> str:
     return _ctx(args)["resolve_cal_id"](client, ref)
+
+
+def _parse_event_dt(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value[:23])
+    except Exception:
+        return None
 
 
 def _agenda_row(event: JsonDict) -> tuple[str, str]:
     start = event.get("Start", {}).get("DateTime", "")
     end = event.get("End", {}).get("DateTime", "")
-    if not start:
-        return "", ""
-
-    try:
-        parsed_start = datetime.fromisoformat(start[:23])
-        parsed_end = datetime.fromisoformat(end[:23])
-        date_str = parsed_start.strftime("%a %b %d")
-        if event.get("IsAllDay", False):
-            return date_str, "All Day"
-        return date_str, f"{parsed_start.strftime('%H:%M')}-{parsed_end.strftime('%H:%M')}"
-    except Exception:
+    parsed_start = _parse_event_dt(start)
+    parsed_end = _parse_event_dt(end)
+    if not parsed_start:
         return start[:10], start[11:16]
+
+    date_str = parsed_start.strftime("%a %b %d")
+    if event.get("IsAllDay", False):
+        return date_str, "All Day"
+    if parsed_end:
+        return date_str, f"{parsed_start.strftime('%H:%M')}-{parsed_end.strftime('%H:%M')}"
+    return date_str, parsed_start.strftime("%H:%M")
 
 
 def _event_when(event: JsonDict) -> str:
     start = event.get("Start", {}).get("DateTime", "")
     end = event.get("End", {}).get("DateTime", "")
-    if not start:
-        return ""
-
-    try:
-        parsed_start = datetime.fromisoformat(start[:23])
-        parsed_end = datetime.fromisoformat(end[:23])
-        if event.get("IsAllDay"):
-            return f"{parsed_start.strftime('%A, %b %d, %Y')} (All Day)"
+    parsed_start = _parse_event_dt(start)
+    parsed_end = _parse_event_dt(end)
+    if not parsed_start:
+        return start
+    if event.get("IsAllDay"):
+        return f"{parsed_start.strftime('%A, %b %d, %Y')} (All Day)"
+    if parsed_end:
         return f"{parsed_start.strftime('%A, %b %d, %Y %H:%M')} - {parsed_end.strftime('%H:%M')}"
-    except Exception:
-        return _format_datetime_placeholder(start)
+    return parsed_start.strftime("%A, %b %d, %Y %H:%M")
 
 
-def _format_datetime_placeholder(value: str) -> str:
-    return value
+def _event_recurrence(event: JsonDict) -> dict[str, Any]:
+    recurrence = event.get("Recurrence") or {}
+    pattern = recurrence.get("Pattern") or {}
+    range_info = recurrence.get("Range") or {}
+    return {
+        "type": event.get("Type", ""),
+        "seriesMasterId": event.get("SeriesMasterId", ""),
+        "pattern": pattern,
+        "range": range_info,
+    }
+
+
+def _event_summary(event: JsonDict, index: int | None = None) -> dict[str, Any]:
+    date_str, time_str = _agenda_row(event)
+    organizer = event.get("Organizer", {}).get("EmailAddress", {})
+    return {
+        "index": index,
+        "id": event.get("Id", ""),
+        "subject": event.get("Subject", ""),
+        "date": date_str,
+        "time": time_str,
+        "start": event.get("Start", {}),
+        "end": event.get("End", {}),
+        "location": event.get("Location", {}).get("DisplayName", ""),
+        "organizer": {
+            "name": organizer.get("Name", ""),
+            "address": organizer.get("Address", ""),
+        },
+        "isAllDay": event.get("IsAllDay", False),
+        "isCancelled": event.get("IsCancelled", False),
+        "recurrence": _event_recurrence(event),
+    }
+
+
+def _print_json(value: Any) -> None:
+    print(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def _print_plain_agenda(args: argparse.Namespace, events: list[JsonDict]) -> None:
+    for i, event in enumerate(events, 1):
+        summary = _event_summary(event, i)
+        cancelled = " [cancelled]" if summary["isCancelled"] else ""
+        location = f" | {summary['location']}" if summary["location"] else ""
+        _console(args).print(
+            f"{i}. {summary['date']} {summary['time']} | {summary['subject'] or '(no subject)'}"
+            f"{location}{cancelled}"
+        )
 
 
 def cmd_cal_agenda(args: argparse.Namespace) -> None:
@@ -105,18 +153,26 @@ def cmd_cal_agenda(args: argparse.Namespace) -> None:
     finally:
         client.close()
 
+    save_cache(CAL_CACHE, events)
+
+    if args.json:
+        _print_json([_event_summary(event, i) for i, event in enumerate(events, 1)])
+        return
+
     if not events:
         _console(args).print("[dim]No upcoming events.[/]")
         return
 
-    save_cache(CAL_CACHE, events)
+    if args.plain:
+        _print_plain_agenda(args, events)
+        return
 
     table = Table(title=f"Agenda (next {args.days} days)")
     table.add_column("#", style="dim", width=3)
     table.add_column("Date", width=12)
     table.add_column("Time", width=12)
-    table.add_column("Subject", ratio=1)
-    table.add_column("Location", width=25)
+    table.add_column("Subject", ratio=2, min_width=22)
+    table.add_column("Location", ratio=1, min_width=18)
     table.add_column("Status", width=10)
 
     for i, event in enumerate(events, 1):
@@ -149,14 +205,28 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
     finally:
         client.close()
 
+    if args.json:
+        data = _event_summary(event)
+        data["attendees"] = event.get("Attendees", [])
+        data["body"] = event.get("Body", {})
+        _print_json(data)
+        return
+
     organizer = event.get("Organizer", {}).get("EmailAddress", {})
     attendees = event.get("Attendees", [])
+    recurrence = _event_recurrence(event)
     lines = [
         f"[bold]Subject:[/] {event.get('Subject', '')}",
         f"[bold]When:[/] {_event_when(event)}",
         f"[bold]Where:[/] {event.get('Location', {}).get('DisplayName', '')}",
         f"[bold]Organizer:[/] {organizer.get('Name', '')} <{organizer.get('Address', '')}>",
     ]
+    if recurrence["type"]:
+        lines.append(f"[bold]Type:[/] {recurrence['type']}")
+    if recurrence["seriesMasterId"]:
+        lines.append(f"[bold]Series master ID:[/] [dim]{recurrence['seriesMasterId']}[/]")
+    if recurrence["pattern"]:
+        lines.append(f"[bold]Recurrence:[/] {recurrence['pattern']}")
     if event.get("IsCancelled"):
         lines.insert(0, "[red bold]*** CANCELLED ***[/]")
 
@@ -187,8 +257,7 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
     _console(args).print(Panel("\n".join(lines), title="Event", border_style="magenta"))
 
 
-def cmd_cal_create(args: argparse.Namespace) -> None:
-    """Create a calendar event."""
+def _parse_event_datetimes(args: argparse.Namespace) -> tuple[str, str]:
     try:
         start_dt = parse_local_datetime(args.start)
         end_dt = parse_local_datetime(args.end)
@@ -196,9 +265,12 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
         _console(args).print(f"[red]Failed to parse dates: {e}[/]")
         _console(args).print("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
         sys.exit(1)
+    return outlook_datetime(start_dt), outlook_datetime(end_dt)
 
-    start_local = outlook_datetime(start_dt)
-    end_local = outlook_datetime(end_dt)
+
+def cmd_cal_create(args: argparse.Namespace) -> None:
+    """Create a calendar event."""
+    start_local, end_local = _parse_event_datetimes(args)
 
     client = _get_client(args)
     try:
@@ -213,6 +285,39 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
         _console(args).print(f"[green]Created event:[/] {args.subject}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to create event: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_cal_update(args: argparse.Namespace) -> None:
+    """Update a calendar event."""
+    if not any([args.subject, args.start, args.end, args.location is not None, args.body is not None]):
+        _console(args).print("[red]Provide at least one field to update.[/]")
+        sys.exit(1)
+    if bool(args.start) != bool(args.end):
+        _console(args).print("[red]Provide both --start and --end when changing time.[/]")
+        sys.exit(1)
+
+    start_local = end_local = None
+    if args.start and args.end:
+        start_local, end_local = _parse_event_datetimes(args)
+
+    client = _get_client(args)
+    event_id = _resolve_cal_id(args, client, args.event_id)
+    try:
+        event = client.get_event(event_id)
+        client.update_event(
+            event_id,
+            subject=args.subject,
+            start_dt=start_local,
+            end_dt=end_local,
+            location=args.location,
+            body=args.body,
+        )
+        _console(args).print(f"[green]Updated event:[/] {event.get('Subject', event_id)}")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to update event: {e}[/]")
         sys.exit(1)
     finally:
         client.close()

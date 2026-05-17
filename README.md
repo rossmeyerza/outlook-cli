@@ -64,11 +64,15 @@ outlook-cli draft delete 1        # by index
 ```bash
 outlook-cli cal agenda                  # list upcoming events (next 7 days)
 outlook-cli cal agenda --days 14        # list next 14 days
+outlook-cli cal agenda --plain          # plain text output
+outlook-cli cal agenda --json           # machine-readable JSON
 
 outlook-cli cal show 1                  # show event details by index from agenda
 outlook-cli cal show <event-id>         # show by full ID
+outlook-cli cal show 1 --json           # machine-readable JSON with recurrence metadata
 
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
+outlook-cli cal update 1 --start "2026-04-10 15:00" --end "2026-04-10 15:30" --location "Teams"
 outlook-cli cal delete 1                # delete by index from agenda
 outlook-cli cal accept 1                # accept an invitation
 outlook-cli cal tentative 1             # tentatively accept an invitation
@@ -107,13 +111,18 @@ outlook-cli teams messages 1 -n 20
 
 Lists Teams chats, shows chat details, and reads chat messages. This is read-only.
 
-### Force re-authentication
+### Auth and config
 
 ```bash
-outlook-cli auth
+outlook-cli auth                         # run headless login
+outlook-cli auth status                  # show token status
+outlook-cli auth status --json           # machine-readable token status
+outlook-cli auth clear                   # delete local token cache
+outlook-cli config check                 # validate local setup without printing secrets
+outlook-cli config check --json
 ```
 
-Runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the Okta MFA verification number to the console, waits for push approval, and saves tokens to `session_state/tokens.json`.
+`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the Okta MFA verification number to the console, waits for push approval, and saves tokens to `session_state/tokens.json`.
 
 Use a visible browser instead:
 
@@ -160,6 +169,19 @@ outlook_draft/
 ```
 
 Auth flow: `token_manager.py` reads local tokens from `session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
+
+## Tests
+
+```bash
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/python -m pytest -q
+```
+
+Live Outlook calendar tests are gated because they mutate real calendar data:
+
+```bash
+OUTLOOK_CLI_LIVE=1 .venv/bin/python -m pytest -q tests/test_live_calendar.py
+```
 
 ## Dependencies
 

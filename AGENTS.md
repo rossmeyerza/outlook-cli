@@ -28,8 +28,12 @@ outlook-cli draft delete <n>               # delete draft by index
 # Manage calendar
 outlook-cli cal agenda                     # list upcoming events (next 7 days)
 outlook-cli cal agenda -d 14               # list next 14 days
+outlook-cli cal agenda --plain             # plain text agenda
+outlook-cli cal agenda --json              # JSON agenda
 outlook-cli cal show <n>                   # show event details by index
+outlook-cli cal show <n> --json            # JSON event details with recurrence metadata
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
+outlook-cli cal update <n> --start "..." --end "..." # update event fields
 outlook-cli cal delete <n>                 # delete event by cached index or full ID
 outlook-cli cal accept <n>                 # accept event invitation
 outlook-cli cal tentative <n>              # tentatively accept event invitation
@@ -51,15 +55,18 @@ outlook-cli teams list -n 20               # list chats
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
 
-# Auth
+# Auth and config
 outlook-cli auth                           # force headless re-authentication
+outlook-cli auth status                    # show token status
+outlook-cli auth clear                     # delete local token cache
+outlook-cli config check                   # validate local config without printing secrets
 ```
 
 ## Key Details
 
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
-- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Shows attendee responses. Calendar creation uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
+- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.

@@ -212,7 +212,7 @@ class OutlookClient:
                 "startDateTime": start,
                 "endDateTime": end,
                 "$top": str(top),
-                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled",
+                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,type,seriesMasterId,recurrence",
                 "$orderby": "start/dateTime",
             },
             extra_headers=self._calendar_headers(),
@@ -225,7 +225,7 @@ class OutlookClient:
             "GET",
             f"/me/events/{event_id}",
             params={
-                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,body,attendees",
+                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,body,attendees,type,seriesMasterId,recurrence",
             },
             extra_headers=self._calendar_headers(),
         )
@@ -257,6 +257,31 @@ class OutlookClient:
             ]
         resp = self._request("POST", "/me/events", json_body=payload)
         return resp.json()
+
+    def update_event(
+        self,
+        event_id: str,
+        *,
+        subject: str | None = None,
+        start_dt: str | None = None,
+        end_dt: str | None = None,
+        location: str | None = None,
+        body: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a calendar event."""
+        payload: dict[str, Any] = {}
+        if subject is not None:
+            payload["Subject"] = subject
+        if start_dt is not None:
+            payload["Start"] = {"DateTime": start_dt, "TimeZone": config.OUTLOOK_TIMEZONE}
+        if end_dt is not None:
+            payload["End"] = {"DateTime": end_dt, "TimeZone": config.OUTLOOK_TIMEZONE}
+        if location is not None:
+            payload["Location"] = {"DisplayName": location}
+        if body is not None:
+            payload["Body"] = {"ContentType": "Text", "Content": body}
+        resp = self._request("PATCH", f"/me/events/{event_id}", json_body=payload)
+        return resp.json() if resp.content else {}
 
     def delete_event(self, event_id: str) -> None:
         """Delete a calendar event from the user's calendar."""

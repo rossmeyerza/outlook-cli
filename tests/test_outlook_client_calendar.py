@@ -115,3 +115,61 @@ def test_delete_event_uses_delete_method() -> None:
 
     assert client.calls[0]["method"] == "DELETE"
     assert client.calls[0]["path"] == "/me/events/event-1"
+
+
+def test_update_event_patches_only_provided_fields(monkeypatch) -> None:
+    monkeypatch.setattr(config, "OUTLOOK_TIMEZONE", "GMT Standard Time")
+    client = RecordingClient()
+
+    client.update_event(
+        "event-1",
+        subject="Updated",
+        start_dt="2026-05-18T17:00:00",
+        end_dt="2026-05-18T17:30:00",
+        location="Teams",
+        body="New body",
+    )
+
+    call = client.calls[0]
+    assert call["method"] == "PATCH"
+    assert call["path"] == "/me/events/event-1"
+    assert call["json_body"] == {
+        "Subject": "Updated",
+        "Start": {"DateTime": "2026-05-18T17:00:00", "TimeZone": "GMT Standard Time"},
+        "End": {"DateTime": "2026-05-18T17:30:00", "TimeZone": "GMT Standard Time"},
+        "Location": {"DisplayName": "Teams"},
+        "Body": {"ContentType": "Text", "Content": "New body"},
+    }
+
+
+def test_update_event_allows_clearing_location_and_body() -> None:
+    client = RecordingClient()
+
+    client.update_event("event-1", location="", body="")
+
+    assert client.calls[0]["json_body"] == {
+        "Location": {"DisplayName": ""},
+        "Body": {"ContentType": "Text", "Content": ""},
+    }
+
+
+def test_get_event_selects_recurrence_metadata() -> None:
+    client = RecordingClient()
+
+    client.get_event("event-1")
+
+    select = client.calls[0]["params"]["$select"]
+    assert "type" in select
+    assert "seriesMasterId" in select
+    assert "recurrence" in select
+
+
+def test_get_agenda_selects_recurrence_metadata() -> None:
+    client = RecordingClient()
+
+    client.get_agenda()
+
+    select = client.calls[0]["params"]["$select"]
+    assert "type" in select
+    assert "seriesMasterId" in select
+    assert "recurrence" in select
