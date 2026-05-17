@@ -64,16 +64,19 @@ outlook-cli auth                           # force headless re-authentication
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages read-only via Microsoft Graph.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
-- **Auth**: Shared with onedrive-fuse and sharepoint-fuse via ms-graph-explorer. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired.
+- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
 
 ## File Layout
 
 ```
 /home/ross/.local/lib/outlook-draft-cli/
-  .env                          # MS_EMAIL only; creds in ms-graph-explorer/.env
+  .env                          # MS_EMAIL and MS_PASSWORD, ignored by git
+  .env.example                  # Example local config
+  session_state/                # Local token cache, ignored by git
   outlook_draft/
+    auth.py                     # Built-in Playwright auth and token capture
     cli.py                      # CLI entry point
-    config.py                   # Config, paths to ms-graph-explorer
+    config.py                   # Config and local paths
     errors.py                   # Exceptions
     outlook_client.py           # Outlook REST API v2.0 client
     token_manager.py            # Token management + reauth trigger

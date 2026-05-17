@@ -2,7 +2,7 @@
 
 CLI tool for managing Outlook email, drafts, and contacts via the Outlook REST API v2.0.
 
-Authentication is shared with the other Microsoft projects (onedrive-fuse, sharepoint-fuse) through [ms-graph-explorer](../ms-graph-explorer/), which handles headless SSO login with Okta MFA.
+Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally under `session_state/`.
 
 ## Installation
 
@@ -13,6 +13,8 @@ git clone git@github.com:rossmeyerza/outlook-draft-cli.git
 cd outlook-draft-cli
 python3 -m venv .venv
 .venv/bin/pip install -e .
+.venv/bin/python -m playwright install chromium
+cp .env.example .env
 ln -sf $(pwd)/.venv/bin/outlook-cli ~/.local/bin/outlook-cli
 ```
 
@@ -105,7 +107,13 @@ Lists Teams chats, shows chat details, and reads chat messages. This is read-onl
 outlook-cli auth
 ```
 
-Runs ms-graph-explorer's headless auth flow: headless Chromium, enters credentials, prints the Okta MFA verification number to the console, waits for push approval.
+Runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the Okta MFA verification number to the console, waits for push approval, and saves tokens to `session_state/tokens.json`.
+
+Use a visible browser instead:
+
+```bash
+outlook-cli auth --headed
+```
 
 ## Configuration
 
@@ -113,9 +121,10 @@ Runs ms-graph-explorer's headless auth flow: headless Chromium, enters credentia
 
 ```
 MS_EMAIL=your.email@company.com
+MS_PASSWORD=your-password
 ```
 
-Credentials (email + password) live in ms-graph-explorer's `.env`. The token file is shared at `../ms-graph-explorer/session_state/tokens.json`.
+The token file is local to this repo at `session_state/tokens.json`. Both `.env` and `session_state/` are ignored by git.
 
 Draft signatures are loaded automatically from:
 
@@ -128,20 +137,24 @@ Draft bodies are sent as HTML and wrapped with Aptos styling before the saved si
 
 ```
 outlook_draft/
+  auth.py            # Built-in Playwright auth and token capture
   cli.py             # CLI with argparse subcommands
-  config.py          # Paths, env vars, points to ms-graph-explorer
+  config.py          # Paths and env vars
   errors.py          # Exception types
   outlook_client.py  # Outlook REST API v2.0 client (mail, drafts, contacts)
   token_manager.py   # Token loading, validation, triggers reauth
 ```
 
-Auth flow: `token_manager.py` reads tokens from ms-graph-explorer's `tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs `auth.py --headless` from ms-graph-explorer's venv.
+Auth flow: `token_manager.py` reads local tokens from `session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
 
 ## Dependencies
 
 - httpx (HTTP client)
 - pyjwt (token decoding)
 - python-dotenv (env loading)
+- python-dateutil (date parsing)
+- playwright (browser auth automation)
+- requests (token validation)
 - rich (terminal output)
 
 ## License

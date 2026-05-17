@@ -11,5 +11,6 @@ dist/
 *.egg-info/
 .env
 .env.*
+!.env.example
 session_state/
 tokens.json

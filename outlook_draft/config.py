@@ -9,12 +9,9 @@ _project_root = Path(__file__).resolve().parent.parent
 load_dotenv(_project_root / ".env")
 
 MS_EMAIL: str = os.environ.get("MS_EMAIL", "")
-MS_GRAPH_EXPLORER_DIR: Path = Path(
-    os.environ.get("MS_GRAPH_EXPLORER_DIR", str(_project_root.parent / "ms-graph-explorer"))
-)
-TOKENS_FILE: Path = MS_GRAPH_EXPLORER_DIR / "session_state" / "tokens.json"
-AUTH_SCRIPT: Path = MS_GRAPH_EXPLORER_DIR / "auth.py"
-AUTH_PYTHON: Path = MS_GRAPH_EXPLORER_DIR / ".venv" / "bin" / "python"
+MS_PASSWORD: str = os.environ.get("MS_PASSWORD", "")
+SESSION_DIR: Path = _project_root / "session_state"
+TOKENS_FILE: Path = SESSION_DIR / "tokens.json"
 
 OUTLOOK_BASE_URL: str = "https://outlook.office.com/api/v2.0"
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"

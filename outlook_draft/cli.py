@@ -439,10 +439,10 @@ def _resolve_cal_id(client: OutlookClient, ref: str) -> str:
     return ref
 
 
-def cmd_auth(_args: argparse.Namespace) -> None:
+def cmd_auth(args: argparse.Namespace) -> None:
     """Force re-authentication."""
     tm = TokenManager()
-    if tm.run_reauth():
+    if tm.run_reauth(headless=not args.headed):
         console.print(f"[green]Authenticated. Token expires in {tm.expires_in / 60:.0f} minutes.[/]")
     else:
         console.print("[red]Authentication failed.[/]")
@@ -644,7 +644,12 @@ def main() -> None:
     cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
 
     # ── Auth ──────────────────────────────────────────────────────────
-    sub.add_parser("auth", help="Force re-authentication")
+    p_auth = sub.add_parser("auth", help="Force re-authentication")
+    p_auth.add_argument(
+        "--headed",
+        action="store_true",
+        help="Open a visible browser instead of running fully headless",
+    )
 
     args = parser.parse_args()
 

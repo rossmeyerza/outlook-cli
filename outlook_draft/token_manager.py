@@ -3,8 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -27,7 +25,7 @@ def _decode_claims(token: str) -> dict:
 
 
 class TokenManager:
-    """Manages API tokens from ms-graph-explorer's tokens.json."""
+    """Manages API tokens from outlook-draft-cli's local tokens.json."""
 
     def __init__(
         self,
@@ -102,24 +100,18 @@ class TokenManager:
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             log.error("Failed to parse tokens file: %s", e)
 
-    def run_reauth(self) -> bool:
-        """Run ms-graph-explorer's auth.py headless to capture a fresh token."""
-        python = str(config.AUTH_PYTHON) if config.AUTH_PYTHON.exists() else sys.executable
-        log.info("Running headless re-authentication via %s", config.AUTH_SCRIPT)
+    def run_reauth(self, *, headless: bool = True) -> bool:
+        """Run the local auth flow to capture fresh tokens."""
+        from .auth import capture_tokens_via_browser
+
+        log.info("Running local re-authentication")
         try:
-            result = subprocess.run(
-                [python, str(config.AUTH_SCRIPT), "--headless"],
-                cwd=str(config.AUTH_SCRIPT.parent),
-                timeout=300,
-            )
-            if result.returncode == 0:
-                self._load_from_file()
-                return self._token is not None and not self.is_expired
-        except subprocess.TimeoutExpired:
-            log.error("Auth script timed out")
-        except FileNotFoundError:
-            log.error("Auth script not found: %s", config.AUTH_SCRIPT)
-        return False
+            capture_tokens_via_browser(headless=headless)
+        except Exception:
+            log.exception("Local re-authentication failed")
+            return False
+        self.force_reload()
+        return self._token is not None and not self.is_expired
 
     def force_reload(self) -> None:
         self._file_mtime = 0.0
