@@ -470,7 +470,7 @@ class OutlookClient:
             "/me/mailfolders",
             params={
                 "$top": str(top),
-                "$select": "id,displayName,parentFolderId,totalItemCount,unreadItemCount,wellKnownName",
+                "$select": "id,displayName,parentFolderId,totalItemCount,unreadItemCount",
             },
         )
         return resp.json().get("value", [])

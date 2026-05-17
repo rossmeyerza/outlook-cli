@@ -42,7 +42,7 @@ outlook-cli cal agenda --json              # JSON agenda
 outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal show <n> --json            # JSON event details with recurrence metadata
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
-outlook-cli cal rooms                      # find rooms
+outlook-cli cal rooms                      # find rooms if supported by tenant/token
 outlook-cli cal availability --attendee <email> --start "..." --end "..."
 outlook-cli cal find-time --attendee <email> --start "..." --end "..."
 outlook-cli cal update <n> --start "..." --end "..." # update event fields
@@ -85,7 +85,7 @@ outlook-cli config check                   # validate local config without print
 
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
-- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`.
+- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.

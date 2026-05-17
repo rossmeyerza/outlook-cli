@@ -81,7 +81,7 @@ outlook-cli cal show <event-id>         # show by full ID
 outlook-cli cal show 1 --json           # machine-readable JSON with recurrence metadata
 
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
-outlook-cli cal rooms --json               # find rooms
+outlook-cli cal rooms --json               # find rooms, if supported by tenant/token
 outlook-cli cal availability --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
 outlook-cli cal find-time --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
 outlook-cli cal update 1 --start "2026-04-10 15:00" --end "2026-04-10 15:30" --location "Teams"
@@ -93,7 +93,7 @@ outlook-cli cal accept 1 --no-send-response            # accept without emailing
 outlook-cli cal cancel 1 -m "Cancelled due to conflict" # cancel an event you organize
 ```
 
-Results from `cal agenda` are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations.
+Results from `cal agenda` are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations. Room discovery is tenant/token dependent; use `cal availability` or `cal find-time` with known room email addresses if `cal rooms` is unavailable.
 
 ### Tasks
 

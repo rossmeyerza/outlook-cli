@@ -303,7 +303,14 @@ def cmd_cal_rooms(args: argparse.Namespace) -> None:
     try:
         rooms = client.find_rooms(room_list=args.room_list)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to find rooms: {e}[/]")
+        message = str(e)
+        if "findRooms" in message and "Resource not found" in message:
+            _console(args).print(
+                "[yellow]Room discovery is not available through this Outlook REST token/tenant.[/] "
+                "Use `cal availability` or `cal find-time` with known room email addresses instead."
+            )
+        else:
+            _console(args).print(f"[red]Failed to find rooms: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
