@@ -130,13 +130,15 @@ MS_EMAIL=your.email@company.com
 MS_PASSWORD=your-password
 LOCAL_TIMEZONE=Europe/London
 OUTLOOK_TIMEZONE=GMT Standard Time
+SIGNATURE_NEW_FILE=signature-new.html
+SIGNATURE_REPLY_FILE=signature-reply.html
 ```
 
 The token file is local to this repo at `session_state/tokens.json`. Both `.env` and `session_state/` are ignored by git.
 
 `LOCAL_TIMEZONE` is the Python timezone used to interpret calendar times you type. `OUTLOOK_TIMEZONE` is the Microsoft timezone sent to Outlook. For the UK, use `Europe/London` and `GMT Standard Time`.
 
-Draft signatures are loaded automatically from:
+Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATURE_REPLY_FILE`. Relative paths are resolved from the project root. If unset, the CLI defaults to:
 
 - `signature-new.html` for new drafts
 - `signature-reply.html` for reply drafts
@@ -150,6 +152,7 @@ outlook_draft/
   auth.py            # Built-in Playwright auth and token capture
   calendar_time.py   # Calendar timezone parsing and Outlook timezone headers
   cli.py             # CLI with argparse subcommands
+  signatures.py      # Signature path loading and HTML sanitization
   config.py          # Paths and env vars
   errors.py          # Exception types
   outlook_client.py  # Outlook REST API v2.0 client (mail, drafts, contacts)

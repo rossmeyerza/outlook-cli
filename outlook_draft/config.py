@@ -15,12 +15,30 @@ OUTLOOK_TIMEZONE: str = os.environ.get("OUTLOOK_TIMEZONE", "GMT Standard Time")
 SESSION_DIR: Path = _project_root / "session_state"
 TOKENS_FILE: Path = SESSION_DIR / "tokens.json"
 
+
+def resolve_config_path(env_name: str, default: Path) -> Path:
+    """Resolve an optional path from .env, relative to the project root if needed."""
+    raw = os.environ.get(env_name, "").strip()
+    if not raw:
+        return default
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = _project_root / path
+    return path
+
+
 OUTLOOK_BASE_URL: str = "https://outlook.office.com/api/v2.0"
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 OUTLOOK_TOKEN_DOMAIN: str = "outlook.office.com"
 GRAPH_TOKEN_DOMAIN: str = "graph.microsoft.com"
-SIGNATURE_NEW_FILE: Path = _project_root / "signature-new.html"
-SIGNATURE_REPLY_FILE: Path = _project_root / "signature-reply.html"
+SIGNATURE_NEW_FILE: Path = resolve_config_path(
+    "SIGNATURE_NEW_FILE",
+    _project_root / "signature-new.html",
+)
+SIGNATURE_REPLY_FILE: Path = resolve_config_path(
+    "SIGNATURE_REPLY_FILE",
+    _project_root / "signature-reply.html",
+)
 EMAIL_FONT_FAMILY: str = (
     "Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif"
 )

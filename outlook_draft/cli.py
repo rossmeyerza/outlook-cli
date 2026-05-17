@@ -19,7 +19,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from datetime import datetime
 from html import escape
@@ -38,6 +37,7 @@ from .commands import teams as teams_commands
 from .commands import tasks as tasks_commands
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .outlook_client import OutlookClient
+from .signatures import load_signature
 from .token_manager import TokenManager
 
 console = Console()
@@ -84,31 +84,13 @@ def _load_body(args: argparse.Namespace) -> str:
     sys.exit(1)
 
 
-def _sanitize_signature_html(html: str) -> str:
-    """Remove Outlook editor noise and unsupported blob images."""
-    html = html.strip()
-    html = re.sub(r"\s+(?:id|class)=\"[^\"]*\"", "", html)
-    html = re.sub(r"<img\b[^>]*\bsrc=\"blob:[^\"]*\"[^>]*>", "", html, flags=re.IGNORECASE)
-    html = html.replace(
-        "var(--darkColor_rgb_0__0__0_, rgb(0, 0, 0))",
-        "rgb(0, 0, 0)",
-    )
-    html = html.replace(
-        "var(--darkColor_rgb_255__255__255_, rgb(255, 255, 255))",
-        "rgb(255, 255, 255)",
-    )
-    html = html.replace("var(--darkColor_black, black)", "black")
-    html = re.sub(r"<span>\s*</span>", "", html)
-    html = re.sub(r">\s+<", "><", html)
-    return html
-
-
 def _load_signature(path: Path) -> str:
     """Load a saved Outlook signature HTML file."""
-    if not path.exists():
-        console.print(f"[red]Signature file not found: {path}[/]")
+    try:
+        return load_signature(path)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/]")
         sys.exit(1)
-    return _sanitize_signature_html(path.read_text(encoding="utf-8"))
 
 
 def _text_to_html(text: str) -> str:

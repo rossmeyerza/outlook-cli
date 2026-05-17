@@ -64,7 +64,7 @@ outlook-cli auth                           # force headless re-authentication
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
 - **Reply drafts**: `draft reply` creates a draft tied to an existing message. Use a cached mail index from `mail unread` / `mail search`, a cached ID suffix, or a full message ID.
-- **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `signature-new.html` or `signature-reply.html` automatically.
+- **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages read-only via Microsoft Graph.
@@ -75,13 +75,14 @@ outlook-cli auth                           # force headless re-authentication
 
 ```
 /home/ross/.local/lib/outlook-draft-cli/
-  .env                          # MS_EMAIL, MS_PASSWORD, timezone config, ignored by git
+  .env                          # MS_EMAIL, MS_PASSWORD, timezone, signature path config, ignored by git
   .env.example                  # Example local config
   session_state/                # Local token cache, ignored by git
   outlook_draft/
     auth.py                     # Built-in Playwright auth and token capture
     calendar_time.py            # Calendar timezone parsing and Outlook headers
     cli.py                      # CLI entry point
+    signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths
     errors.py                   # Exceptions
     outlook_client.py           # Outlook REST API v2.0 client
