@@ -610,6 +610,40 @@ def main() -> None:
     cmd_cal_create_cmd.add_argument("--attendee", dest="attendees", action="append", help="Attendee email (repeatable)")
     cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
 
+    cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")
+    cmd_cal_delete_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_delete_cmd.set_defaults(func=calendar_commands.cmd_cal_delete, _calendar_ctx=calendar_ctx)
+
+    cmd_cal_accept_cmd = cal_sub.add_parser("accept", help="Accept an event invitation")
+    cmd_cal_accept_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_accept_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_accept_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_accept_cmd.set_defaults(
+        func=calendar_commands.cmd_cal_accept,
+        _calendar_ctx=calendar_ctx,
+        send_response=True,
+    )
+
+    cmd_cal_decline_cmd = cal_sub.add_parser("decline", help="Decline an event invitation")
+    cmd_cal_decline_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_decline_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_decline_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_decline_cmd.set_defaults(
+        func=calendar_commands.cmd_cal_decline,
+        _calendar_ctx=calendar_ctx,
+        send_response=True,
+    )
+
     # ── Contacts ──────────────────────────────────────────────────────
     p_contact = sub.add_parser("contact", help="Manage contacts")
     contact_sub = p_contact.add_subparsers(dest="command", required=True)

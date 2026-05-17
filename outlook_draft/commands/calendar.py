@@ -221,3 +221,47 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
         sys.exit(1)
     finally:
         client.close()
+
+
+def cmd_cal_delete(args: argparse.Namespace) -> None:
+    """Delete a calendar event."""
+    client = _get_client(args)
+    event_id = _resolve_cal_id(args, client, args.event_id)
+    try:
+        event = client.get_event(event_id)
+        client.delete_event(event_id)
+        _console(args).print(f"[green]Deleted event:[/] {event.get('Subject', event_id)}")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to delete event: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def _respond_to_event(args: argparse.Namespace, response: str, label: str) -> None:
+    client = _get_client(args)
+    event_id = _resolve_cal_id(args, client, args.event_id)
+    try:
+        event = client.get_event(event_id)
+        client.respond_to_event(
+            event_id,
+            response,
+            comment=args.comment or "",
+            send_response=args.send_response,
+        )
+        _console(args).print(f"[green]{label} event:[/] {event.get('Subject', event_id)}")
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to {label.lower()} event: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+
+def cmd_cal_accept(args: argparse.Namespace) -> None:
+    """Accept a calendar event."""
+    _respond_to_event(args, "accept", "Accepted")
+
+
+def cmd_cal_decline(args: argparse.Namespace) -> None:
+    """Decline a calendar event."""
+    _respond_to_event(args, "decline", "Declined")

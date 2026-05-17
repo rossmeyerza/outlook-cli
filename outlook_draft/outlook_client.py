@@ -252,6 +252,24 @@ class OutlookClient:
         resp = self._request("POST", "/me/events", json_body=payload)
         return resp.json()
 
+    def delete_event(self, event_id: str) -> None:
+        """Delete a calendar event from the user's calendar."""
+        self._request("DELETE", f"/me/events/{event_id}")
+
+    def respond_to_event(
+        self,
+        event_id: str,
+        response: str,
+        *,
+        comment: str = "",
+        send_response: bool = True,
+    ) -> None:
+        """Accept, decline, or tentatively accept a calendar event."""
+        if response not in {"accept", "decline", "tentativelyAccept"}:
+            raise ValueError(f"Unsupported event response: {response}")
+        payload = {"Comment": comment, "SendResponse": send_response}
+        self._request("POST", f"/me/events/{event_id}/{response}", json_body=payload)
+
     # ── Tasks ──────────────────────────────────────────────────────────
 
     def list_tasks(self, top: int = 20) -> list[dict[str, Any]]:

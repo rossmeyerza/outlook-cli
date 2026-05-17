@@ -69,9 +69,13 @@ outlook-cli cal show 1                  # show event details by index from agend
 outlook-cli cal show <event-id>         # show by full ID
 
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
+outlook-cli cal delete 1                # delete by index from agenda
+outlook-cli cal accept 1                # accept an invitation
+outlook-cli cal decline 1 -m "Sorry, I can't make it"  # decline with comment
+outlook-cli cal accept 1 --no-send-response            # accept without emailing organizer
 ```
 
-Results from `cal agenda` are cached to disk so `cal show <n>` works across invocations.
+Results from `cal agenda` are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work across invocations.
 
 ### Tasks
 

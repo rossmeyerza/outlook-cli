@@ -30,6 +30,9 @@ outlook-cli cal agenda                     # list upcoming events (next 7 days)
 outlook-cli cal agenda -d 14               # list next 14 days
 outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
+outlook-cli cal delete <n>                 # delete event by cached index or full ID
+outlook-cli cal accept <n>                 # accept event invitation
+outlook-cli cal decline <n>                # decline event invitation
 
 # Manage tasks
 outlook-cli task create "<name>"           # create a new task
@@ -54,7 +57,7 @@ outlook-cli auth                           # force headless re-authentication
 
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
-- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>` works in a separate invocation. Shows attendee responses.
+- **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal delete <n>`, `cal accept <n>`, and `cal decline <n>` work in a separate invocation. Shows attendee responses.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
