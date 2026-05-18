@@ -21,6 +21,15 @@ step()  { printf "\n${BOLD}%s${NC}\n" "$1"; }
 INSTALL_DIR="${OUTLOOK_CLI_DIR:-${HOME}/.local/lib/outlook-draft-cli}"
 BIN_DIR="${HOME}/.local/bin"
 IS_UPGRADE=false
+FORCE_RECONFIGURE=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --reconfigure|--reconfig)
+      FORCE_RECONFIGURE=true
+      ;;
+  esac
+done
 
 # ── Detect upgrade vs fresh install ───────────────────────────────
 
@@ -117,8 +126,41 @@ ok "outlook-cli linked to ${BIN_DIR}/outlook-cli"
 
 # ── Configuration (fresh install only) ────────────────────────────
 
-if [ "$IS_UPGRADE" = false ]; then
+# ── Configuration ─────────────────────────────────────────────────
+
+env_value() {
+  # Print the raw value of a key from .env, empty if missing
+  local key="$1"
+  if [ -f "${INSTALL_DIR}/.env" ]; then
+    awk -F= -v k="$key" '$1 == k { sub(/^[^=]+=/, ""); print; exit }' "${INSTALL_DIR}/.env"
+  fi
+}
+
+MS_EMAIL_CURRENT="$(env_value MS_EMAIL || true)"
+MS_PASSWORD_CURRENT="$(env_value MS_PASSWORD || true)"
+MS_EMAIL_PLACEHOLDER="your.email@company.com"
+MS_PASSWORD_PLACEHOLDER="your-password"
+
+NEEDS_CONFIG=false
+if [ "$FORCE_RECONFIGURE" = true ]; then
+  NEEDS_CONFIG=true
+fi
+if [ ! -f "${INSTALL_DIR}/.env" ]; then
+  NEEDS_CONFIG=true
+fi
+if [ -z "$MS_EMAIL_CURRENT" ] || [ "$MS_EMAIL_CURRENT" = "$MS_EMAIL_PLACEHOLDER" ]; then
+  NEEDS_CONFIG=true
+fi
+if [ -z "$MS_PASSWORD_CURRENT" ] || [ "$MS_PASSWORD_CURRENT" = "$MS_PASSWORD_PLACEHOLDER" ]; then
+  NEEDS_CONFIG=true
+fi
+
+if [ "$NEEDS_CONFIG" = true ]; then
   step "Configuration"
+
+  if [ "$FORCE_RECONFIGURE" = true ]; then
+    info "--reconfigure was passed, prompting for new credentials."
+  fi
 
   printf "\noutlook-cli needs your Microsoft 365 email and password\n"
   printf "to authenticate via your organisation's SSO.\n"
@@ -128,8 +170,14 @@ if [ "$IS_UPGRADE" = false ]; then
   exec 3</dev/tty
 
   while true; do
-    printf "MS_EMAIL (your work email): "
-    read -r MS_EMAIL <&3
+    if [ -n "$MS_EMAIL_CURRENT" ] && [ "$MS_EMAIL_CURRENT" != "$MS_EMAIL_PLACEHOLDER" ]; then
+      printf "MS_EMAIL [%s]: " "$MS_EMAIL_CURRENT"
+      read -r MS_EMAIL_INPUT <&3
+      MS_EMAIL="${MS_EMAIL_INPUT:-$MS_EMAIL_CURRENT}"
+    else
+      printf "MS_EMAIL (your work email): "
+      read -r MS_EMAIL <&3
+    fi
     if echo "$MS_EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$'; then
       break
     fi
@@ -148,13 +196,15 @@ if [ "$IS_UPGRADE" = false ]; then
     printf "Password cannot be empty.\n"
   done
 
-  printf "LOCAL_TIMEZONE (default: Europe/London): "
+  CURRENT_LOCAL_TZ="$(env_value LOCAL_TIMEZONE || true)"
+  printf "LOCAL_TIMEZONE (default: %s): " "${CURRENT_LOCAL_TZ:-Europe/London}"
   read -r LOCAL_TIMEZONE <&3
-  LOCAL_TIMEZONE="${LOCAL_TIMEZONE:-Europe/London}"
+  LOCAL_TIMEZONE="${LOCAL_TIMEZONE:-${CURRENT_LOCAL_TZ:-Europe/London}}"
 
-  printf "OUTLOOK_TIMEZONE (default: GMT Standard Time): "
+  CURRENT_OUTLOOK_TZ="$(env_value OUTLOOK_TIMEZONE || true)"
+  printf "OUTLOOK_TIMEZONE (default: %s): " "${CURRENT_OUTLOOK_TZ:-GMT Standard Time}"
   read -r OUTLOOK_TIMEZONE <&3
-  OUTLOOK_TIMEZONE="${OUTLOOK_TIMEZONE:-GMT Standard Time}"
+  OUTLOOK_TIMEZONE="${OUTLOOK_TIMEZONE:-${CURRENT_OUTLOOK_TZ:-GMT Standard Time}}"
 
   exec 3<&-
 
@@ -167,9 +217,10 @@ SIGNATURE_NEW_FILE=signature-new.html
 SIGNATURE_REPLY_FILE=signature-reply.html
 EOF
 
+  chmod 600 "${INSTALL_DIR}/.env"
   ok ".env written to ${INSTALL_DIR}/.env"
 else
-  ok ".env already exists, not modified"
+  ok ".env already configured, not modified (use --reconfigure to rewrite)"
 fi
 
 # ── PATH check ────────────────────────────────────────────────────
