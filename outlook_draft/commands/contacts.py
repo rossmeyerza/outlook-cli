@@ -69,8 +69,8 @@ def cmd_contacts(args: argparse.Namespace) -> None:
 
     table = Table(title=f"Contacts matching '{args.query}'")
     table.add_column("#", style="dim", width=3)
-    table.add_column("Name", width=30)
-    table.add_column("Email", ratio=1)
+    table.add_column("Name", ratio=1, min_width=18)
+    table.add_column("Email", ratio=2, min_width=28, overflow="fold")
     table.add_column("Type", style="dim", width=16)
     table.add_column("ID", style="dim", width=16, no_wrap=True)
 
