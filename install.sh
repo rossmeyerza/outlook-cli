@@ -94,6 +94,13 @@ ok "Python packages installed"
   "${INSTALL_DIR}/.venv/bin/python" -m playwright install chromium
 ok "Playwright Chromium ready"
 
+# ── WSL note for headless deps ────────────────────────────────────
+
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  warn "Detected WSL. If headless auth fails, run:"
+  warn "  sudo ${INSTALL_DIR}/.venv/bin/python -m playwright install-deps chromium"
+fi
+
 # ── Symlink ────────────────────────────────────────────────────────
 
 ln -sf "${INSTALL_DIR}/.venv/bin/outlook-cli" "${BIN_DIR}/outlook-cli"
