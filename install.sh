@@ -85,6 +85,15 @@ fi
 
 step "Installing dependencies"
 
+if ! python3 -c 'import ensurepip' >/dev/null 2>&1; then
+  printf "${RED}error${NC} Python venv module is missing.\n"
+  printf "On Debian/Ubuntu/WSL, install it with:\n"
+  printf "  sudo apt install python%s-venv python3-venv\n" "${PY_VERSION}"
+  printf "Then re-run this installer.\n"
+  exit 1
+fi
+
+rm -rf "${INSTALL_DIR}/.venv"
 python3 -m venv "${INSTALL_DIR}/.venv"
 "${INSTALL_DIR}/.venv/bin/pip" install --quiet --upgrade pip
 "${INSTALL_DIR}/.venv/bin/pip" install --quiet -e "$INSTALL_DIR"
