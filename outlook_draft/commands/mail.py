@@ -12,6 +12,7 @@ from rich.table import Table
 
 from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
+from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
 
 
 JsonDict = dict[str, Any]
@@ -308,28 +309,36 @@ def cmd_attachments(args: argparse.Namespace) -> None:
     _console(args).print(table)
 
 
+def _unique_path(out_dir: Path, filename: str, *, overwrite: bool) -> Path:
+    path = out_dir / filename
+    if not path.exists() or overwrite:
+        return path
+    stem, suffix = path.stem, path.suffix
+    n = 2
+    while (out_dir / f"{stem}-{n}{suffix}").exists():
+        n += 1
+    return out_dir / f"{stem}-{n}{suffix}"
+
+
 def cmd_download_attachments(args: argparse.Namespace) -> None:
+    """Download all file attachments from a message, including inline ones."""
     client = _get_client(args)
     message_id = _resolve_message_id(args, client, args.message_id)
     out_dir = Path(args.dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
+    skip_inline = not getattr(args, "include_inline", False)
     try:
         attachments = client.list_message_attachments(message_id)
-        downloaded = []
+        downloaded: list[Path] = []
         for attachment in attachments:
+            if skip_inline and attachment.get("IsInline"):
+                continue
             full = client.get_message_attachment(message_id, attachment.get("Id", ""))
             content = full.get("ContentBytes")
             if not content:
                 continue
-            filename = _safe_filename(full.get("Name", "attachment"))
-            path = out_dir / filename
-            if path.exists() and not args.overwrite:
-                stem = path.stem
-                suffix = path.suffix
-                n = 2
-                while (out_dir / f"{stem}-{n}{suffix}").exists():
-                    n += 1
-                path = out_dir / f"{stem}-{n}{suffix}"
+            filename = _safe_filename(full.get("Name") or "attachment")
+            path = _unique_path(out_dir, filename, overwrite=args.overwrite)
             path.write_bytes(base64.b64decode(content))
             downloaded.append(path)
     except OutlookAPIError as e:
@@ -340,6 +349,91 @@ def cmd_download_attachments(args: argparse.Namespace) -> None:
 
     if not downloaded:
         _console(args).print("[dim]No downloadable file attachments found.[/]")
+        return
+    for path in downloaded:
+        _console(args).print(f"[green]Downloaded:[/] {path}")
+
+
+def _collect_message_links(message: JsonDict, share_only: bool) -> list[JsonDict]:
+    body = message.get("Body") or {}
+    if (body.get("ContentType") or "").lower() != "html":
+        return []
+    links = extract_links_from_html(body.get("Content") or "")
+    if share_only:
+        links = filter_share_links(links)
+    return links
+
+
+def cmd_links(args: argparse.Namespace) -> None:
+    """List shareable links and inline image URLs in an email body."""
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        message = client.get_message(message_id)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to read email: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    links = _collect_message_links(message, share_only=args.share_only)
+    if not links:
+        _console(args).print("[dim]No links found in this email body.[/]")
+        return
+
+    table = Table(title=f"Links ({len(links)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Kind", width=8)
+    table.add_column("Label", ratio=1, overflow="fold")
+    table.add_column("URL", ratio=2, overflow="fold")
+    for i, link in enumerate(links, 1):
+        table.add_row(str(i), link["kind"], link.get("label", "") or "", link["url"])
+    _console(args).print(table)
+
+
+def cmd_download_links(args: argparse.Namespace) -> None:
+    """Download SharePoint/OneDrive links from an email body via Graph."""
+    client = _get_client(args)
+    message_id = _resolve_message_id(args, client, args.message_id)
+    try:
+        message = client.get_message(message_id)
+    except OutlookAPIError as e:
+        _console(args).print(f"[red]Failed to read email: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    candidates = _collect_message_links(message, share_only=True)
+    if not candidates:
+        _console(args).print("[dim]No SharePoint/OneDrive links found in this email body.[/]")
+        return
+
+    out_dir = Path(args.dir).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    from ..cli import _get_graph_client  # avoid circular import at module load
+    graph = _get_graph_client()
+    downloaded: list[Path] = []
+    try:
+        for link in candidates:
+            url = link["url"]
+            if not looks_like_share_url(url):
+                continue
+            try:
+                metadata = graph.get_share_drive_item(url)
+                content = graph.download_share_url(url)
+            except OutlookAPIError as e:
+                _console(args).print(f"[yellow]Skipped {url}: {e}[/]")
+                continue
+            filename = _safe_filename(metadata.get("name") or link.get("label") or "download")
+            path = _unique_path(out_dir, filename, overwrite=args.overwrite)
+            path.write_bytes(content)
+            downloaded.append(path)
+    finally:
+        graph.close()
+
+    if not downloaded:
+        _console(args).print("[dim]No downloadable links resolved.[/]")
         return
     for path in downloaded:
         _console(args).print(f"[green]Downloaded:[/] {path}")

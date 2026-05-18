@@ -9,6 +9,7 @@ import httpx
 from . import config
 from .calendar_time import outlook_timezone_prefer_header
 from .errors import OutlookAPIError, SendingDisabledError
+from .links import encode_share_id
 from .token_manager import TokenManager
 
 log = logging.getLogger(__name__)
@@ -482,6 +483,22 @@ class OutlookClient:
     def archive_message(self, message_id: str) -> dict[str, Any]:
         """Move a message to the archive folder."""
         return self.move_message(message_id, "archive")
+
+    def get_share_drive_item(self, share_url: str) -> dict[str, Any]:
+        """Resolve a SharePoint/OneDrive sharing URL to a Graph driveItem."""
+        share_id = encode_share_id(share_url)
+        resp = self._request("GET", f"/shares/{share_id}/driveItem")
+        return resp.json()
+
+    def download_share_url(self, share_url: str) -> bytes:
+        """Download the bytes behind a SharePoint/OneDrive sharing URL.
+
+        Uses Graph `/shares/{id}/driveItem/content`, which redirects to a
+        short-lived signed download URL that does not require an SPO token.
+        """
+        share_id = encode_share_id(share_url)
+        resp = self._request("GET", f"/shares/{share_id}/driveItem/content")
+        return resp.content
 
     def list_message_attachments(self, message_id: str) -> list[dict[str, Any]]:
         """List message attachments."""

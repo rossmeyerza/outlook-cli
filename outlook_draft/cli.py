@@ -831,7 +831,30 @@ def main() -> None:
     cmd_mail_download_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_download_attachments.add_argument("--dir", "-d", default="attachments", help="Output directory")
     cmd_mail_download_attachments.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_mail_download_attachments.add_argument(
+        "--include-inline",
+        action="store_true",
+        help="Also download attachments marked as inline (e.g. embedded images)",
+    )
     cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments, _mail_ctx=mail_ctx)
+
+    cmd_mail_links = mail_sub.add_parser("links", help="List links and inline image URLs in an email body")
+    cmd_mail_links.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_links.add_argument(
+        "--share-only",
+        action="store_true",
+        help="Only show SharePoint/OneDrive style links",
+    )
+    cmd_mail_links.set_defaults(func=mail_commands.cmd_links, _mail_ctx=mail_ctx)
+
+    cmd_mail_download_links = mail_sub.add_parser(
+        "download-links",
+        help="Download SharePoint/OneDrive links from an email body via Graph",
+    )
+    cmd_mail_download_links.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_download_links.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_mail_download_links.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_mail_download_links.set_defaults(func=mail_commands.cmd_download_links, _mail_ctx=mail_ctx)
 
     # Direct email sending is intentionally not exposed to agents.
     # Implementation is preserved in cmd_send_mail / OutlookClient.send_mail,
@@ -1040,6 +1063,45 @@ def main() -> None:
     cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
     cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
+
+    cmd_teams_attachments_cmd = teams_sub.add_parser(
+        "attachments",
+        help="List Teams attachments and SharePoint/OneDrive links in a chat",
+    )
+    cmd_teams_attachments_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_attachments_cmd.add_argument(
+        "--scan",
+        type=int,
+        default=50,
+        help="How many recent messages to scan for attachments and links",
+    )
+    cmd_teams_attachments_cmd.set_defaults(
+        func=teams_commands.cmd_teams_attachments,
+        _teams_ctx=teams_ctx,
+    )
+
+    cmd_teams_download_attachments_cmd = teams_sub.add_parser(
+        "download-attachments",
+        help="Download Teams attachments/share links via Graph",
+    )
+    cmd_teams_download_attachments_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_download_attachments_cmd.add_argument(
+        "--attachment",
+        "-a",
+        help="Attachment index from `teams attachments`, full URL, or substring match",
+    )
+    cmd_teams_download_attachments_cmd.add_argument(
+        "--scan",
+        type=int,
+        default=50,
+        help="How many recent messages to scan for attachments and links",
+    )
+    cmd_teams_download_attachments_cmd.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_teams_download_attachments_cmd.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_teams_download_attachments_cmd.set_defaults(
+        func=teams_commands.cmd_teams_download_attachments,
+        _teams_ctx=teams_ctx,
+    )
 
     # Teams sending is intentionally not exposed to agents. Teams reading stays enabled.
     # Implementation is preserved in cmd_teams_send / OutlookClient.send_teams_message,
