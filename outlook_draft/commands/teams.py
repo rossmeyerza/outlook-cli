@@ -101,7 +101,7 @@ def _resolve_teams_chat_id(args: argparse.Namespace, ref: str) -> str:
 
 
 def _teams_sender(message: JsonDict) -> str:
-    from_obj = message.get("from", {})
+    from_obj = message.get("from") or {}
     for key in ("user", "application", "device"):
         entity = from_obj.get(key) or {}
         label = entity.get("displayName") or entity.get("id")

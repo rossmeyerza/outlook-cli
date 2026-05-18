@@ -63,7 +63,7 @@ class OutlookClient:
     ) -> httpx.Response:
         """Make a request to the API with retry on 401/429/5xx."""
         client = self._ensure_client()
-        url = f"{self._base_url}{path}"
+        url = path if path.startswith("https://") else f"{self._base_url}{path}"
         headers = self._headers(extra_headers)
 
         for attempt in range(max_retries + 1):
@@ -509,16 +509,26 @@ class OutlookClient:
         return resp.json()
 
     def list_teams_chats(self, top: int = 20) -> list[dict[str, Any]]:
-        """List Teams chats for the current user."""
-        resp = self._request(
-            "GET",
-            "/me/chats",
-            params={
-                "$top": str(top),
-                "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl",
-            },
-        )
-        return resp.json().get("value", [])
+        """List Teams chats for the current user, following Graph paging."""
+        chats: list[dict[str, Any]] = []
+        page_size = min(max(top, 1), 50)
+        path = "/me/chats"
+        params: dict[str, str] | None = {
+            "$top": str(page_size),
+            "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl",
+        }
+
+        while len(chats) < top and path:
+            resp = self._request("GET", path, params=params)
+            data = resp.json()
+            chats.extend(data.get("value", []))
+            next_link = data.get("@odata.nextLink")
+            if not next_link:
+                break
+            path = next_link
+            params = None
+
+        return chats[:top]
 
     def get_teams_chat(self, chat_id: str) -> dict[str, Any]:
         """Get a Teams chat by ID."""

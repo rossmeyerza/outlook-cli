@@ -173,3 +173,18 @@ def test_send_teams_message_is_disabled_for_agent_safety() -> None:
         client.send_teams_message("chat-1", "Hello", content_type="text")
 
     assert client.calls == []
+
+
+def test_list_teams_chats_caps_page_size_to_graph_limit() -> None:
+    client = RecordingClient()
+
+    client.list_teams_chats(top=55)
+
+    assert client.calls[0]["path"] == "/me/chats"
+    assert client.calls[0]["params"]["$top"] == "50"
+
+
+def test_teams_sender_handles_null_from() -> None:
+    from outlook_draft.commands.teams import _teams_sender
+
+    assert _teams_sender({"from": None}) == "Unknown"
