@@ -6,10 +6,28 @@ Authentication is built into this repo. The CLI uses Playwright to open Outlook 
 
 ## Installation
 
-Clone the private repo and install it into a local virtualenv:
+### One-line installer (recommended)
 
 ```bash
-git clone git@github.com:rossmeyerza/outlook-draft-cli.git
+curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
+```
+
+Requires Python 3.12+ and `git`. The script will:
+
+- Clone this repo to `~/.local/lib/outlook-draft-cli`
+- Set up a Python virtualenv and install all dependencies
+- Install Playwright Chromium for authentication
+- Prompt you for your Microsoft 365 email, password, and timezone
+- Write your `.env` automatically
+- Symlink `outlook-cli` to `~/.local/bin`
+
+You can read the full script before running it at:
+`https://outlook-cli.21436587.xyz/install.sh`
+
+### Manual installation
+
+```bash
+git clone https://github.com/rossmeyerza/outlook-draft-cli.git
 cd outlook-draft-cli
 python3 -m venv .venv
 .venv/bin/pip install -e .
@@ -18,11 +36,23 @@ cp .env.example .env
 ln -sf $(pwd)/.venv/bin/outlook-cli ~/.local/bin/outlook-cli
 ```
 
+Then edit `.env` and set `MS_EMAIL` and `MS_PASSWORD`.
+
 Check the command is available:
 
 ```bash
 outlook-cli --help
 ```
+
+### Upgrading
+
+Re-run the installer at any time to pull the latest changes:
+
+```bash
+curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
+```
+
+The script detects an existing install and runs `git pull` and updates dependencies without touching your `.env`.
 
 ## Usage
 
