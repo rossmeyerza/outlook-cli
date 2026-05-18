@@ -226,7 +226,11 @@ class OutlookClient:
             "GET",
             f"/me/events/{event_id}",
             params={
-                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,body,attendees,type,seriesMasterId,recurrence",
+                "$select": (
+                    "id,subject,start,end,location,organizer,isAllDay,isCancelled,"
+                    "body,attendees,type,seriesMasterId,recurrence,"
+                    "isOnlineMeeting,onlineMeetingProvider,onlineMeeting"
+                ),
             },
             extra_headers=self._calendar_headers(),
         )
@@ -293,8 +297,10 @@ class OutlookClient:
         location: str | None = None,
         body: str | None = None,
         attendees: list[str] | None = None,
+        is_online_meeting: bool = False,
+        online_meeting_provider: str = "teamsForBusiness",
     ) -> dict[str, Any]:
-        """Create a new calendar event using the configured Outlook timezone."""
+        """Create a calendar event using the configured Outlook timezone."""
         payload: dict[str, Any] = {
             "Subject": subject,
             "Start": {"DateTime": start_dt, "TimeZone": config.OUTLOOK_TIMEZONE},
@@ -309,6 +315,9 @@ class OutlookClient:
                 {"EmailAddress": {"Address": a}, "Type": "Required"}
                 for a in attendees
             ]
+        if is_online_meeting:
+            payload["IsOnlineMeeting"] = True
+            payload["OnlineMeetingProvider"] = online_meeting_provider
         resp = self._request("POST", "/me/events", json_body=payload)
         return resp.json()
 
@@ -321,6 +330,8 @@ class OutlookClient:
         end_dt: str | None = None,
         location: str | None = None,
         body: str | None = None,
+        is_online_meeting: bool | None = None,
+        online_meeting_provider: str = "teamsForBusiness",
     ) -> dict[str, Any]:
         """Update a calendar event."""
         payload: dict[str, Any] = {}
@@ -334,6 +345,10 @@ class OutlookClient:
             payload["Location"] = {"DisplayName": location}
         if body is not None:
             payload["Body"] = {"ContentType": "Text", "Content": body}
+        if is_online_meeting is not None:
+            payload["IsOnlineMeeting"] = bool(is_online_meeting)
+            if is_online_meeting:
+                payload["OnlineMeetingProvider"] = online_meeting_provider
         resp = self._request("PATCH", f"/me/events/{event_id}", json_body=payload)
         return resp.json() if resp.content else {}
 

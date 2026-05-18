@@ -925,6 +925,11 @@ def main() -> None:
     cmd_cal_create_cmd.add_argument("--location", "-l", help="Location")
     cmd_cal_create_cmd.add_argument("--body", "-b", help="Event description")
     cmd_cal_create_cmd.add_argument("--attendee", dest="attendees", action="append", help="Attendee email (repeatable)")
+    cmd_cal_create_cmd.add_argument(
+        "--teams",
+        action="store_true",
+        help="Create as a Teams meeting (adds Teams join link)",
+    )
     cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
 
     cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
@@ -956,6 +961,20 @@ def main() -> None:
     cmd_cal_update_cmd.add_argument("--end", help="New end time")
     cmd_cal_update_cmd.add_argument("--location", help="New location, use empty string to clear")
     cmd_cal_update_cmd.add_argument("--body", help="New event body, use empty string to clear")
+    cmd_cal_update_group = cmd_cal_update_cmd.add_mutually_exclusive_group()
+    cmd_cal_update_group.add_argument(
+        "--teams",
+        dest="teams",
+        action="store_true",
+        default=None,
+        help="Make the event a Teams meeting",
+    )
+    cmd_cal_update_group.add_argument(
+        "--no-teams",
+        dest="teams",
+        action="store_false",
+        help="Remove the Teams meeting flag",
+    )
     cmd_cal_update_cmd.set_defaults(func=calendar_commands.cmd_cal_update, _calendar_ctx=calendar_ctx)
 
     cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")

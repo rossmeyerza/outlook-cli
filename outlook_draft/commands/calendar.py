@@ -281,6 +281,7 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
             location=args.location,
             body=args.body,
             attendees=args.attendees,
+            is_online_meeting=args.teams,
         )
         _console(args).print(f"[green]Created event:[/] {args.subject}")
     except OutlookAPIError as e:
@@ -385,7 +386,18 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
 
 def cmd_cal_update(args: argparse.Namespace) -> None:
     """Update a calendar event."""
-    if not any([args.subject, args.start, args.end, args.location is not None, args.body is not None]):
+    if args.teams is None:
+        teams_change = False
+    else:
+        teams_change = True
+    if not any([
+        args.subject,
+        args.start,
+        args.end,
+        args.location is not None,
+        args.body is not None,
+        teams_change,
+    ]):
         _console(args).print("[red]Provide at least one field to update.[/]")
         sys.exit(1)
     if bool(args.start) != bool(args.end):
@@ -407,6 +419,7 @@ def cmd_cal_update(args: argparse.Namespace) -> None:
             end_dt=end_local,
             location=args.location,
             body=args.body,
+            is_online_meeting=args.teams,
         )
         _console(args).print(f"[green]Updated event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:

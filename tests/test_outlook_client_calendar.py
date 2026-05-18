@@ -173,3 +173,46 @@ def test_get_agenda_selects_recurrence_metadata() -> None:
     assert "type" in select
     assert "seriesMasterId" in select
     assert "recurrence" in select
+
+
+def test_create_event_marks_teams_meeting_when_requested(monkeypatch) -> None:
+    monkeypatch.setattr(config, "OUTLOOK_TIMEZONE", "GMT Standard Time")
+    client = RecordingClient()
+
+    client.create_event(
+        "Subject",
+        "2026-05-19T10:00:00",
+        "2026-05-19T10:30:00",
+        attendees=["a@example.com"],
+        is_online_meeting=True,
+    )
+
+    body = client.calls[0]["json_body"]
+    assert body["IsOnlineMeeting"] is True
+    assert body["OnlineMeetingProvider"] == "teamsForBusiness"
+
+
+def test_create_event_skips_teams_flag_when_not_requested() -> None:
+    client = RecordingClient()
+
+    client.create_event(
+        "Subject",
+        "2026-05-19T10:00:00",
+        "2026-05-19T10:30:00",
+    )
+
+    assert "IsOnlineMeeting" not in client.calls[0]["json_body"]
+
+
+def test_update_event_can_toggle_teams_meeting() -> None:
+    client = RecordingClient()
+
+    client.update_event("event-1", is_online_meeting=True)
+    client.update_event("event-1", is_online_meeting=False)
+
+    on_payload = client.calls[0]["json_body"]
+    off_payload = client.calls[1]["json_body"]
+    assert on_payload["IsOnlineMeeting"] is True
+    assert on_payload["OnlineMeetingProvider"] == "teamsForBusiness"
+    assert off_payload["IsOnlineMeeting"] is False
+    assert "OnlineMeetingProvider" not in off_payload
