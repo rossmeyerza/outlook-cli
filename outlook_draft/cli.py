@@ -40,6 +40,15 @@ from .commands import contacts as contacts_commands
 from .commands import mail as mail_commands
 from .commands import teams as teams_commands
 from .commands import tasks as tasks_commands
+from .commands.signature import cmd_signature_fetch
+from .commands.files import (
+    cmd_files_sites,
+    cmd_files_list,
+    cmd_files_upload,
+    cmd_files_mkdir,
+    cmd_files_rename,
+    cmd_files_move,
+)
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .outlook_client import OutlookClient
 from .signatures import load_signature
@@ -1154,6 +1163,55 @@ def main() -> None:
         help="Open a visible browser instead of running fully headless",
     )
     p_auth.add_argument("--json", action="store_true", help="Output machine-readable JSON for status/scopes")
+
+    # ── Files (OneDrive + SharePoint) ────────────────────────────────
+    p_files = sub.add_parser("files", help="Browse and manage OneDrive and SharePoint files")
+    files_sub = p_files.add_subparsers(dest="command", required=True)
+
+    cmd_files_sites_p = files_sub.add_parser("sites", help="List SharePoint sites")
+    cmd_files_sites_p.set_defaults(func=cmd_files_sites)
+
+    cmd_files_list_p = files_sub.add_parser("list", help="List files and folders")
+    cmd_files_list_p.add_argument("path", nargs="?", default="", help="Folder path (default: root)")
+    cmd_files_list_p.add_argument("--site", metavar="NAME", help="SharePoint site name (partial match)")
+    cmd_files_list_p.set_defaults(func=cmd_files_list)
+
+    cmd_files_upload_p = files_sub.add_parser("upload", help="Upload a file")
+    cmd_files_upload_p.add_argument("file", help="Local file path")
+    cmd_files_upload_p.add_argument("dest", nargs="?", default="", help="Remote folder path (default: root)")
+    cmd_files_upload_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
+    cmd_files_upload_p.set_defaults(func=cmd_files_upload)
+
+    cmd_files_mkdir_p = files_sub.add_parser("mkdir", help="Create a folder")
+    cmd_files_mkdir_p.add_argument("path", help="Folder path to create")
+    cmd_files_mkdir_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
+    cmd_files_mkdir_p.set_defaults(func=cmd_files_mkdir)
+
+    cmd_files_rename_p = files_sub.add_parser("rename", help="Rename a file or folder")
+    cmd_files_rename_p.add_argument("path", help="Current path")
+    cmd_files_rename_p.add_argument("name", help="New name")
+    cmd_files_rename_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
+    cmd_files_rename_p.set_defaults(func=cmd_files_rename)
+
+    cmd_files_move_p = files_sub.add_parser("move", help="Move a file or folder")
+    cmd_files_move_p.add_argument("path", help="Source path")
+    cmd_files_move_p.add_argument("dest", help="Destination folder path")
+    cmd_files_move_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
+    cmd_files_move_p.set_defaults(func=cmd_files_move)
+
+    # ── Signature ─────────────────────────────────────────────────────
+    p_sig = sub.add_parser("signature", help="Manage email signatures")
+    sig_sub = p_sig.add_subparsers(dest="command", required=True)
+    cmd_sig_fetch = sig_sub.add_parser(
+        "fetch",
+        help="Fetch your OWA signature and save to configured files",
+    )
+    cmd_sig_fetch.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run with a visible browser window (useful if headless fails)",
+    )
+    cmd_sig_fetch.set_defaults(func=cmd_signature_fetch)
 
     # ── Config ────────────────────────────────────────────────────────
     p_config = sub.add_parser("config", help="Inspect local configuration")
