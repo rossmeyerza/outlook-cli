@@ -46,3 +46,11 @@ EMAIL_FONT_SIZE: str = "12pt"
 
 # Token refresh: warn this many seconds before expiry
 TOKEN_WARN_BEFORE_EXPIRY: int = 300  # 5 minutes
+
+# Gateway
+GATEWAY_PID_FILE: Path = SESSION_DIR / "gateway.pid"
+GATEWAY_LOG_FILE: Path = SESSION_DIR / "gateway.log"
+GATEWAY_CHAT_ID_FILE: Path = SESSION_DIR / "gateway_chat_id.txt"
+GATEWAY_CHAT_ID: str = os.environ.get("GATEWAY_CHAT_ID", "")
+GATEWAY_TRIGGER: str = os.environ.get("GATEWAY_TRIGGER", "@Marlow")
+GATEWAY_POLL_INTERVAL: int = int(os.environ.get("GATEWAY_POLL_INTERVAL", "30"))

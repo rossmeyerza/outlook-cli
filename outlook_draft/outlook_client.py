@@ -615,6 +615,18 @@ class OutlookClient:
         _ = (chat_id, content, content_type)
         raise SendingDisabledError("Teams message sending is intentionally disabled")
 
+    def _send_teams_message_internal(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
+        """Send a Teams message — internal use by gateway only.
+
+        Not exposed via the CLI parser. Only the gateway command calls this.
+        """
+        resp = self._request(
+            "POST",
+            f"/chats/{chat_id}/messages",
+            json={"body": {"contentType": content_type, "content": content}},
+        )
+        return resp.json()
+
     # ── People / contacts ─────────────────────────────────────────────
 
     def search_people(self, query: str, top: int = 10) -> list[dict[str, Any]]:

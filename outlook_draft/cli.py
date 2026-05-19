@@ -41,6 +41,7 @@ from .commands import mail as mail_commands
 from .commands import teams as teams_commands
 from .commands import tasks as tasks_commands
 from .commands.signature import cmd_signature_fetch
+from .commands.gateway import cmd_gateway_start, cmd_gateway_stop, cmd_gateway_status
 from .commands.files import (
     cmd_files_sites,
     cmd_files_list,
@@ -1214,6 +1215,22 @@ def main() -> None:
         help="Run with a visible browser window (useful if headless fails)",
     )
     cmd_sig_fetch.set_defaults(func=cmd_signature_fetch)
+
+    # ── Gateway ───────────────────────────────────────────────────────
+    p_gateway = sub.add_parser("gateway", help="Teams-to-pi gateway daemon")
+    gateway_sub = p_gateway.add_subparsers(dest="command", required=True)
+
+    gw_start = gateway_sub.add_parser("start", help="Start the gateway daemon")
+    gw_start.add_argument("--chat-id", metavar="ID", help="Teams chat ID to monitor")
+    gw_start.add_argument("--trigger", metavar="TEXT", help="Trigger string (default: @Marlow)")
+    gw_start.add_argument("--poll", type=int, metavar="SECONDS", help="Poll interval seconds (default: 30)")
+    gw_start.set_defaults(func=cmd_gateway_start)
+
+    gw_stop = gateway_sub.add_parser("stop", help="Stop the gateway daemon")
+    gw_stop.set_defaults(func=cmd_gateway_stop)
+
+    gw_status = gateway_sub.add_parser("status", help="Show gateway status and recent log")
+    gw_status.set_defaults(func=cmd_gateway_status)
 
     # ── Config ────────────────────────────────────────────────────────
     p_config = sub.add_parser("config", help="Inspect local configuration")
