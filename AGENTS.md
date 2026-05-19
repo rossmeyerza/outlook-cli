@@ -2,7 +2,7 @@
 
 ## Overview
 
-CLI for managing Outlook email, drafts, and contacts via the Outlook REST API v2.0. Globally available as `outlook-cli`.
+CLI for managing Outlook email, drafts, calendar, tasks, contacts, Teams browsing, and signatures via the Outlook REST API v2.0 and Microsoft Graph. Globally available as `outlook-cli`. Repo: `rossmeyerza/outlook-cli`.
 
 ## Quick Reference
 
@@ -68,6 +68,10 @@ outlook-cli teams list -n 20               # list chats
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
 
+# Signatures
+outlook-cli signature fetch                # fetch new + reply signatures from OWA (no MFA after first auth)
+outlook-cli signature fetch --headed       # run with visible browser if headless fails
+
 # Auth and config
 outlook-cli auth                           # force headless re-authentication
 outlook-cli auth status                    # show token status
@@ -92,24 +96,36 @@ outlook-cli config check                   # validate local config without print
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
-- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
+- **Signatures**: `signature fetch` opens a headless browser with the saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
+- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
 
 ## File Layout
 
 ```
-/home/ross/.local/lib/outlook-draft-cli/
+/home/ross/.local/lib/outlook-cli/
   .env                          # MS_EMAIL, MS_PASSWORD, timezone, signature path config, ignored by git
   .env.example                  # Example local config
-  session_state/                # Local token cache, ignored by git
+  install.sh                    # Installer/updater script (served at outlook-cli.21436587.xyz)
+  session_state/                # Local token + browser session cache, ignored by git
+    tokens.json                 # API tokens
+    browser_state.json          # Playwright browser session (used by signature fetch)
   outlook_draft/
-    auth.py                     # Built-in Playwright auth and token capture
+    auth.py                     # Playwright auth, token capture, browser session save
     calendar_time.py            # Calendar timezone parsing and Outlook headers
     cli.py                      # CLI entry point
     signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths
     errors.py                   # Exceptions
+    links.py                    # SharePoint/OneDrive URL extraction and Graph share encoding
     outlook_client.py           # Outlook REST API v2.0 client
     token_manager.py            # Token management + reauth trigger
+    commands/
+      calendar.py               # Calendar subcommands
+      contacts.py               # Contacts subcommands
+      mail.py                   # Mail subcommands
+      signature.py              # Signature fetch via OWA API interception
+      tasks.py                  # Tasks subcommands
+      teams.py                  # Teams read subcommands
 ```
 
 ## Caveats

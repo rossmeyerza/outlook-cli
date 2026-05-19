@@ -14,7 +14,7 @@ curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
 
 Requires Python 3.12+ and `git`. The script will:
 
-- Clone this repo to `~/.local/lib/outlook-draft-cli`
+- Clone this repo to `~/.local/lib/outlook-cli`
 - Set up a Python virtualenv and install all dependencies
 - Install Playwright Chromium for authentication
 - Prompt you for your Microsoft 365 email, password, and timezone
@@ -27,8 +27,8 @@ You can read the full script before running it at:
 ### Manual installation
 
 ```bash
-git clone https://github.com/rossmeyerza/outlook-draft-cli.git
-cd outlook-draft-cli
+git clone https://github.com/rossmeyerza/outlook-cli.git
+cd outlook-cli
 python3 -m venv .venv
 .venv/bin/pip install -e .
 .venv/bin/python -m playwright install chromium
@@ -166,7 +166,12 @@ outlook-cli mailbox show                 # show mailbox settings
 outlook-cli mailbox update --timezone "GMT Standard Time"
 outlook-cli config check                 # validate local setup without printing secrets
 outlook-cli config check --json
+
+outlook-cli signature fetch              # fetch new and reply signatures from OWA
+outlook-cli signature fetch --headed     # run with a visible browser if headless fails
 ```
+
+`outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the files configured in `.env`. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 
 `outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the Okta MFA verification number to the console, waits for push approval, and saves tokens to `session_state/tokens.json`.
 
@@ -189,7 +194,7 @@ SIGNATURE_NEW_FILE=signature-new.html
 SIGNATURE_REPLY_FILE=signature-reply.html
 ```
 
-The token file is local to this repo at `session_state/tokens.json`. Both `.env` and `session_state/` are ignored by git.
+The token file is at `session_state/tokens.json`. The browser session state (used by `signature fetch` to avoid re-auth) is at `session_state/browser_state.json`. Both `.env` and `session_state/` are gitignored.
 
 `LOCAL_TIMEZONE` is the Python timezone used to interpret calendar times you type. `OUTLOOK_TIMEZONE` is the Microsoft timezone sent to Outlook. For the UK, use `Europe/London` and `GMT Standard Time`.
 
@@ -204,14 +209,22 @@ Draft bodies are sent as HTML and wrapped with Aptos styling before the saved si
 
 ```
 outlook_draft/
-  auth.py            # Built-in Playwright auth and token capture
-  calendar_time.py   # Calendar timezone parsing and Outlook timezone headers
-  cli.py             # CLI with argparse subcommands
-  signatures.py      # Signature path loading and HTML sanitization
-  config.py          # Paths and env vars
-  errors.py          # Exception types
-  outlook_client.py  # Outlook REST API v2.0 client (mail, drafts, contacts)
-  token_manager.py   # Token loading, validation, triggers reauth
+  auth.py              # Built-in Playwright auth, token capture, browser session save
+  calendar_time.py     # Calendar timezone parsing and Outlook timezone headers
+  cli.py               # CLI with argparse subcommands
+  signatures.py        # Signature path loading and HTML sanitization
+  config.py            # Paths and env vars
+  errors.py            # Exception types
+  links.py             # SharePoint/OneDrive URL extraction and Graph share ID encoding
+  outlook_client.py    # Outlook REST API v2.0 client (mail, drafts, contacts)
+  token_manager.py     # Token loading, validation, triggers reauth
+  commands/
+    calendar.py        # Calendar subcommands
+    contacts.py        # Contacts subcommands
+    mail.py            # Mail subcommands
+    signature.py       # Signature fetch via OWA API interception
+    tasks.py           # Tasks subcommands
+    teams.py           # Teams read subcommands
 ```
 
 Auth flow: `token_manager.py` reads local tokens from `session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.

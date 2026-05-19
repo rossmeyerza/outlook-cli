@@ -18,7 +18,7 @@ warn()  { printf "${YELLOW}warn$NC %s\n" "$1"; }
 die()   { printf "${RED}error$NC %s\n" "$1"; exit 1; }
 step()  { printf "\n${BOLD}%s${NC}\n" "$1"; }
 
-INSTALL_DIR="${OUTLOOK_CLI_DIR:-${HOME}/.local/lib/outlook-draft-cli}"
+INSTALL_DIR="${OUTLOOK_CLI_DIR:-${HOME}/.local/lib/outlook-cli}"
 BIN_DIR="${HOME}/.local/bin"
 IS_UPGRADE=false
 FORCE_RECONFIGURE=false
@@ -86,7 +86,7 @@ if [ "$IS_UPGRADE" = true ]; then
   fi
 else
   info "Cloning repository..."
-  git clone https://github.com/rossmeyerza/outlook-draft-cli.git "$INSTALL_DIR"
+  git clone https://github.com/rossmeyerza/outlook-cli.git "$INSTALL_DIR"
   ok "Cloned"
 fi
 
