@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from rich.console import Console
 
@@ -191,18 +192,30 @@ def _process_is_running(pid: int) -> bool:
         return False
 
 
-def _call_pi(prompt: str, session_id: str) -> str:
+def _call_pi(prompt: str, session_dir: str) -> str:
     """Run pi non-interactively with a persistent session for continuity.
 
-    Each Teams chat gets its own pi session, so Marlow remembers the
-    conversation across messages.
+    Each Teams chat gets its own --session-dir. The first call creates a
+    new session in that dir; subsequent calls use --continue to resume.
     """
     pi_bin = shutil.which("pi")
     if not pi_bin:
         return "[Error: pi not found in PATH]"
+
+    # Ensure session dir exists. Look for an existing session file inside it
+    # to decide whether to start fresh or continue.
+    sd = Path(session_dir)
+    sd.mkdir(parents=True, exist_ok=True)
+    has_existing = any(sd.glob("*.json"))
+
+    cmd = [pi_bin, "--print", "--session-dir", str(sd)]
+    if has_existing:
+        cmd.append("--continue")
+    cmd.append(prompt)
+
     try:
         result = subprocess.run(
-            [pi_bin, "--print", "--session", session_id, prompt],
+            cmd,
             capture_output=True,
             text=True,
             timeout=180,
@@ -265,10 +278,12 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                 )
                 _log(f"Triggered by {sender}: {prompt[:120]}")
 
-                # Use a stable session ID derived from the chat ID so each
-                # Teams chat has its own continuous Marlow conversation.
-                session_id = f"marlow-gateway-{abs(hash(chat_id))}"
-                response = _call_pi(prompt, session_id)
+                # Each Teams chat gets its own pi session directory so the
+                # conversation has continuity within that chat.
+                session_dir = str(
+                    config.SESSION_DIR / "gateway_sessions" / f"{abs(hash(chat_id))}"
+                )
+                response = _call_pi(prompt, session_dir)
                 _log(f"Response ({len(response)} chars): {response[:80]}")
 
                 # Format as HTML with robot emoji prefix and a styled block
