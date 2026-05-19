@@ -229,6 +229,26 @@ if ! echo ":${PATH}:" | grep -q ":${BIN_DIR}:"; then
   warn "${BIN_DIR} is not in your PATH."
   warn "Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
   warn "  export PATH=\"${BIN_DIR}:\$PATH\""
+  export PATH="${BIN_DIR}:${PATH}"
+fi
+
+# ── Auth and signature fetch (fresh install only) ─────────────────
+
+if [ "$IS_UPGRADE" = false ] && [ "$NEEDS_CONFIG" = true ]; then
+  step "Authentication"
+  printf "\nOpening a browser window to sign in to Outlook.\n"
+  printf "Complete the MFA prompt, then your signatures will be fetched automatically.\n\n"
+  if "${INSTALL_DIR}/.venv/bin/outlook-cli" auth; then
+    ok "Authenticated"
+    info "Fetching email signatures..."
+    if "${INSTALL_DIR}/.venv/bin/outlook-cli" signature fetch; then
+      ok "Signatures saved"
+    else
+      warn "Signature fetch failed. Run: outlook-cli signature fetch"
+    fi
+  else
+    warn "Authentication failed. Run: outlook-cli auth"
+  fi
 fi
 
 # ── Done ──────────────────────────────────────────────────────────
@@ -239,7 +259,9 @@ if [ "$IS_UPGRADE" = true ]; then
   printf "  Run: outlook-cli --help\n"
 else
   printf "${GREEN}${BOLD}outlook-cli installed successfully.${NC}\n\n"
-  printf "  Next: run outlook-cli auth to sign in\n"
-  printf "  Then: outlook-cli config check\n"
+  if [ "$NEEDS_CONFIG" = false ]; then
+    printf "  Run: outlook-cli auth to sign in\n"
+    printf "  Then: outlook-cli signature fetch\n"
+  fi
 fi
 printf "\n"
