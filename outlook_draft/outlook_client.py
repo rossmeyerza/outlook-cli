@@ -547,7 +547,7 @@ class OutlookClient:
         path = "/me/chats"
         params: dict[str, str] | None = {
             "$top": str(page_size),
-            "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl",
+            "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,lastMessagePreview,webUrl",
         }
 
         while len(chats) < top and path:

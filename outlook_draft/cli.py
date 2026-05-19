@@ -1081,6 +1081,8 @@ def main() -> None:
 
     cmd_teams_list_cmd = teams_sub.add_parser("list", help="List Teams chats")
     cmd_teams_list_cmd.add_argument("--count", "-n", type=int, default=20, help="Max chats")
+    cmd_teams_list_cmd.add_argument("--sort-received", action="store_true",
+        help="Sort by last received message (slower — makes one API call per chat)")
     cmd_teams_list_cmd.set_defaults(func=teams_commands.cmd_teams_list, _teams_ctx=teams_ctx)
 
     cmd_teams_show_cmd = teams_sub.add_parser("show", help="Show Teams chat details")

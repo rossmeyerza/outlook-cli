@@ -127,11 +127,30 @@ def _is_received_user_message(message: JsonDict, self_user_id: str) -> bool:
     return not sender_id or sender_id != self_user_id
 
 
-def _latest_received_message_time(client: Any, chat_id: str, self_user_id: str) -> str:
+def _latest_received_message_time(
+    client: Any, chat: dict, self_user_id: str
+) -> str:
+    """Return the timestamp of the latest message not sent by self.
+
+    Uses lastMessagePreview from the chat object to avoid an extra API call
+    in the common case. Only falls back to fetching messages if the last
+    message was sent by the current user.
+    """
+    preview = chat.get("lastMessagePreview") or {}
+    preview_time = preview.get("createdDateTime", "")
+    preview_sender_id = (
+        (preview.get("from") or {}).get("user") or {}
+    ).get("id", "")
+
+    # If last message wasn't from self, we can use the preview timestamp directly
+    if preview_time and preview_sender_id and preview_sender_id != self_user_id:
+        return preview_time
+
+    # If no preview or last message was from self, fetch recent messages
     try:
-        messages = client.list_teams_message_metadata(chat_id, top=50)
+        messages = client.list_teams_message_metadata(chat["id"], top=50)
     except OutlookAPIError:
-        return ""
+        return preview_time  # fall back to preview time rather than empty
     received = [
         message.get("createdDateTime", "")
         for message in messages
@@ -163,24 +182,29 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
     console = _console(args)
     client = _get_graph_client(args)
     try:
-        candidate_count = max(args.count * 5, 50)
-        chats = client.list_teams_chats(top=candidate_count)
-        try:
-            current_user = client.get_current_user()
-            self_user_id = current_user.get("id", "")
-        except OutlookAPIError:
-            self_user_id = ""
-        for chat in chats:
-            chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
-                client,
-                chat["id"],
-                self_user_id,
+        chats = client.list_teams_chats(top=args.count)
+        if getattr(args, 'sort_received', False):
+            # Slow path: fetch messages per chat to find last received
+            try:
+                current_user = client.get_current_user()
+                self_user_id = current_user.get("id", "")
+            except OutlookAPIError:
+                self_user_id = ""
+            console.print("[dim]Sorting by last received message (slow)...[/]")
+            for chat in chats:
+                chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
+                    client, chat, self_user_id,
+                )
+            chats.sort(
+                key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
+                reverse=True,
             )
-        chats.sort(
-            key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
-            reverse=True,
-        )
-        chats = chats[:args.count]
+        else:
+            # Fast path: sort by lastUpdatedDateTime (already in response)
+            chats.sort(
+                key=lambda chat: chat.get("lastUpdatedDateTime") or "",
+                reverse=True,
+            )
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
         console.print(f"[red]Failed to list Teams chats: {e}[/]")
@@ -210,7 +234,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                     members = []
             table.add_row(
                 str(i),
-                _format_datetime(args, chat.get("_lastReceivedMessageDateTime", "")),
+                _format_datetime(args, chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
                 chat.get("chatType", ""),
                 _chat_title(chat, members),
                 chat.get("id", "")[-16:],
