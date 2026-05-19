@@ -1,8 +1,11 @@
 """Microsoft SSO token capture via Playwright.
 
 Supports both headed (interactive) and headless modes.
-Headless mode enters credentials automatically, displays the Okta MFA
+Headless mode enters credentials automatically, displays the MFA
 challenge number in the console, and waits for push approval.
+
+Supports Okta Verify push and other MFA providers that display a
+numeric challenge on screen.
 
 Tokens are cached to disk and reused until expired.
 Self-contained auth for outlook-draft-cli.
@@ -115,7 +118,7 @@ def _make_request_interceptor(captured: dict[str, str]):
 
 
 def _find_mfa_number(page) -> str | None:
-    """Find the Okta Verify number challenge on the MFA page."""
+    """Find the numeric MFA challenge on the login page (Okta Verify and similar)."""
     return page.evaluate("""() => {
         // Try known Okta selectors first
         for (const sel of [
@@ -161,7 +164,7 @@ def _enter_email(page, email: str) -> bool:
 
 
 def _enter_password(page, password: str) -> bool:
-    """Enter password on the Okta/Microsoft login page."""
+    """Enter password on the Microsoft/SSO login page."""
     try:
         # Try Okta-style selector first, then generic
         for selector in [
@@ -184,7 +187,7 @@ def _enter_password(page, password: str) -> bool:
             'button[type="submit"]',
             'input[type="submit"]',
             'input[value="Sign in"]',
-            '#okta-signin-submit',
+            '#okta-signin-submit',  # Okta-hosted login
         ]:
             try:
                 btn = page.locator(btn_sel).first
@@ -224,7 +227,7 @@ def _wait_for_mfa(page) -> None:
         console.print(
             f"\n[bold yellow]MFA Verification: tap"
             f" [bold white on blue] {mfa_number} [/]"
-            f" in Okta Verify[/]\n"
+            f" in your authenticator app[/]\n"
         )
     else:
         console.print("[yellow]Approve the MFA push notification on your phone...[/]")

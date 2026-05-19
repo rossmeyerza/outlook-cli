@@ -103,7 +103,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
         return {}
 
     # Now we need to map the captured HTML by setting name to new/reply
-    # The setting names are the display names of the signatures (e.g. "VML MAP", "VML MAP Replies")
+    # The setting names are the display names of the signatures as configured in OWA
     # We need to look up which name is assigned to new vs reply
     # Those mappings come from the roaming_signature_list call, but we can also
     # fetch them directly via the token

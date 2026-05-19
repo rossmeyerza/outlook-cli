@@ -26,7 +26,7 @@ def test_extract_links_from_html_collects_anchors_and_images() -> None:
 def test_filter_share_links_keeps_share_hosts_only() -> None:
     links = extract_links_from_html(
         '<a href="https://example.com/x">x</a>'
-        '<a href="https://wppcloudnam.sharepoint.com/sites/file.pdf">file</a>'
+        '<a href="https://contoso.sharepoint.com/sites/file.pdf">file</a>'
     )
 
     filtered = filter_share_links(links)
@@ -36,7 +36,7 @@ def test_filter_share_links_keeps_share_hosts_only() -> None:
 
 
 def test_looks_like_share_url() -> None:
-    assert looks_like_share_url("https://wppcloudnam.sharepoint.com/foo")
+    assert looks_like_share_url("https://contoso.sharepoint.com/foo")
     assert not looks_like_share_url("https://example.com/foo")
 
 

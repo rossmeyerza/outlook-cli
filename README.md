@@ -173,7 +173,7 @@ outlook-cli signature fetch --headed     # run with a visible browser if headles
 
 `outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the files configured in `.env`. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 
-`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the Okta MFA verification number to the console, waits for push approval, and saves tokens to `session_state/tokens.json`.
+`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to `session_state/tokens.json`.
 
 Use a visible browser instead:
 
