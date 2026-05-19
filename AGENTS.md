@@ -68,6 +68,19 @@ outlook-cli teams list -n 20               # list chats
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
 
+# Files (OneDrive and SharePoint)
+outlook-cli files sites                    # list SharePoint sites you're a member of
+outlook-cli files list                     # list OneDrive root
+outlook-cli files list "Documents/Reports" # list OneDrive subfolder
+outlook-cli files list --site "Tesco"      # list SharePoint site root
+outlook-cli files list --site "Tesco" "Shared Documents"  # list SharePoint subfolder
+outlook-cli files upload ./file.pdf "Documents"            # upload to OneDrive
+outlook-cli files upload ./file.pdf "Shared Documents" --site "Tesco"  # upload to SharePoint
+outlook-cli files mkdir "Documents/Q2"     # create OneDrive folder
+outlook-cli files mkdir "Shared Docs/Q2" --site "Tesco"   # create SharePoint folder
+outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
+outlook-cli files move "Documents/file.pdf" "Archive"     # move
+
 # Signatures
 outlook-cli signature fetch                # fetch new + reply signatures from OWA (no MFA after first auth)
 outlook-cli signature fetch --headed       # run with visible browser if headless fails
@@ -122,6 +135,7 @@ outlook-cli config check                   # validate local config without print
     commands/
       calendar.py               # Calendar subcommands
       contacts.py               # Contacts subcommands
+      files.py                  # OneDrive and SharePoint file operations via Graph
       mail.py                   # Mail subcommands
       signature.py              # Signature fetch via OWA API interception
       tasks.py                  # Tasks subcommands

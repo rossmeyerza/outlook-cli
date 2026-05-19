@@ -154,6 +154,37 @@ outlook-cli teams messages 1 -n 20
 
 Lists Teams chats, shows chat details, and reads messages. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
 
+### Files (OneDrive and SharePoint)
+
+```bash
+# Discover SharePoint sites
+outlook-cli files sites
+
+# Browse
+outlook-cli files list                                     # OneDrive root
+outlook-cli files list "Documents/Reports"                 # OneDrive subfolder
+outlook-cli files list --site "Tesco"                      # SharePoint site root
+outlook-cli files list --site "Tesco" "Shared Documents"   # SharePoint subfolder
+
+# Upload
+outlook-cli files upload ./report.pdf "Documents/Reports"
+outlook-cli files upload ./deck.pptx "Shared Documents" --site "Tesco"
+
+# Create folders
+outlook-cli files mkdir "Documents/Reports/Q2"
+outlook-cli files mkdir "Shared Documents/Proposals" --site "Tesco"
+
+# Rename and move
+outlook-cli files rename "Documents/old.pdf" "new.pdf"
+outlook-cli files rename "Shared Documents/old.pdf" "new.pdf" --site "Tesco"
+outlook-cli files move "Documents/file.pdf" "Archive"
+outlook-cli files move "Shared Documents/file.pdf" "Archive" --site "Tesco"
+```
+
+`--site` matches case-insensitively and accepts partial names — `--site nestle` will find "MAP Nestle" without needing the full name. If the match is ambiguous it tells you which names matched. Without `--site`, all operations target your personal OneDrive.
+
+Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically.
+
 ### Auth and config
 
 ```bash
