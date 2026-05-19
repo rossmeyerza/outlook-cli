@@ -361,6 +361,8 @@ def _call_pi(
                 catchup = _format_catchup(recent_messages, since, trigger_msg_id)
 
             if catchup:
+                catchup_lines = catchup.count("\n") + 1
+                _log(f"Catch-up: {catchup_lines} message(s) since last Marlow turn")
                 full_prompt = (
                     "CATCH-UP (chat that happened while you were away)\n"
                     f"{catchup}\n\n"
