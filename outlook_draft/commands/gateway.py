@@ -196,6 +196,11 @@ def _process_is_running(pid: int) -> bool:
 # Persistent pi RPC sessions, keyed by chat_id
 _pi_sessions: dict[str, PiSession] = {}
 
+# Tracks the timestamp of the last @Marlow turn we processed per chat. Used to
+# build a "catch-up" of any chat that happened between Marlow turns so Marlow
+# always has the full context of what you've been discussing.
+_last_marlow_turn_time: dict[str, str] = {}
+
 
 def _get_pi_session(chat_id: str) -> PiSession:
     """Get or create the persistent pi session for this chat."""
@@ -281,6 +286,38 @@ the sender. Respond to the latest one.
 """
 
 
+def _format_catchup(
+    messages: list[dict], since_time: str, trigger_msg_id: str
+) -> str:
+    """Format messages between since_time and now (excluding the trigger) as catch-up.
+
+    Skips system events, deleted messages, and the trigger message itself.
+    Returns empty string if nothing to catch up on.
+    """
+    lines = []
+    for m in messages:
+        if m.get("id") == trigger_msg_id:
+            continue
+        if m.get("messageType") == "systemEventMessage":
+            continue
+        if m.get("deletedDateTime"):
+            continue
+        m_time = m.get("createdDateTime") or ""
+        if m_time <= since_time:
+            continue
+        body = m.get("body", {})
+        content = body.get("content", "")
+        if body.get("contentType") == "html":
+            content = _strip_html(content)
+        content = content.strip().replace("\n", " ")
+        if not content:
+            continue
+        ts = m_time[11:16]
+        sender_name = ((m.get("from") or {}).get("user") or {}).get("displayName") or "?"
+        lines.append(f"[{ts}] {sender_name}: {content[:300]}")
+    return "\n".join(lines)
+
+
 def _call_pi(
     chat_id: str,
     prompt: str,
@@ -291,12 +328,17 @@ def _call_pi(
     sender: str = "",
     sender_time: str = "",
     recent_messages: list[dict] | None = None,
+    trigger_msg_id: str = "",
 ) -> str:
     """Send a prompt to the per-chat persistent pi session."""
     try:
         sess = _get_pi_session(chat_id)
-        # On the very first prompt of a brand-new session, prepend the preamble
-        if not sess.has_existing_session() and not getattr(sess, "_preamble_sent", False):
+        is_first = (
+            not sess.has_existing_session()
+            and not getattr(sess, "_preamble_sent", False)
+        )
+
+        if is_first:
             preamble = _build_preamble(
                 chat_id=chat_id,
                 chat_topic=chat_topic,
@@ -306,11 +348,32 @@ def _call_pi(
                 sender_time=sender_time,
                 recent_messages=recent_messages or [],
             )
-            full_prompt = preamble + f"\n\nLATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+            full_prompt = (
+                preamble
+                + f"\n\nLATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+            )
             sess._preamble_sent = True  # type: ignore[attr-defined]
         else:
-            full_prompt = f"[{sender_time}] {sender}: {prompt}"
-        return sess.prompt(full_prompt)
+            # Build catch-up block of any chat that happened since our last turn
+            since = _last_marlow_turn_time.get(chat_id, "")
+            catchup = ""
+            if since and recent_messages:
+                catchup = _format_catchup(recent_messages, since, trigger_msg_id)
+
+            if catchup:
+                full_prompt = (
+                    "CATCH-UP (chat that happened while you were away)\n"
+                    f"{catchup}\n\n"
+                    f"LATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+                )
+            else:
+                full_prompt = f"[{sender_time}] {sender}: {prompt}"
+
+        response = sess.prompt(full_prompt)
+        # Mark this trigger time as the last Marlow turn for catch-up tracking
+        if sender_time:
+            _last_marlow_turn_time[chat_id] = sender_time
+        return response
     except PiSessionError as exc:
         _log(f"PiSession error: {exc}")
         # Reset the session so the next message gets a clean process
@@ -337,7 +400,8 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
         try:
             client = _graph_client()
             try:
-                messages = client.list_teams_messages(chat_id, top=10)
+                # Fetch a wider window so we can build the catch-up between Marlow turns
+                messages = client.list_teams_messages(chat_id, top=50)
             finally:
                 client.close()
 
@@ -401,6 +465,7 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                     sender=sender,
                     sender_time=msg_time[:16],
                     recent_messages=messages,
+                    trigger_msg_id=msg_id,
                 )
                 _log(f"Response ({len(response)} chars): {response[:80]}")
 
