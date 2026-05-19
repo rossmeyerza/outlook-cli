@@ -50,6 +50,25 @@ def _strip_html(text: str) -> str:
     return html.unescape(text).strip()
 
 
+def _chat_label(chat: dict, members: list[dict] | None) -> str:
+    """Build a human-readable label: topic if present, else member names."""
+    topic = chat.get("topic") or ""
+    if topic:
+        return topic
+    if not members:
+        return "(no topic)"
+    names = [
+        (m.get("displayName") or m.get("email") or "").strip()
+        for m in members
+    ]
+    names = [n for n in names if n]
+    if not names:
+        return "(no topic)"
+    if len(names) <= 3:
+        return ", ".join(names)
+    return f"{', '.join(names[:3])} +{len(names) - 3}"
+
+
 def _resolve_chat_id(args: argparse.Namespace, console: Console) -> str:
     chat_id = getattr(args, "chat_id", None) or config.GATEWAY_CHAT_ID
     if chat_id:
@@ -59,38 +78,100 @@ def _resolve_chat_id(args: argparse.Namespace, console: Console) -> str:
         if stored:
             return stored
 
-    console.print("[yellow]No gateway chat configured. Fetching your Teams chats...[/]")
+    console.print("[yellow]No gateway chat configured. Fetching ALL your Teams chats (this can take a moment)...[/]")
     client = _graph_client()
     try:
-        chats = client.list_teams_chats(top=20)
+        chats = client.list_teams_chats(top=500)
         chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
+        # Resolve members for chats without a topic, in parallel-ish (sequential but quick per call)
+        console.print(f"[dim]Resolving members for {len(chats)} chats...[/]")
+        labels: list[tuple[str, dict]] = []
+        for chat in chats:
+            members = None
+            if not chat.get("topic"):
+                try:
+                    members = client.list_teams_chat_members(chat["id"], top=20)
+                except OutlookAPIError:
+                    members = None
+            label = _chat_label(chat, members)
+            labels.append((label, chat))
     finally:
         client.close()
 
-    if not chats:
+    if not labels:
         console.print("[red]No Teams chats found.[/]")
         sys.exit(1)
 
-    console.print("\nPick the chat to monitor for trigger messages:\n")
-    for i, chat in enumerate(chats, 1):
-        topic = chat.get("topic") or ""
-        chat_type = chat.get("chatType", "")
-        updated = (chat.get("lastUpdatedDateTime") or "")[:10]
-        console.print(f"  [bold]{i:2}[/]  {updated}  [{chat_type}]  {topic or '(no topic)'}")
-
-    console.print()
-    raw = input("Enter number: ").strip()
-    try:
-        idx = int(raw) - 1
-        chosen = chats[idx]
-    except (ValueError, IndexError):
-        console.print("[red]Invalid selection.[/]")
+    chosen = _pick_chat_with_fzf(labels, console)
+    if not chosen:
+        console.print("[red]No selection made.[/]")
         sys.exit(1)
 
     selected_id: str = chosen["id"]
     config.GATEWAY_CHAT_ID_FILE.write_text(selected_id)
     console.print(f"[green]Chat saved:[/] {selected_id}")
     return selected_id
+
+
+def _pick_chat_with_fzf(labels: list[tuple[str, dict]], console: Console) -> dict | None:
+    """Use fzf if available for interactive type-to-filter, else fall back to numbered list."""
+    fzf_bin = shutil.which("fzf")
+    # Build display lines: index<TAB>updated<TAB>type<TAB>label
+    lines = []
+    for i, (label, chat) in enumerate(labels):
+        updated = (chat.get("lastUpdatedDateTime") or "")[:10]
+        chat_type = chat.get("chatType", "")
+        lines.append(f"{i}\t{updated}\t{chat_type:<10}\t{label}")
+
+    if fzf_bin:
+        try:
+            result = subprocess.run(
+                [fzf_bin, "--prompt=Chat: ", "--with-nth=2..", "--delimiter=\t",
+                 "--height=70%", "--reverse", "--no-mouse"],
+                input="\n".join(lines),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                idx_str = result.stdout.split("\t", 1)[0]
+                idx = int(idx_str)
+                return labels[idx][1]
+            return None
+        except Exception as exc:
+            console.print(f"[dim]fzf failed ({exc}), falling back to text picker.[/]")
+
+    # Fallback: show first 50 numbered + accept search query
+    console.print("\n[bold]First 50 chats (most recent):[/]")
+    for i, (label, chat) in enumerate(labels[:50], 1):
+        updated = (chat.get("lastUpdatedDateTime") or "")[:10]
+        chat_type = chat.get("chatType", "")
+        console.print(f"  [bold]{i:3}[/]  {updated}  [{chat_type}]  {label}")
+    console.print(f"\n[dim]Total: {len(labels)} chats. Type a number, or type a search term to filter.[/]")
+    raw = input("> ").strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        idx = int(raw) - 1
+        if 0 <= idx < len(labels):
+            return labels[idx][1]
+        return None
+    # Search
+    matches = [(i, lbl, ch) for i, (lbl, ch) in enumerate(labels) if raw.lower() in lbl.lower()]
+    if not matches:
+        console.print("[red]No chats matched.[/]")
+        return None
+    if len(matches) == 1:
+        return matches[0][2]
+    console.print(f"\n[bold]{len(matches)} matches:[/]")
+    for n, (i, lbl, ch) in enumerate(matches[:50], 1):
+        updated = (ch.get("lastUpdatedDateTime") or "")[:10]
+        console.print(f"  [bold]{n:3}[/]  {updated}  {lbl}")
+    raw2 = input("Pick number: ").strip()
+    if raw2.isdigit():
+        idx = int(raw2) - 1
+        if 0 <= idx < len(matches):
+            return matches[idx][2]
+    return None
 
 
 def _read_pid() -> int | None:
