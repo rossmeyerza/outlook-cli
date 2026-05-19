@@ -341,6 +341,14 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         if not captured:
             _extract_storage_tokens(page, captured)
 
+        # Save browser session state so Playwright can reuse it without MFA
+        storage_path = SESSION_DIR / "browser_state.json"
+        try:
+            context.storage_state(path=str(storage_path))
+            console.print(f"[dim]Browser session saved to {storage_path}[/]")
+        except Exception as e:
+            console.print(f"[dim]Could not save browser session: {e}[/]")
+
         context.close()
         browser.close()
 
