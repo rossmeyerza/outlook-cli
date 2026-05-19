@@ -14,3 +14,6 @@ dist/
 !.env.example
 session_state/
 tokens.json
+
+# Signature HTML files contain personal info — fetch via: outlook-cli signature fetch
+signature-*.html
