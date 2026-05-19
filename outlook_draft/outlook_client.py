@@ -623,7 +623,7 @@ class OutlookClient:
         resp = self._request(
             "POST",
             f"/chats/{chat_id}/messages",
-            json={"body": {"contentType": content_type, "content": content}},
+            json_body={"body": {"contentType": content_type, "content": content}},
         )
         return resp.json()
 

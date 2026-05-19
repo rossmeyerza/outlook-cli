@@ -191,13 +191,18 @@ def _process_is_running(pid: int) -> bool:
         return False
 
 
-def _call_pi(prompt: str) -> str:
+def _call_pi(prompt: str, session_id: str) -> str:
+    """Run pi non-interactively with a persistent session for continuity.
+
+    Each Teams chat gets its own pi session, so Marlow remembers the
+    conversation across messages.
+    """
     pi_bin = shutil.which("pi")
     if not pi_bin:
         return "[Error: pi not found in PATH]"
     try:
         result = subprocess.run(
-            [pi_bin, "--print", prompt],
+            [pi_bin, "--print", "--session", session_id, prompt],
             capture_output=True,
             text=True,
             timeout=180,
@@ -260,15 +265,28 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                 )
                 _log(f"Triggered by {sender}: {prompt[:120]}")
 
-                response = _call_pi(prompt)
+                # Use a stable session ID derived from the chat ID so each
+                # Teams chat has its own continuous Marlow conversation.
+                session_id = f"marlow-gateway-{abs(hash(chat_id))}"
+                response = _call_pi(prompt, session_id)
                 _log(f"Response ({len(response)} chars): {response[:80]}")
+
+                # Format as HTML with robot emoji prefix and a styled block
+                html_body = (
+                    "<div style='border-left:3px solid #6264a7;"
+                    "padding:6px 12px;background:#f3f2f1;'>"
+                    "<strong>\U0001f916 Marlow</strong><br>"
+                    f"{html.escape(response).replace(chr(10), '<br>')}"
+                    "</div>"
+                )
 
                 try:
                     post_client = _graph_client()
                     try:
                         post_client._send_teams_message_internal(
                             chat_id,
-                            f"[Marlow] {response}",
+                            html_body,
+                            content_type="html",
                         )
                     finally:
                         post_client.close()
