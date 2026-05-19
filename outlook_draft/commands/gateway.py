@@ -29,6 +29,7 @@ from .. import config
 from ..errors import OutlookAPIError
 from ..outlook_client import OutlookClient
 from ..token_manager import TokenManager
+from .pi_session import PiSession, PiSessionError
 
 
 def _graph_client() -> OutlookClient:
@@ -192,41 +193,136 @@ def _process_is_running(pid: int) -> bool:
         return False
 
 
-def _call_pi(prompt: str, session_dir: str) -> str:
-    """Run pi non-interactively with a persistent session for continuity.
+# Persistent pi RPC sessions, keyed by chat_id
+_pi_sessions: dict[str, PiSession] = {}
 
-    Each Teams chat gets its own --session-dir. The first call creates a
-    new session in that dir; subsequent calls use --continue to resume.
-    """
-    pi_bin = shutil.which("pi")
-    if not pi_bin:
-        return "[Error: pi not found in PATH]"
 
-    # Ensure session dir exists. Look for an existing session file inside it
-    # to decide whether to start fresh or continue.
-    sd = Path(session_dir)
-    sd.mkdir(parents=True, exist_ok=True)
-    has_existing = any(sd.glob("*.json"))
+def _get_pi_session(chat_id: str) -> PiSession:
+    """Get or create the persistent pi session for this chat."""
+    sess = _pi_sessions.get(chat_id)
+    if sess and sess.is_alive():
+        return sess
+    if sess:
+        try:
+            sess.close()
+        except Exception:
+            pass
+    session_dir = config.SESSION_DIR / "gateway_sessions" / f"{abs(hash(chat_id))}"
+    sess = PiSession(session_dir, log_fn=_log)
+    sess.start()
+    _pi_sessions[chat_id] = sess
+    return sess
 
-    cmd = [pi_bin, "--print", "--session-dir", str(sd)]
-    if has_existing:
-        cmd.append("--continue")
-    cmd.append(prompt)
 
+def _build_preamble(
+    chat_id: str,
+    chat_topic: str,
+    chat_type: str,
+    members: list[dict],
+    sender: str,
+    sender_time: str,
+    recent_messages: list[dict],
+) -> str:
+    """Build the context preamble injected as the first message of a session."""
+    member_names = [
+        (m.get("displayName") or m.get("email") or "").strip()
+        for m in members
+    ]
+    member_names = [n for n in member_names if n]
+    members_str = ", ".join(member_names) if member_names else "(unknown)"
+
+    history_lines = []
+    for m in recent_messages[-15:]:
+        if m.get("messageType") == "systemEventMessage":
+            continue
+        if m.get("deletedDateTime"):
+            continue
+        body = m.get("body", {})
+        content = body.get("content", "")
+        if body.get("contentType") == "html":
+            content = _strip_html(content)
+        content = content.strip().replace("\n", " ")
+        if not content:
+            continue
+        ts = (m.get("createdDateTime") or "")[11:16]
+        sender_name = ((m.get("from") or {}).get("user") or {}).get("displayName") or "?"
+        history_lines.append(f"[{ts}] {sender_name}: {content[:300]}")
+    history_block = "\n".join(history_lines) if history_lines else "(no recent messages)"
+
+    return f"""You are Marlow, responding inside a Microsoft Teams chat as Ross Meyer.
+Ross has set up a gateway that pipes Teams messages to you when they contain @Marlow.
+
+CHAT CONTEXT
+- Type: {chat_type}
+- Topic: {chat_topic or '(none)'}
+- Members: {members_str}
+
+RECENT MESSAGES (oldest first, just for context)
+{history_block}
+
+TOOLS YOU HAVE
+You have full bash access. The `outlook-cli` command is installed. Useful subcommands:
+  outlook-cli mail unread / mail search <q> / mail read <n>
+  outlook-cli cal agenda / cal show <n>
+  outlook-cli teams list / teams messages <chat>
+  outlook-cli files list [path] [--site NAME]
+  outlook-cli task list / contact search <q>
+Use them only if you need information that isn't already in the chat above.
+
+RESPONSE GUIDELINES
+- This is a Teams chat, not a code review. Keep replies short and conversational.
+- Plain text or simple HTML only. Teams strips most markdown.
+- No code fences unless the user is explicitly asking about code.
+- Don't sign off, don't introduce yourself again, just answer.
+- Don't use em-dashes (—). Use commas, full stops, or restructure.
+
+The rest of this conversation will be incoming Teams messages. Each one will name
+the sender. Respond to the latest one.
+"""
+
+
+def _call_pi(
+    chat_id: str,
+    prompt: str,
+    *,
+    chat_topic: str = "",
+    chat_type: str = "",
+    members: list[dict] | None = None,
+    sender: str = "",
+    sender_time: str = "",
+    recent_messages: list[dict] | None = None,
+) -> str:
+    """Send a prompt to the per-chat persistent pi session."""
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        response = result.stdout.strip()
-        if not response and result.stderr.strip():
-            response = result.stderr.strip()
-        return response or "[No response from pi]"
-    except subprocess.TimeoutExpired:
-        return "[pi timed out after 3 minutes]"
+        sess = _get_pi_session(chat_id)
+        # On the very first prompt of a brand-new session, prepend the preamble
+        if not sess.has_existing_session() and not getattr(sess, "_preamble_sent", False):
+            preamble = _build_preamble(
+                chat_id=chat_id,
+                chat_topic=chat_topic,
+                chat_type=chat_type,
+                members=members or [],
+                sender=sender,
+                sender_time=sender_time,
+                recent_messages=recent_messages or [],
+            )
+            full_prompt = preamble + f"\n\nLATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+            sess._preamble_sent = True  # type: ignore[attr-defined]
+        else:
+            full_prompt = f"[{sender_time}] {sender}: {prompt}"
+        return sess.prompt(full_prompt)
+    except PiSessionError as exc:
+        _log(f"PiSession error: {exc}")
+        # Reset the session so the next message gets a clean process
+        try:
+            old = _pi_sessions.pop(chat_id, None)
+            if old:
+                old.close()
+        except Exception:
+            pass
+        return f"[pi error: {exc}]"
     except Exception as exc:
+        _log(f"Unexpected pi error: {exc}")
         return f"[pi error: {exc}]"
 
 
@@ -278,12 +374,34 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                 )
                 _log(f"Triggered by {sender}: {prompt[:120]}")
 
-                # Each Teams chat gets its own pi session directory so the
-                # conversation has continuity within that chat.
-                session_dir = str(
-                    config.SESSION_DIR / "gateway_sessions" / f"{abs(hash(chat_id))}"
+                # Fetch chat metadata + members for context (cheap, cached effectively
+                # because pi keeps the session alive across messages — the preamble is
+                # only built on the first message of a fresh session).
+                chat_topic = ""
+                chat_type = ""
+                members: list[dict] = []
+                try:
+                    meta_client = _graph_client()
+                    try:
+                        meta = meta_client.get_teams_chat(chat_id)
+                        chat_topic = meta.get("topic") or ""
+                        chat_type = meta.get("chatType") or ""
+                        members = meta_client.list_teams_chat_members(chat_id, top=20)
+                    finally:
+                        meta_client.close()
+                except Exception:
+                    pass
+
+                response = _call_pi(
+                    chat_id,
+                    prompt,
+                    chat_topic=chat_topic,
+                    chat_type=chat_type,
+                    members=members,
+                    sender=sender,
+                    sender_time=msg_time[:16],
+                    recent_messages=messages,
                 )
-                response = _call_pi(prompt, session_dir)
                 _log(f"Response ({len(response)} chars): {response[:80]}")
 
                 # Format as HTML with robot emoji prefix and a styled block
