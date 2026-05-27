@@ -130,6 +130,11 @@ class _GraphClient:
             return resp.json()
         return self._chunked_upload_od(parent_id, name, data)
 
+    def od_download(self, item_id: str) -> bytes:
+        url = f"{GRAPH_BASE}/me/drive/items/{item_id}/content"
+        resp = self._request("GET", url)
+        return resp.content
+
     def _chunked_upload_od(self, parent_id: str, name: str, data: bytes) -> dict:
         url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{name}:/createUploadSession"
         sess = self._request("POST", url, json_body={
@@ -221,6 +226,11 @@ class _GraphClient:
                                  extra_headers={"Content-Type": "application/octet-stream"})
             return resp.json()
         return self._chunked_upload_sp(drive_id, parent_id, name, data)
+
+    def sp_download(self, drive_id: str, item_id: str) -> bytes:
+        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+        resp = self._request("GET", url)
+        return resp.content
 
     def _chunked_upload_sp(self, drive_id: str, parent_id: str, name: str, data: bytes) -> dict:
         url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{name}:/createUploadSession"
@@ -354,6 +364,23 @@ def _print_items(items: list[dict], path: str, location: str) -> None:
     console.print(f"[dim]{len(folders)} folder(s), {len(files)} file(s)[/]")
 
 
+def _download_destination(dest: str, remote_name: str) -> Path:
+    output = Path(dest or ".").expanduser()
+    if output.exists() and output.is_dir():
+        return output / remote_name
+    if dest.endswith("/") or dest.endswith("\\"):
+        output.mkdir(parents=True, exist_ok=True)
+        return output / remote_name
+    output.parent.mkdir(parents=True, exist_ok=True)
+    return output
+
+
+def _write_download(path: Path, data: bytes, *, overwrite: bool) -> None:
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"{path} already exists. Use --overwrite to replace it.")
+    path.write_bytes(data)
+
+
 # ── Command handlers ──────────────────────────────────────────────
 
 def cmd_files_sites(args) -> None:
@@ -434,6 +461,37 @@ def cmd_files_upload(args) -> None:
         console.print(f"[green]Uploaded[/] → {result.get('name')} "
                       f"({_fmt_size(result.get('size'))})")
     except (OutlookAPIError, ValueError) as e:
+        console.print(f"[red]Error:[/] {e}")
+    finally:
+        gc.close()
+
+
+def cmd_files_download(args) -> None:
+    """Download a file from OneDrive or SharePoint."""
+    remote_path: str = args.path
+    dest: str = getattr(args, "dest", ".") or "."
+    site: str | None = getattr(args, "site", None)
+    overwrite: bool = bool(getattr(args, "overwrite", False))
+
+    gc = _GraphClient()
+    try:
+        if site:
+            _, site_id, drive_id = _resolve_site(gc, site)
+            item = gc.sp_item_by_path(drive_id, remote_path)
+            if "folder" in item:
+                raise ValueError("Download currently supports files, not folders.")
+            data = gc.sp_download(drive_id, item["id"])
+        else:
+            item = gc.od_item_by_path(remote_path)
+            if "folder" in item:
+                raise ValueError("Download currently supports files, not folders.")
+            data = gc.od_download(item["id"])
+
+        output_path = _download_destination(dest, item["name"])
+        _write_download(output_path, data, overwrite=overwrite)
+        console.print(f"[green]Downloaded[/] {item['name']} → {output_path} "
+                      f"({_fmt_size(len(data))})")
+    except (OutlookAPIError, ValueError, FileExistsError, OSError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
         gc.close()

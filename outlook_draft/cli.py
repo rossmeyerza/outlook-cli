@@ -46,6 +46,7 @@ from .commands.files import (
     cmd_files_sites,
     cmd_files_list,
     cmd_files_upload,
+    cmd_files_download,
     cmd_files_mkdir,
     cmd_files_rename,
     cmd_files_move,
@@ -1184,6 +1185,13 @@ def main() -> None:
     cmd_files_upload_p.add_argument("dest", nargs="?", default="", help="Remote folder path (default: root)")
     cmd_files_upload_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
     cmd_files_upload_p.set_defaults(func=cmd_files_upload)
+
+    cmd_files_download_p = files_sub.add_parser("download", help="Download a file")
+    cmd_files_download_p.add_argument("path", help="Remote file path")
+    cmd_files_download_p.add_argument("dest", nargs="?", default=".", help="Local output file or directory")
+    cmd_files_download_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
+    cmd_files_download_p.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_files_download_p.set_defaults(func=cmd_files_download)
 
     cmd_files_mkdir_p = files_sub.add_parser("mkdir", help="Create a folder")
     cmd_files_mkdir_p.add_argument("path", help="Folder path to create")

@@ -170,6 +170,11 @@ outlook-cli files list --site "Tesco" "Shared Documents"   # SharePoint subfolde
 outlook-cli files upload ./report.pdf "Documents/Reports"
 outlook-cli files upload ./deck.pptx "Shared Documents" --site "Tesco"
 
+# Download
+outlook-cli files download "Documents/Reports/report.pdf"
+outlook-cli files download "Documents/Reports/report.pdf" ./downloads/
+outlook-cli files download "Shared Documents/deck.pptx" ./deck.pptx --site "Tesco"
+
 # Create folders
 outlook-cli files mkdir "Documents/Reports/Q2"
 outlook-cli files mkdir "Shared Documents/Proposals" --site "Tesco"
@@ -183,7 +188,7 @@ outlook-cli files move "Shared Documents/file.pdf" "Archive" --site "Tesco"
 
 `--site` matches case-insensitively and accepts partial names — `--site nestle` will find "MAP Nestle" without needing the full name. If the match is ambiguous it tells you which names matched. Without `--site`, all operations target your personal OneDrive.
 
-Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically.
+Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 
 ### Auth and config
 
