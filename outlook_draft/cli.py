@@ -736,11 +736,30 @@ def _resolve_draft_id(client: OutlookClient, ref: str) -> str:
     return ref
 
 
+def add_output_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        dest="json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Output machine-readable JSON",
+    )
+    parser.add_argument(
+        "--table",
+        dest="json",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="Output human-readable tables (default)",
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="outlook-cli",
         description="Manage Outlook mail, drafts, calendar, contacts, and Teams chats",
     )
+    parser.set_defaults(json=False)
+    add_output_args(parser)
     sub = parser.add_subparsers(dest="domain", required=True)
 
     # ── Drafts ────────────────────────────────────────────────────────
@@ -798,18 +817,22 @@ def main() -> None:
 
     # ── Mail ──────────────────────────────────────────────────────────
     p_mail = sub.add_parser("mail", help="Read and search emails")
+    add_output_args(p_mail)
     mail_sub = p_mail.add_subparsers(dest="command", required=True)
 
     cmd_mail_unread = mail_sub.add_parser("unread", help="List unread emails from the Inbox")
+    add_output_args(cmd_mail_unread)
     cmd_mail_unread.add_argument("--count", "-n", type=int, default=50, help="Max results")
     cmd_mail_unread.set_defaults(func=mail_commands.cmd_unread, _mail_ctx=mail_ctx)
 
     cmd_mail_search = mail_sub.add_parser("search", help="Search emails by keyword")
+    add_output_args(cmd_mail_search)
     cmd_mail_search.add_argument("query", help="Search term")
     cmd_mail_search.add_argument("--count", "-n", type=int, default=20, help="Max results")
     cmd_mail_search.set_defaults(func=mail_commands.cmd_mail, _mail_ctx=mail_ctx)
 
     cmd_mail_read = mail_sub.add_parser("read", help="Read an email by index or ID")
+    add_output_args(cmd_mail_read)
     cmd_mail_read.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_read.set_defaults(func=mail_commands.cmd_read, _mail_ctx=mail_ctx)
 
@@ -831,10 +854,12 @@ def main() -> None:
     cmd_mail_move.set_defaults(func=mail_commands.cmd_move, _mail_ctx=mail_ctx)
 
     cmd_mail_folders = mail_sub.add_parser("folders", help="List mail folders")
+    add_output_args(cmd_mail_folders)
     cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
     cmd_mail_folders.set_defaults(func=mail_commands.cmd_folders, _mail_ctx=mail_ctx)
 
     cmd_mail_attachments = mail_sub.add_parser("attachments", help="List message attachments")
+    add_output_args(cmd_mail_attachments)
     cmd_mail_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_attachments.set_defaults(func=mail_commands.cmd_attachments, _mail_ctx=mail_ctx)
 
@@ -850,6 +875,7 @@ def main() -> None:
     cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments, _mail_ctx=mail_ctx)
 
     cmd_mail_links = mail_sub.add_parser("links", help="List links and inline image URLs in an email body")
+    add_output_args(cmd_mail_links)
     cmd_mail_links.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_links.add_argument(
         "--share-only",
@@ -879,9 +905,11 @@ def main() -> None:
 
     # ── Tasks ─────────────────────────────────────────────────────────
     p_task = sub.add_parser("task", help="Manage tasks")
+    add_output_args(p_task)
     task_sub = p_task.add_subparsers(dest="command", required=True)
 
     cmd_task_l = task_sub.add_parser("list", help="List active tasks")
+    add_output_args(cmd_task_l)
     cmd_task_l.add_argument("--count", "-n", type=int, default=50, help="Max tasks")
     cmd_task_l.set_defaults(func=tasks_commands.cmd_task_list, _tasks_ctx=tasks_ctx)
 
@@ -915,18 +943,19 @@ def main() -> None:
 
     # ── Calendar ──────────────────────────────────────────────────────
     p_cal = sub.add_parser("cal", help="Manage calendar events")
+    add_output_args(p_cal)
     cal_sub = p_cal.add_subparsers(dest="command", required=True)
 
     cmd_cal_agenda = cal_sub.add_parser("agenda", help="List upcoming calendar events")
+    add_output_args(cmd_cal_agenda)
     cmd_cal_agenda.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
     cmd_cal_agenda.add_argument("--count", "-n", type=int, default=20, help="Max events")
-    cmd_cal_agenda.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_agenda.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
     cmd_cal_agenda.set_defaults(func=calendar_commands.cmd_cal_agenda, _calendar_ctx=calendar_ctx)
 
     cmd_cal_show = cal_sub.add_parser("show", help="Show event details")
+    add_output_args(cmd_cal_show)
     cmd_cal_show.add_argument("event_id", help="Event index (from agenda) or full ID")
-    cmd_cal_show.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_show.set_defaults(func=calendar_commands.cmd_cal_show, _calendar_ctx=calendar_ctx)
 
     cmd_cal_create_cmd = cal_sub.add_parser("create", help="Create an event")
@@ -944,25 +973,25 @@ def main() -> None:
     cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
 
     cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
+    add_output_args(cmd_cal_rooms_cmd)
     cmd_cal_rooms_cmd.add_argument("--room-list", help="Optional room list email/address")
-    cmd_cal_rooms_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_rooms_cmd.set_defaults(func=calendar_commands.cmd_cal_rooms, _calendar_ctx=calendar_ctx)
 
     cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
+    add_output_args(cmd_cal_availability_cmd)
     cmd_cal_availability_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
     cmd_cal_availability_cmd.add_argument("--start", required=True, help="Start time")
     cmd_cal_availability_cmd.add_argument("--end", required=True, help="End time")
     cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
-    cmd_cal_availability_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_availability_cmd.set_defaults(func=calendar_commands.cmd_cal_availability, _calendar_ctx=calendar_ctx)
 
     cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
+    add_output_args(cmd_cal_find_time_cmd)
     cmd_cal_find_time_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
     cmd_cal_find_time_cmd.add_argument("--start", required=True, help="Window start time")
     cmd_cal_find_time_cmd.add_argument("--end", required=True, help="Window end time")
     cmd_cal_find_time_cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
     cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
-    cmd_cal_find_time_cmd.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     cmd_cal_find_time_cmd.set_defaults(func=calendar_commands.cmd_cal_find_time, _calendar_ctx=calendar_ctx)
 
     cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
@@ -1044,9 +1073,11 @@ def main() -> None:
 
     # ── Contacts ──────────────────────────────────────────────────────
     p_contact = sub.add_parser("contact", help="Manage contacts")
+    add_output_args(p_contact)
     contact_sub = p_contact.add_subparsers(dest="command", required=True)
 
     cmd_contact_search = contact_sub.add_parser("search", help="Search contacts by name or email")
+    add_output_args(cmd_contact_search)
     cmd_contact_search.add_argument("query", help="Name or email to search for")
     cmd_contact_search.add_argument("--count", "-n", type=int, default=10, help="Max results")
     cmd_contact_search.set_defaults(func=contacts_commands.cmd_contacts, _contacts_ctx=contacts_ctx)
@@ -1141,9 +1172,10 @@ def main() -> None:
 
     # ── Mailbox ───────────────────────────────────────────────────────
     p_mailbox = sub.add_parser("mailbox", help="Manage mailbox settings")
+    add_output_args(p_mailbox)
     mailbox_sub = p_mailbox.add_subparsers(dest="command", required=True)
     cmd_mailbox_show_parser = mailbox_sub.add_parser("show", help="Show mailbox settings")
-    cmd_mailbox_show_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    add_output_args(cmd_mailbox_show_parser)
     cmd_mailbox_show_parser.set_defaults(func=cmd_mailbox_show)
     cmd_mailbox_update_parser = mailbox_sub.add_parser("update", help="Update mailbox settings")
     cmd_mailbox_update_parser.add_argument("--timezone", help="Mailbox timezone")
@@ -1154,6 +1186,7 @@ def main() -> None:
 
     # ── Auth ──────────────────────────────────────────────────────────
     p_auth = sub.add_parser("auth", help="Manage authentication")
+    add_output_args(p_auth)
     p_auth.add_argument(
         "auth_command",
         nargs="?",
@@ -1166,7 +1199,6 @@ def main() -> None:
         action="store_true",
         help="Open a visible browser instead of running fully headless",
     )
-    p_auth.add_argument("--json", action="store_true", help="Output machine-readable JSON for status/scopes")
 
     # ── Files (OneDrive + SharePoint) ────────────────────────────────
     p_files = sub.add_parser("files", help="Browse and manage OneDrive and SharePoint files")
@@ -1242,9 +1274,10 @@ def main() -> None:
 
     # ── Config ────────────────────────────────────────────────────────
     p_config = sub.add_parser("config", help="Inspect local configuration")
+    add_output_args(p_config)
     config_sub = p_config.add_subparsers(dest="command", required=True)
     cmd_config_check_parser = config_sub.add_parser("check", help="Validate local configuration")
-    cmd_config_check_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    add_output_args(cmd_config_check_parser)
     cmd_config_check_parser.set_defaults(func=cmd_config_check)
 
     args = parser.parse_args()

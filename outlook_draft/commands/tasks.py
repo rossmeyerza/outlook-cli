@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime
 
@@ -56,10 +57,27 @@ def cmd_task_list(args: argparse.Namespace) -> None:
         client.close()
 
     if not tasks:
+        if args.json:
+            print(json.dumps([]))
+            return
         _console(args).print("[dim]No active tasks.[/]")
         return
 
     save_cache(TASK_CACHE, tasks)
+
+    if args.json:
+        print(json.dumps([
+            {
+                "index": i,
+                "id": task.get("Id", ""),
+                "subject": task.get("Subject", ""),
+                "status": task.get("Status", ""),
+                "importance": task.get("Importance", ""),
+                "dueDateTime": task.get("DueDateTime", {}),
+            }
+            for i, task in enumerate(tasks, 1)
+        ], indent=2, ensure_ascii=False))
+        return
 
     table = Table(title=f"Active Tasks ({len(tasks)})")
     table.add_column("#", style="dim", width=3)

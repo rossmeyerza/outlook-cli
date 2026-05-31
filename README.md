@@ -60,15 +60,19 @@ The script detects an existing install and runs `git pull` and updates dependenc
 
 ```bash
 outlook-cli mail unread                     # list unread emails
+outlook-cli mail unread --json              # machine-readable unread emails
 outlook-cli mail search colgate             # search emails by keyword
 outlook-cli mail search "update" -n 10      # with result limit
+outlook-cli mail search colgate --json      # machine-readable search results
 
 outlook-cli mail read 1                     # read by index from last search
 outlook-cli mail read <full-id>             # read by message ID
+outlook-cli mail read 1 --json              # full message JSON
 outlook-cli mail mark-read 1                # mark email as read
 outlook-cli mail mark-unread 1              # mark email as unread
 outlook-cli mail archive 1                  # archive email
 outlook-cli mail folders                    # list mail folders
+outlook-cli mail folders --json             # machine-readable folders
 outlook-cli mail move 1 --folder Archive    # move email to folder
 outlook-cli mail attachments 1              # list attachments
 outlook-cli mail download-attachments 1 -d ./attachments
@@ -103,6 +107,7 @@ outlook-cli cal agenda                  # list upcoming events (next 7 days)
 outlook-cli cal agenda --days 14        # list next 14 days
 outlook-cli cal agenda --plain          # plain text output
 outlook-cli cal agenda --json           # machine-readable JSON
+outlook-cli cal agenda --table          # explicit table output
 
 outlook-cli cal show 1                  # show event details by index from agenda
 outlook-cli cal show <event-id>         # show by full ID
@@ -128,6 +133,7 @@ Results from `cal agenda` are cached to disk so `cal show <n>`, `cal update <n>`
 ```bash
 outlook-cli task create "Buy milk"        # create a new task
 outlook-cli task list                     # list incomplete tasks
+outlook-cli task list --json              # machine-readable tasks
 outlook-cli task update 1 --due "2026-05-20" --importance High
 outlook-cli task complete 1               # mark task as done by index
 outlook-cli task delete 1                 # delete task by index
@@ -138,6 +144,7 @@ outlook-cli task delete 1                 # delete task by index
 ```bash
 outlook-cli contact search ross
 outlook-cli contact search "john smith" -n 20
+outlook-cli contact search ross --json
 outlook-cli contact create --name "Ada Lovelace" --email ada@example.com
 outlook-cli contact update 1 --company "Analytical Engines Ltd"
 ```

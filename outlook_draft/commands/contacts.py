@@ -62,10 +62,30 @@ def cmd_contacts(args: argparse.Namespace) -> None:
         client.close()
 
     if not people:
+        if args.json:
+            print(json.dumps([]))
+            return
         _console(args).print(f"[dim]No contacts found for '{args.query}'.[/]")
         return
 
     CONTACT_CACHE.write_text(json.dumps([{"Id": _contact_id(p)} for p in people if _contact_id(p)]))
+
+    if args.json:
+        print(json.dumps([
+            {
+                "index": i,
+                "id": _contact_id(person),
+                "displayName": person.get("DisplayName", ""),
+                "emails": [
+                    email.get("Address", "")
+                    for email in person.get("ScoredEmailAddresses", [])
+                    if email.get("Address")
+                ],
+                "type": _type_label(person),
+            }
+            for i, person in enumerate(people, 1)
+        ], indent=2, ensure_ascii=False))
+        return
 
     table = Table(title=f"Contacts matching '{args.query}'")
     table.add_column("#", style="dim", width=3)

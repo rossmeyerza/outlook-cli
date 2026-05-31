@@ -9,16 +9,21 @@ CLI for managing Outlook email, drafts, calendar, tasks, contacts, Teams browsin
 ```bash
 # Search and read emails
 outlook-cli mail unread                    # list unread emails
+outlook-cli mail unread --json             # JSON unread emails
 outlook-cli mail search <query>            # search emails by keyword
 outlook-cli mail search colgate -n 10      # with result limit
+outlook-cli mail search <query> --json     # JSON search results
 outlook-cli mail read <n>                  # read email by index from last unread/search
+outlook-cli mail read <n> --json           # full message JSON
 outlook-cli mail read <full-id>            # read by Outlook message ID
 outlook-cli mail mark-read <n>             # mark email as read
 outlook-cli mail mark-unread <n>           # mark email as unread
 outlook-cli mail archive <n>               # archive email
 outlook-cli mail folders                   # list mail folders
+outlook-cli mail folders --json            # JSON folders
 outlook-cli mail move <n> --folder <folder> # move email
 outlook-cli mail attachments <n>           # list attachments
+outlook-cli mail attachments <n> --json    # JSON attachments
 outlook-cli mail download-attachments <n>  # download attachments
 
 # Create drafts
@@ -37,6 +42,7 @@ outlook-cli cal agenda                     # list upcoming events (next 7 days)
 outlook-cli cal agenda -d 14               # list next 14 days
 outlook-cli cal agenda --plain             # plain text agenda
 outlook-cli cal agenda --json              # JSON agenda
+outlook-cli cal agenda --table             # explicit table agenda
 outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal show <n> --json            # JSON event details with recurrence metadata
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
@@ -53,6 +59,7 @@ outlook-cli cal cancel <n>                 # cancel event you organize
 # Manage tasks
 outlook-cli task create "<name>"           # create a new task
 outlook-cli task list                      # list active tasks
+outlook-cli task list --json               # JSON active tasks
 outlook-cli task update <n> --due "..." --importance High
 outlook-cli task complete <n>              # mark task as done
 outlook-cli task delete <n>                # delete task
@@ -97,7 +104,7 @@ outlook-cli config check                   # validate local config without print
 
 ## Key Details
 
-- **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation.
+- **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation. Use `--json` for agent-readable summaries, `--table` for explicit human tables.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
 - **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.

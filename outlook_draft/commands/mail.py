@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import re
 import sys
 from pathlib import Path
@@ -57,6 +58,28 @@ def _format_datetime(args: argparse.Namespace, value: str) -> str:
 
 def _resolve_message_id(args: argparse.Namespace, client: Any, ref: str) -> str:
     return _ctx(args)["resolve_message_id"](client, ref)
+
+
+def _print_json(value: Any) -> None:
+    print(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def _message_summary(args: argparse.Namespace, msg: JsonDict, index: int | None = None) -> JsonDict:
+    from_obj = msg.get("From", {}).get("EmailAddress", {})
+    return {
+        "index": index,
+        "id": msg.get("Id", ""),
+        "subject": msg.get("Subject", ""),
+        "from": {
+            "name": from_obj.get("Name", ""),
+            "address": from_obj.get("Address", ""),
+        },
+        "receivedDateTime": msg.get("ReceivedDateTime", ""),
+        "received": _format_datetime(args, msg.get("ReceivedDateTime", "")),
+        "isRead": msg.get("IsRead", True),
+        "hasAttachments": msg.get("HasAttachments", False),
+        "importance": msg.get("Importance", ""),
+    }
 
 
 def _render_message_table(args: argparse.Namespace, messages: list[JsonDict], title: str) -> None:
@@ -126,7 +149,14 @@ def cmd_unread(args: argparse.Namespace) -> None:
         client.close()
 
     if not messages:
+        if args.json:
+            _print_json([])
+            return
         _console(args).print("[dim]No unread emails.[/]")
+        return
+
+    if args.json:
+        _print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
         return
 
     _render_message_table(args, messages, f"Unread emails ({len(messages)})")
@@ -144,7 +174,14 @@ def cmd_mail(args: argparse.Namespace) -> None:
         client.close()
 
     if not messages:
+        if args.json:
+            _print_json([])
+            return
         _console(args).print(f"[dim]No emails found for '{args.query}'.[/]")
+        return
+
+    if args.json:
+        _print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
         return
 
     _render_message_table(args, messages, f"Emails matching '{args.query}' ({len(messages)})")
@@ -161,6 +198,16 @@ def cmd_read(args: argparse.Namespace) -> None:
         sys.exit(1)
     finally:
         client.close()
+
+    if args.json:
+        data = dict(msg)
+        body_obj = data.get("Body", {})
+        if body_obj.get("ContentType") == "HTML":
+            body_obj = dict(body_obj)
+            body_obj["Text"] = _html_to_text(args, body_obj.get("Content", ""))
+            data["Body"] = body_obj
+        _print_json(data)
+        return
 
     from_obj = msg.get("From", {}).get("EmailAddress", {})
     from_str = f"{from_obj.get('Name', '')} <{from_obj.get('Address', '')}>"
@@ -260,6 +307,19 @@ def cmd_folders(args: argparse.Namespace) -> None:
         client.close()
 
     save_cache(MAIL_FOLDER_CACHE, folders)
+    if args.json:
+        _print_json([
+            {
+                "index": i,
+                "id": folder.get("Id", ""),
+                "displayName": folder.get("DisplayName", ""),
+                "unreadItemCount": folder.get("UnreadItemCount", 0),
+                "totalItemCount": folder.get("TotalItemCount", 0),
+            }
+            for i, folder in enumerate(folders, 1)
+        ])
+        return
+
     table = Table(title=f"Mail folders ({len(folders)})")
     table.add_column("#", style="dim", width=3)
     table.add_column("Name", ratio=1)
@@ -289,7 +349,24 @@ def cmd_attachments(args: argparse.Namespace) -> None:
         client.close()
 
     if not attachments:
+        if args.json:
+            _print_json([])
+            return
         _console(args).print("[dim]No attachments found.[/]")
+        return
+
+    if args.json:
+        _print_json([
+            {
+                "index": i,
+                "id": attachment.get("Id", ""),
+                "name": attachment.get("Name", ""),
+                "contentType": attachment.get("ContentType", ""),
+                "size": attachment.get("Size", 0),
+                "isInline": attachment.get("IsInline", False),
+            }
+            for i, attachment in enumerate(attachments, 1)
+        ])
         return
 
     table = Table(title=f"Attachments ({len(attachments)})")
@@ -378,7 +455,17 @@ def cmd_links(args: argparse.Namespace) -> None:
 
     links = _collect_message_links(message, share_only=args.share_only)
     if not links:
+        if args.json:
+            _print_json([])
+            return
         _console(args).print("[dim]No links found in this email body.[/]")
+        return
+
+    if args.json:
+        _print_json([
+            {"index": i, **link}
+            for i, link in enumerate(links, 1)
+        ])
         return
 
     table = Table(title=f"Links ({len(links)})")
