@@ -62,6 +62,17 @@ def _chat_title(chat: JsonDict, members: list[JsonDict] | None = None) -> str:
 
     names: list[str] = []
     self_email = config.MS_EMAIL.lower()
+    self_only = False
+    if members:
+        member_emails = [
+            (member.get("email") or "").lower()
+            for member in members
+            if member.get("email")
+        ]
+        self_only = bool(member_emails) and all(email == self_email for email in member_emails)
+    if self_only:
+        return "Self chat"
+
     for member in members or []:
         email = (member.get("email") or "").lower()
         label = _member_label(member)
@@ -100,6 +111,42 @@ def _resolve_teams_chat_id(args: argparse.Namespace, ref: str) -> str:
             sys.exit(1)
 
     return ref
+
+
+def find_self_chat(client: Any, *, top: int = 500) -> tuple[JsonDict, list[JsonDict]] | None:
+    """Find the Teams chat whose membership is only the current user."""
+    current_user = client.get_current_user()
+    self_id = current_user.get("id", "")
+    self_email = (
+        current_user.get("mail")
+        or current_user.get("userPrincipalName")
+        or config.MS_EMAIL
+        or ""
+    ).lower()
+
+    chats = client.list_teams_chats(top=top)
+    chats.sort(key=lambda chat: chat.get("lastUpdatedDateTime") or "", reverse=True)
+    for chat in chats:
+        if chat.get("chatType") != "oneOnOne":
+            continue
+        try:
+            members = client.list_teams_chat_members(chat["id"], top=10)
+        except OutlookAPIError:
+            continue
+        if not members:
+            continue
+
+        member_ids = [member.get("userId") for member in members if member.get("userId")]
+        member_emails = [
+            (member.get("email") or "").lower()
+            for member in members
+            if member.get("email")
+        ]
+        ids_match = bool(self_id and member_ids) and all(user_id == self_id for user_id in member_ids)
+        emails_match = bool(self_email and member_emails) and all(email == self_email for email in member_emails)
+        if ids_match or emails_match:
+            return chat, members
+    return None
 
 
 def _teams_sender(message: JsonDict) -> str:
@@ -272,6 +319,35 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
         lines.append(f"[bold]Members:[/] {member_list}")
 
     console.print(Panel("\n".join(lines), title="Teams chat", border_style="blue"))
+
+
+def cmd_teams_self(args: argparse.Namespace) -> None:
+    console = _console(args)
+    client = _get_graph_client(args)
+    try:
+        found = find_self_chat(client)
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to find Teams self-chat: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    if not found:
+        console.print("[yellow]No Teams self-chat found in Microsoft Graph.[/]")
+        return
+
+    chat, members = found
+    member_list = ", ".join(_member_label(member) for member in members if _member_label(member))
+    lines = [
+        f"[bold]Title:[/] {_chat_title(chat, members)}",
+        f"[bold]Type:[/] {chat.get('chatType', '')}",
+        f"[bold]Updated:[/] {chat.get('lastUpdatedDateTime', '')}",
+        f"[bold]Web URL:[/] {chat.get('webUrl', '')}",
+        f"[bold]ID:[/] [dim]{chat.get('id', '')}[/]",
+    ]
+    if member_list:
+        lines.append(f"[bold]Members:[/] {member_list}")
+    console.print(Panel("\n".join(lines), title="Teams self-chat", border_style="green"))
 
 
 def cmd_teams_send(args: argparse.Namespace) -> None:

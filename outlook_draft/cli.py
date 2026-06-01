@@ -34,7 +34,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import config
-from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache, save_cache
+from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache
 from .commands import calendar as calendar_commands
 from .commands import contacts as contacts_commands
 from .commands import mail as mail_commands
@@ -1123,6 +1123,9 @@ def main() -> None:
     cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_show_cmd.set_defaults(func=teams_commands.cmd_teams_show, _teams_ctx=teams_ctx)
 
+    cmd_teams_self_cmd = teams_sub.add_parser("self", help="Find your Teams self-chat")
+    cmd_teams_self_cmd.set_defaults(func=teams_commands.cmd_teams_self, _teams_ctx=teams_ctx)
+
     cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
     cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
@@ -1263,6 +1266,7 @@ def main() -> None:
 
     gw_start = gateway_sub.add_parser("start", help="Start the gateway daemon")
     gw_start.add_argument("--chat-id", metavar="ID", help="Teams chat ID to monitor")
+    gw_start.add_argument("--self-chat", action="store_true", help="Monitor your Teams self-chat")
     gw_start.add_argument("--trigger", metavar="TEXT", help="Trigger string (default: @Marlow)")
     gw_start.add_argument("--poll", type=int, metavar="SECONDS", help="Poll interval seconds (default: 30)")
     gw_start.set_defaults(func=cmd_gateway_start)
