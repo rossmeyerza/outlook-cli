@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Callable
 
 
 class PiSessionError(Exception):
@@ -117,7 +118,12 @@ class PiSession:
     # Prompt
     # ------------------------------------------------------------------
 
-    def prompt(self, text: str, timeout: float = 240.0) -> str:
+    def prompt(
+        self,
+        text: str,
+        timeout: float = 240.0,
+        progress_fn: Callable[[str], None] | None = None,
+    ) -> str:
         """Send a prompt, wait for agent_end, return accumulated assistant text."""
         if not self.is_alive():
             self.start()
@@ -164,7 +170,15 @@ class PiSession:
                 ev = event.get("assistantMessageEvent", {})
                 if ev.get("type") == "text_delta":
                     accumulated.append(ev.get("delta", ""))
+                else:
+                    progress = _summarize_progress_event(ev)
+                    if progress and progress_fn:
+                        progress_fn(progress)
                 continue
+
+            progress = _summarize_progress_event(event)
+            if progress and progress_fn:
+                progress_fn(progress)
 
             if etype == "agent_end":
                 break
@@ -172,3 +186,41 @@ class PiSession:
             # Other events (turn_start, tool_execution_*, etc.) are ignored
 
         return "".join(accumulated).strip() or "[empty response]"
+
+
+def _summarize_progress_event(event: dict) -> str | None:
+    """Return a compact human-readable progress line for known Pi RPC events."""
+    event_type = str(event.get("type") or "")
+    if event_type == "message":
+        message = event.get("message") or {}
+        for item in message.get("content") or []:
+            if item.get("type") == "toolCall":
+                name = item.get("name") or "tool"
+                args = item.get("arguments") or {}
+                if isinstance(args, dict):
+                    command = args.get("command") or args.get("cmd")
+                    if command:
+                        return f"Using {name}: {command}"
+                return f"Using {name}"
+            if item.get("type") == "toolResult":
+                name = item.get("toolName") or "tool"
+                if item.get("isError"):
+                    return f"{name} failed"
+                return f"{name} finished"
+
+    if event_type in {"tool_call", "tool_use", "tool_execution_start"}:
+        name = event.get("name") or event.get("toolName") or event.get("tool_name") or "tool"
+        args = event.get("arguments") or event.get("input") or event.get("args") or {}
+        if isinstance(args, dict):
+            command = args.get("command") or args.get("cmd")
+            if command:
+                return f"Using {name}: {command}"
+        return f"Using {name}"
+
+    if event_type in {"tool_result", "tool_execution_end"}:
+        name = event.get("name") or event.get("toolName") or event.get("tool_name") or "tool"
+        if event.get("isError"):
+            return f"{name} failed"
+        return f"{name} finished"
+
+    return None

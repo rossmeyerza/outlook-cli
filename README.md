@@ -177,6 +177,10 @@ The gateway watches one configured Teams chat for the trigger, sends the prompt 
 
 `outlook-cli teams self` checks access to your Teams self-chat. `--self-chat` uses the Microsoft Graph special self-chat thread, `48:notes`. This is different from the normal `/me/chats` entry that can appear as a one-person chat.
 
+When a prompt is received, the gateway posts a short `...` receipt message immediately. It then tries to soft-delete that receipt before posting the final response. If Microsoft Graph denies the delete, the final response still posts and the failed cleanup is written to the gateway log.
+
+If the Microsoft Graph token expires, the gateway attempts one headless re-authentication. If that fails, it records the auth error in `gateway_state.json` and exits instead of retrying every poll interval.
+
 Gateway-native chat commands use `!` after the trigger so they do not collide with Teams slash commands:
 
 ```text

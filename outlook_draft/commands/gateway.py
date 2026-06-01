@@ -433,6 +433,7 @@ def _call_pi(
     sender_time: str = "",
     recent_messages: list[dict] | None = None,
     trigger_msg_id: str = "",
+    progress_fn=None,
 ) -> str:
     """Send a prompt to the per-chat persistent pi session."""
     try:
@@ -477,7 +478,7 @@ def _call_pi(
             else:
                 full_prompt = f"[{display_sender_time}] {sender}: {prompt}"
 
-        response = sess.prompt(full_prompt)
+        response = sess.prompt(full_prompt, progress_fn=progress_fn)
         # Mark this trigger time as the last Marlow turn for catch-up tracking
         if sender_time:
             _last_marlow_turn_time[chat_id] = sender_time
@@ -513,6 +514,10 @@ def _format_gateway_status(chat_id: str, trigger: str, poll_interval: int) -> st
         lines.append(f"Last seen: {state['last_seen_time']}")
     if state.get("last_marlow_turn_time"):
         lines.append(f"Last Marlow turn: {state['last_marlow_turn_time']}")
+    if state.get("auth_error"):
+        lines.append(f"Auth error: {state['auth_error']}")
+    if state.get("stopped_reason"):
+        lines.append(f"Stopped reason: {state['stopped_reason']}")
     return "\n".join(lines)
 
 
@@ -607,7 +612,7 @@ def _post_gateway_response(chat_id: str, response: str) -> None:
         _post_gateway_response_chunk(chat_id, chunk)
 
 
-def _post_gateway_response_chunk(chat_id: str, response: str) -> None:
+def _post_gateway_response_chunk(chat_id: str, response: str) -> dict:
     html_body = (
         "<div style='border-left:3px solid #6264a7;"
         "padding:6px 12px;background:#f3f2f1;'>"
@@ -617,13 +622,38 @@ def _post_gateway_response_chunk(chat_id: str, response: str) -> None:
     )
     post_client = _graph_client()
     try:
-        post_client._send_teams_message_internal(
+        return post_client._send_teams_message_internal(
             chat_id,
             html_body,
             content_type="html",
         )
     finally:
         post_client.close()
+
+
+def _post_gateway_status_message(chat_id: str, response: str) -> dict | None:
+    try:
+        return _post_gateway_response_chunk(chat_id, response)
+    except Exception as exc:
+        _log(f"Failed to post status message: {exc}")
+        return None
+
+
+def _delete_gateway_message(chat_id: str, message: dict | None) -> None:
+    message_id = (message or {}).get("id")
+    if not message_id:
+        return
+    client = _graph_client()
+    try:
+        user_id = client.get_current_user().get("id", "")
+        if not user_id:
+            return
+        client._soft_delete_teams_message_internal(chat_id, message_id, user_id)
+        _log(f"Status message deleted: {message_id}")
+    except Exception as exc:
+        _log(f"Failed to delete status message {message_id}: {exc}")
+    finally:
+        client.close()
 
 
 def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
@@ -702,6 +732,16 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                     _log("Gateway is paused; normal prompt ignored")
                     continue
 
+                receipt_message = _post_gateway_status_message(chat_id, "...")
+                progress_seen: set[str] = set()
+
+                def progress_update(line: str) -> None:
+                    if line in progress_seen:
+                        return
+                    progress_seen.add(line)
+                    _log(f"Pi progress: {line}")
+                    _post_gateway_status_message(chat_id, f"... {line}")
+
                 # Fetch chat metadata + members for context (cheap, cached effectively
                 # because pi keeps the session alive across messages — the preamble is
                 # only built on the first message of a fresh session).
@@ -730,10 +770,12 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                     sender_time=msg_time,
                     recent_messages=messages,
                     trigger_msg_id=msg_id,
+                    progress_fn=progress_update,
                 )
                 _log(f"Response ({len(response)} chars): {response[:80]}")
 
                 try:
+                    _delete_gateway_message(chat_id, receipt_message)
                     _post_gateway_response(chat_id, response)
                     _log("Response posted to Teams.")
                 except Exception as exc:
@@ -743,6 +785,8 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
             _log(f"Graph API error: {exc}")
         except (TokenExpiredError, TokenNotFoundError) as exc:
             _log(f"Graph auth error: {exc}")
+            _write_gateway_state(auth_error=str(exc), stopped_reason="graph_auth_error")
+            return
         except Exception as exc:
             _log(f"Unexpected poll error: {exc}")
 
@@ -760,7 +804,13 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     chat_id = _resolve_chat_id(args, console)
     trigger = getattr(args, "trigger", None) or config.GATEWAY_TRIGGER
     poll_interval = getattr(args, "poll", None) or config.GATEWAY_POLL_INTERVAL
-    _write_gateway_state(chat_id=chat_id, trigger=trigger, poll_interval=poll_interval)
+    _write_gateway_state(
+        chat_id=chat_id,
+        trigger=trigger,
+        poll_interval=poll_interval,
+        auth_error=None,
+        stopped_reason=None,
+    )
 
     console.print("[green]Starting gateway...[/]")
     console.print(f"  Chat:    [bold]{chat_id}[/]")
@@ -836,6 +886,10 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
         console.print(f"  Last seen: {state['last_seen_time']}")
     if state.get("last_marlow_turn_time"):
         console.print(f"  Last Marlow turn: {state['last_marlow_turn_time']}")
+    if state.get("auth_error"):
+        console.print(f"  Auth error: {state['auth_error']}")
+    if state.get("stopped_reason"):
+        console.print(f"  Stopped reason: {state['stopped_reason']}")
     if state.get("paused"):
         console.print("  Paused:  yes")
     console.print(f"  Log:     {config.GATEWAY_LOG_FILE}")

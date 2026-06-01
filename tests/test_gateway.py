@@ -7,6 +7,7 @@ from outlook_draft.commands.gateway import (
     _handle_gateway_command,
     _parse_graph_time,
 )
+from outlook_draft.commands.pi_session import _summarize_progress_event
 
 
 def test_gateway_command_parser_ignores_normal_prompts() -> None:
@@ -34,3 +35,26 @@ def test_chunk_response_splits_long_messages_on_boundaries() -> None:
     response = "alpha beta gamma delta"
 
     assert _chunk_response(response, max_chars=12) == ["alpha beta", "gamma delta"]
+
+
+def test_summarize_progress_event_for_tool_call_command() -> None:
+    assert _summarize_progress_event(
+        {"type": "tool_call", "name": "bash", "arguments": {"command": "outlook-cli cal agenda"}}
+    ) == "Using bash: outlook-cli cal agenda"
+
+
+def test_summarize_progress_event_for_tool_result() -> None:
+    assert _summarize_progress_event({"type": "tool_result", "toolName": "bash"}) == "bash finished"
+
+
+def test_summarize_progress_event_for_message_tool_call() -> None:
+    assert _summarize_progress_event(
+        {
+            "type": "message",
+            "message": {
+                "content": [
+                    {"type": "toolCall", "name": "bash", "arguments": {"command": "outlook-cli mail unread"}}
+                ]
+            },
+        }
+    ) == "Using bash: outlook-cli mail unread"

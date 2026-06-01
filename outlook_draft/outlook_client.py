@@ -627,6 +627,13 @@ class OutlookClient:
         )
         return resp.json()
 
+    def _soft_delete_teams_message_internal(self, chat_id: str, message_id: str, user_id: str) -> None:
+        """Soft-delete a Teams chat message — internal use by gateway only."""
+        self._request(
+            "POST",
+            f"/users/{user_id}/chats/{chat_id}/messages/{message_id}/softDelete",
+        )
+
     # ── People / contacts ─────────────────────────────────────────────
 
     def search_people(self, query: str, top: int = 10) -> list[dict[str, Any]]:
