@@ -169,11 +169,13 @@ Lists Teams chats, shows chat details, and reads messages. `teams list` sorts by
 outlook-cli gateway start
 outlook-cli gateway start --self-chat
 outlook-cli gateway start --chat-id "19:..." --trigger "@Marlow" --poll 30
+outlook-cli gateway start --self-chat --model claude-opus-4.8 --provider wpp
+outlook-cli gateway start --self-chat --model sonnet:high
 outlook-cli gateway status
 outlook-cli gateway stop
 ```
 
-The gateway watches one configured Teams chat for the trigger, sends the prompt to `pi --mode rpc`, and posts Marlow's response back into the chat. Runtime state lives in `~/.local/share/outlook-cli/session_state/`, including `gateway_state.json`, `gateway.pid`, `gateway.log`, and per-chat Pi session files.
+The gateway watches one configured Teams chat for the trigger, sends the prompt to `pi --mode rpc`, and posts Marlow's response back into the chat. Runtime state lives in `~/.local/share/outlook-cli/session_state/`, including `gateway_state.json`, `gateway.pid`, `gateway.log`, and per-chat Pi session files. Pi runs from a separate per-chat workspace under `~/.local/share/outlook-cli/gateway_workspaces/`, so it does not treat the Outlook CLI install directory as the active project.
 
 `outlook-cli teams self` checks access to your Teams self-chat. `--self-chat` uses the Microsoft Graph special self-chat thread, `48:notes`. This is different from the normal `/me/chats` entry that can appear as a one-person chat.
 
@@ -188,6 +190,10 @@ Gateway-native chat commands use `!` after the trigger so they do not collide wi
 @Marlow !status
 @Marlow !new
 @Marlow !reset
+@Marlow !model
+@Marlow !model claude-opus-4.8
+@Marlow !model --provider wpp --model claude-opus-4.8 --thinking high
+@Marlow !model reset
 @Marlow !pause
 @Marlow !resume
 @Marlow !tools
@@ -195,6 +201,8 @@ Gateway-native chat commands use `!` after the trigger so they do not collide wi
 ```
 
 `!new` starts a fresh Pi conversation for the chat. `!reset` clears that chat's persisted Pi session before starting fresh. `!pause` ignores normal prompts until `!resume`, while command messages still work.
+
+`!model` shows the current Pi settings for the chat. `!model <model>` or `!model --provider <provider> --model <model> --thinking <level>` updates the saved settings and restarts the Pi process on the next prompt while keeping the chat's persisted session files. `!model reset` returns to Pi defaults.
 
 ### Files (OneDrive and SharePoint)
 

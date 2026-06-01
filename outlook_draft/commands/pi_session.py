@@ -32,6 +32,11 @@ class PiSession:
     def __init__(self, session_dir: Path, log_fn=None, *, resume: bool = True):
         self.session_dir = session_dir
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.workspace_dir: Path | None = None
+        self.provider: str | None = None
+        self.model: str | None = None
+        self.thinking: str | None = None
+        self.models: str | None = None
         self._log = log_fn or (lambda msg: None)
         self._resume = resume
         self.resumed_existing = False
@@ -52,13 +57,27 @@ class PiSession:
             raise PiSessionError("pi not found in PATH")
 
         cmd = [pi_bin, "--mode", "rpc", "--session-dir", str(self.session_dir)]
+        if self.provider:
+            cmd += ["--provider", self.provider]
+        if self.model:
+            cmd += ["--model", self.model]
+        if self.thinking:
+            cmd += ["--thinking", self.thinking]
+        if self.models:
+            cmd += ["--models", self.models]
         # If there's an existing session jsonl in the dir, resume the latest one.
         existing = sorted(self.session_dir.glob("*.jsonl"), key=os.path.getmtime)
         if self._resume and existing:
             cmd += ["--session", str(existing[-1])]
             self.resumed_existing = True
 
-        self._log(f"Spawning: {' '.join(cmd)}")
+        workspace = self.workspace_dir
+        if workspace:
+            workspace.mkdir(parents=True, exist_ok=True)
+
+        cwd = str(workspace) if workspace else None
+        suffix = f" cwd={cwd}" if cwd else ""
+        self._log(f"Spawning: {' '.join(cmd)}{suffix}")
         self._proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -66,6 +85,7 @@ class PiSession:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            cwd=cwd,
         )
         self._reader_thread = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader_thread.start()

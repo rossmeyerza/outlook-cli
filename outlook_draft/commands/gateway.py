@@ -17,6 +17,7 @@ import html
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -76,6 +77,33 @@ def _write_gateway_state(**updates: object) -> None:
 def _session_dir_for_chat(chat_id: str) -> Path:
     digest = hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:16]
     return config.SESSION_DIR / "gateway_sessions" / digest
+
+
+def _workspace_dir_for_chat(chat_id: str) -> Path:
+    digest = hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:16]
+    return config.GATEWAY_WORKSPACE_DIR / digest
+
+
+def _configure_pi_session(sess: PiSession, chat_id: str) -> None:
+    state = _read_gateway_state()
+    sess.workspace_dir = _workspace_dir_for_chat(chat_id)
+    sess.provider = str(state.get("pi_provider") or "") or None
+    sess.model = str(state.get("pi_model") or "") or None
+    sess.thinking = str(state.get("pi_thinking") or "") or None
+    sess.models = str(state.get("pi_models") or "") or None
+
+
+def _format_pi_settings(chat_id: str) -> str:
+    state = _read_gateway_state()
+    values = {
+        "Provider": state.get("pi_provider") or "(pi default)",
+        "Model": state.get("pi_model") or "(pi default)",
+        "Thinking": state.get("pi_thinking") or "(pi default)",
+        "Model cycle": state.get("pi_models") or "(pi default)",
+        "Workspace": str(_workspace_dir_for_chat(chat_id)),
+        "Sessions": str(_session_dir_for_chat(chat_id)),
+    }
+    return "\n".join(f"{key}: {value}" for key, value in values.items())
 
 
 def _display_time(value: str) -> str:
@@ -296,6 +324,7 @@ def _get_pi_session(chat_id: str) -> PiSession:
             pass
     session_dir = _session_dir_for_chat(chat_id)
     sess = PiSession(session_dir, log_fn=_log)
+    _configure_pi_session(sess, chat_id)
     sess.start()
     _pi_sessions[chat_id] = sess
     return sess
@@ -315,11 +344,16 @@ def _new_pi_session(chat_id: str, *, clear: bool = False) -> str:
     session_dir.mkdir(parents=True, exist_ok=True)
 
     sess = PiSession(session_dir, log_fn=_log, resume=False)
+    _configure_pi_session(sess, chat_id)
     sess.start()
     sess._preamble_sent = False  # type: ignore[attr-defined]
     _pi_sessions[chat_id] = sess
     _last_marlow_turn_time.pop(chat_id, None)
-    _write_gateway_state(active_session_dir=str(session_dir), last_command="reset" if clear else "new")
+    _write_gateway_state(
+        active_session_dir=str(session_dir),
+        active_workspace_dir=str(_workspace_dir_for_chat(chat_id)),
+        last_command="reset" if clear else "new",
+    )
     return str(session_dir)
 
 
@@ -377,6 +411,13 @@ You have full bash access. The `outlook-cli` command is installed. Useful subcom
   outlook-cli files list [path] [--site NAME]
   outlook-cli task list / contact search <q>
 Use them only if you need information that isn't already in the chat above.
+
+WORKSPACE GUIDANCE
+- Your shell working directory is a per-chat gateway workspace, not a product repo.
+- Do not infer Ross's whole day from the current directory.
+- For broad questions about the day, use relevant records first: calendar, Teams,
+  mail, Workbook timesheets, and only inspect git repos when the user asks about
+  code work or names a project.
 
 RESPONSE GUIDELINES
 - This is a Teams chat, not a code review. Keep replies short and conversational.
@@ -518,6 +559,7 @@ def _format_gateway_status(chat_id: str, trigger: str, poll_interval: int) -> st
         lines.append(f"Auth error: {state['auth_error']}")
     if state.get("stopped_reason"):
         lines.append(f"Stopped reason: {state['stopped_reason']}")
+    lines.append(_format_pi_settings(chat_id))
     return "\n".join(lines)
 
 
@@ -543,6 +585,7 @@ def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_
             "!status - show gateway and session status\n"
             "!new - start a fresh Pi conversation for this chat\n"
             "!reset - clear this chat's Pi session and start fresh\n"
+            "!model - show or change the Pi model for this chat\n"
             "!pause - ignore normal prompts until resumed\n"
             "!resume - resume normal prompt handling\n"
             "!tools - show what Marlow can use\n"
@@ -566,6 +609,8 @@ def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_
         except PiSessionError as exc:
             _log(f"Gateway command !reset failed: {exc}")
             return f"Could not reset the Pi conversation: {exc}"
+    if command == "model":
+        return _handle_model_command(chat_id, stripped)
     if command == "pause":
         _write_gateway_state(paused=True, last_command="pause")
         _log("Gateway command !pause: normal prompts paused")
@@ -585,6 +630,77 @@ def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_
         return "Context pruning is not wired into the gateway yet. Use !new or !reset for now."
 
     return f"Unknown gateway command: !{command}. Try !help."
+
+
+def _handle_model_command(chat_id: str, command_text: str) -> str:
+    try:
+        tokens = shlex.split(command_text)
+    except ValueError as exc:
+        return f"Could not parse model command: {exc}"
+
+    args = tokens[1:]
+    if not args:
+        return "Current Pi settings:\n" + _format_pi_settings(chat_id)
+
+    if args == ["reset"]:
+        _write_gateway_state(
+            pi_provider=None,
+            pi_model=None,
+            pi_thinking=None,
+            pi_models=None,
+            last_command="model reset",
+        )
+        old = _pi_sessions.pop(chat_id, None)
+        if old:
+            old.close()
+        return "Reset Pi model settings to pi defaults. The next prompt will restart Pi with the default model."
+
+    provider: str | None = None
+    model: str | None = None
+    thinking: str | None = None
+    models: str | None = None
+
+    i = 0
+    while i < len(args):
+        token = args[i]
+        if token in {"--provider", "-p"} and i + 1 < len(args):
+            provider = args[i + 1]
+            i += 2
+            continue
+        if token in {"--model", "-m"} and i + 1 < len(args):
+            model = args[i + 1]
+            i += 2
+            continue
+        if token == "--thinking" and i + 1 < len(args):
+            thinking = args[i + 1]
+            i += 2
+            continue
+        if token == "--models" and i + 1 < len(args):
+            models = args[i + 1]
+            i += 2
+            continue
+        if model is None:
+            model = token
+            i += 1
+            continue
+        return f"Unknown model option: {token}"
+
+    updates: dict[str, object] = {"last_command": "model"}
+    if provider is not None:
+        updates["pi_provider"] = provider
+    if model is not None:
+        updates["pi_model"] = model
+    if thinking is not None:
+        updates["pi_thinking"] = thinking
+    if models is not None:
+        updates["pi_models"] = models
+    _write_gateway_state(**updates)
+
+    old = _pi_sessions.pop(chat_id, None)
+    if old:
+        old.close()
+
+    return "Updated Pi settings. The next prompt will restart Pi with:\n" + _format_pi_settings(chat_id)
 
 
 def _chunk_response(response: str, *, max_chars: int = 3500) -> list[str]:
@@ -804,18 +920,31 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     chat_id = _resolve_chat_id(args, console)
     trigger = getattr(args, "trigger", None) or config.GATEWAY_TRIGGER
     poll_interval = getattr(args, "poll", None) or config.GATEWAY_POLL_INTERVAL
-    _write_gateway_state(
+    state_updates: dict[str, object] = dict(
         chat_id=chat_id,
         trigger=trigger,
         poll_interval=poll_interval,
         auth_error=None,
         stopped_reason=None,
+        active_session_dir=str(_session_dir_for_chat(chat_id)),
+        active_workspace_dir=str(_workspace_dir_for_chat(chat_id)),
     )
+    if getattr(args, "provider", None):
+        state_updates["pi_provider"] = args.provider
+    if getattr(args, "model", None):
+        state_updates["pi_model"] = args.model
+    if getattr(args, "thinking", None):
+        state_updates["pi_thinking"] = args.thinking
+    if getattr(args, "models", None):
+        state_updates["pi_models"] = args.models
+    _write_gateway_state(**state_updates)
 
     console.print("[green]Starting gateway...[/]")
     console.print(f"  Chat:    [bold]{chat_id}[/]")
     console.print(f"  Trigger: [bold]{trigger}[/]")
     console.print(f"  Poll:    every [bold]{poll_interval}s[/]")
+    console.print(f"  Model:   [bold]{_read_gateway_state().get('pi_model') or '(pi default)'}[/]")
+    console.print(f"  Workspace: {_workspace_dir_for_chat(chat_id)}")
     console.print(f"  Logs:    {config.GATEWAY_LOG_FILE}")
 
     pid = os.fork()
@@ -892,6 +1021,16 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
         console.print(f"  Stopped reason: {state['stopped_reason']}")
     if state.get("paused"):
         console.print("  Paused:  yes")
+    console.print(f"  Model:   {state.get('pi_model') or '(pi default)'}")
+    if state.get("pi_provider"):
+        console.print(f"  Provider: {state['pi_provider']}")
+    if state.get("pi_thinking"):
+        console.print(f"  Thinking: {state['pi_thinking']}")
+    if state.get("pi_models"):
+        console.print(f"  Model cycle: {state['pi_models']}")
+    if chat_id:
+        console.print(f"  Workspace: {_workspace_dir_for_chat(chat_id)}")
+        console.print(f"  Sessions:  {_session_dir_for_chat(chat_id)}")
     console.print(f"  Log:     {config.GATEWAY_LOG_FILE}")
 
     if config.GATEWAY_LOG_FILE.exists():
