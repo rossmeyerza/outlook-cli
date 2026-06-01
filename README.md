@@ -2,7 +2,7 @@
 
 CLI tool for managing Outlook email, drafts, and contacts via the Outlook REST API v2.0.
 
-Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally under `session_state/`.
+Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally under `~/.local/share/outlook-cli/session_state/`.
 
 ## Installation
 
@@ -18,7 +18,7 @@ Requires Python 3.12+ and `git`. The script will:
 - Set up a Python virtualenv and install all dependencies
 - Install Playwright Chromium for authentication
 - Prompt you for your Microsoft 365 email, password, and timezone
-- Write your `.env` automatically
+- Write your config to `~/.config/outlook-cli/.env` automatically
 - Symlink `outlook-cli` to `~/.local/bin`
 
 You can read the full script before running it at:
@@ -32,11 +32,12 @@ cd outlook-cli
 python3 -m venv .venv
 .venv/bin/pip install -e .
 .venv/bin/python -m playwright install chromium
-cp .env.example .env
+mkdir -p ~/.config/outlook-cli
+cp .env.example ~/.config/outlook-cli/.env
 ln -sf $(pwd)/.venv/bin/outlook-cli ~/.local/bin/outlook-cli
 ```
 
-Then edit `.env` and set `MS_EMAIL` and `MS_PASSWORD`.
+Then edit `~/.config/outlook-cli/.env` and set `MS_EMAIL` and `MS_PASSWORD`.
 
 Check the command is available:
 
@@ -52,7 +53,7 @@ Re-run the installer at any time to pull the latest changes:
 curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
 ```
 
-The script detects an existing install and runs `git pull` and updates dependencies without touching your `.env`.
+The script detects an existing install and runs `git pull` and updates dependencies without touching `~/.config/outlook-cli/.env`.
 
 ## Usage
 
@@ -214,9 +215,9 @@ outlook-cli signature fetch              # fetch new and reply signatures from O
 outlook-cli signature fetch --headed     # run with a visible browser if headless fails
 ```
 
-`outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the files configured in `.env`. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
+`outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the files configured in `~/.config/outlook-cli/.env`. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 
-`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `.env`, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to `session_state/tokens.json`.
+`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `~/.config/outlook-cli/.env`, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to `~/.local/share/outlook-cli/session_state/tokens.json`.
 
 Use a visible browser instead:
 
@@ -226,7 +227,9 @@ outlook-cli auth --headed
 
 ## Configuration
 
-`.env` in the project root:
+Config file:
+
+`~/.config/outlook-cli/.env`
 
 ```
 MS_EMAIL=your.email@company.com
@@ -237,11 +240,11 @@ SIGNATURE_NEW_FILE=signature-new.html
 SIGNATURE_REPLY_FILE=signature-reply.html
 ```
 
-The token file is at `session_state/tokens.json`. The browser session state (used by `signature fetch` to avoid re-auth) is at `session_state/browser_state.json`. Both `.env` and `session_state/` are gitignored.
+The token file is at `~/.local/share/outlook-cli/session_state/tokens.json`. The browser session state (used by `signature fetch` to avoid re-auth) is at `~/.local/share/outlook-cli/session_state/browser_state.json`.
 
 `LOCAL_TIMEZONE` is the Python timezone used to interpret calendar times you type. `OUTLOOK_TIMEZONE` is the Microsoft timezone sent to Outlook. For the UK, use `Europe/London` and `GMT Standard Time`.
 
-Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATURE_REPLY_FILE`. Relative paths are resolved from the project root. If unset, the CLI defaults to:
+Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATURE_REPLY_FILE`. Relative paths are resolved from `~/.local/share/outlook-cli`. If unset, the CLI defaults to:
 
 - `signature-new.html` for new drafts
 - `signature-reply.html` for reply drafts
@@ -270,7 +273,7 @@ outlook_draft/
     teams.py           # Teams read subcommands
 ```
 
-Auth flow: `token_manager.py` reads local tokens from `session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
+Auth flow: `token_manager.py` reads local tokens from `~/.local/share/outlook-cli/session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
 
 ## Tests
 

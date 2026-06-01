@@ -28,6 +28,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
     from .. import config as cfg
     from ..auth import _enter_email, _enter_password, _wait_for_mfa
 
+    cfg.ensure_dirs()
     browser_state = cfg.SESSION_DIR / "browser_state.json"
     captured_by_name: dict[str, list[dict]] = {}  # settingname -> list of items
 
@@ -74,7 +75,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
         if "login.microsoft" in page.url:
             console.print("[yellow]Browser session expired, re-authenticating...[/]")
             if not cfg.MS_EMAIL or not cfg.MS_PASSWORD:
-                console.print("[red]MS_EMAIL/MS_PASSWORD not set in .env[/]")
+                console.print(f"[red]MS_EMAIL/MS_PASSWORD not set in {cfg.CONFIG_FILE}[/]")
                 context.close()
                 browser.close()
                 return {}

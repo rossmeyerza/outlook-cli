@@ -18,28 +18,22 @@ Usage:
 
 import base64
 import json
-import os
 import re
 from datetime import datetime
-from pathlib import Path
 
 import requests
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from rich.console import Console
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(PROJECT_DIR / ".env")
+from . import config
 
 console = Console()
 
-SESSION_DIR = PROJECT_DIR / "session_state"
-SESSION_DIR.mkdir(exist_ok=True)
-
-TOKENS_PATH = SESSION_DIR / "tokens.json"
-
-MS_EMAIL = os.getenv("MS_EMAIL", "")
-MS_PASSWORD = os.getenv("MS_PASSWORD", "")
+config.ensure_dirs()
+SESSION_DIR = config.SESSION_DIR
+TOKENS_PATH = config.TOKENS_FILE
+MS_EMAIL = config.MS_EMAIL
+MS_PASSWORD = config.MS_PASSWORD
 
 # Microsoft API domains we look for when intercepting requests.
 KNOWN_DOMAINS = [
@@ -63,6 +57,7 @@ def _token_scopes(token: str) -> set[str]:
 
 def _save_tokens(tokens: dict[str, str]):
     """Save all captured tokens keyed by domain."""
+    config.ensure_dirs()
     data = {
         "tokens": tokens,
         "captured_at": datetime.now().isoformat(),
@@ -155,12 +150,25 @@ def _enter_email(page, email: str) -> bool:
         page.wait_for_selector('input[type="email"]', timeout=10000)
         page.fill('input[type="email"]', email)
         page.click('input[type="submit"]')
-        console.print(f"[dim]  Entered email: {email}[/]")
+        console.print("[dim]  Entered email[/]")
         page.wait_for_timeout(3000)
         return True
     except Exception as e:
         console.print(f"[red]Failed to enter email: {e}[/]")
         return False
+
+
+def _body_text(page) -> str:
+    try:
+        value = page.locator("body").inner_text(timeout=2000)
+        return value or ""
+    except Exception:
+        return ""
+
+
+def _has_okta_password_error(page) -> bool:
+    text = _body_text(page).lower()
+    return "unable to sign in" in text or "incorrect password" in text or "password is incorrect" in text
 
 
 def _enter_password(page, password: str) -> bool:
@@ -199,7 +207,14 @@ def _enter_password(page, password: str) -> bool:
 
         console.print("[dim]  Entered password[/]")
         page.wait_for_timeout(3000)
+        if _has_okta_password_error(page):
+            raise RuntimeError(
+                "Outlook Okta rejected the password before MFA. "
+                "Update MS_PASSWORD in ~/.config/outlook-cli/.env."
+            )
         return True
+    except RuntimeError:
+        raise
     except Exception as e:
         console.print(f"[red]Failed to enter password: {e}[/]")
         return False
@@ -212,6 +227,11 @@ def _wait_for_mfa(page) -> None:
 
     for _ in range(30):
         page.wait_for_timeout(500)
+        if _has_okta_password_error(page):
+            raise RuntimeError(
+                "Outlook Okta rejected the password before MFA. "
+                "Update MS_PASSWORD in ~/.config/outlook-cli/.env."
+            )
         mfa_number = _find_mfa_number(page)
         if mfa_number:
             break
@@ -230,7 +250,7 @@ def _wait_for_mfa(page) -> None:
             f" in your authenticator app[/]\n"
         )
     else:
-        console.print("[yellow]Approve the MFA push notification on your phone...[/]")
+        console.print("[yellow]No MFA number was shown. Approve the MFA push notification on your phone if one appears...[/]")
 
     # Wait for approval and redirect
     console.print("[dim]Waiting for MFA approval (up to 3 minutes)...[/]")

@@ -607,6 +607,7 @@ def _config_check_items() -> list[dict[str, object]]:
 
     add("MS_EMAIL", bool(config.MS_EMAIL), "set" if config.MS_EMAIL else "missing")
     add("MS_PASSWORD", bool(config.MS_PASSWORD), "set" if config.MS_PASSWORD else "missing")
+    add("config file", config.CONFIG_FILE.exists(), str(config.CONFIG_FILE))
     try:
         ZoneInfo(config.LOCAL_TIMEZONE)
         add("LOCAL_TIMEZONE", True, config.LOCAL_TIMEZONE)
@@ -616,7 +617,7 @@ def _config_check_items() -> list[dict[str, object]]:
     add("SIGNATURE_NEW_FILE", config.SIGNATURE_NEW_FILE.exists(), str(config.SIGNATURE_NEW_FILE))
     add("SIGNATURE_REPLY_FILE", config.SIGNATURE_REPLY_FILE.exists(), str(config.SIGNATURE_REPLY_FILE))
     try:
-        config.SESSION_DIR.mkdir(exist_ok=True)
+        config.SESSION_DIR.mkdir(parents=True, exist_ok=True)
         probe = config.SESSION_DIR / ".write-test"
         probe.write_text("ok")
         probe.unlink()

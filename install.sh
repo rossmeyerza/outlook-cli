@@ -20,6 +20,12 @@ step()  { printf "\n${BOLD}%s${NC}\n" "$1"; }
 
 INSTALL_DIR="${OUTLOOK_CLI_DIR:-${HOME}/.local/lib/outlook-cli}"
 BIN_DIR="${HOME}/.local/bin"
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/outlook-cli"
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/outlook-cli"
+SESSION_DIR="${DATA_DIR}/session_state"
+CONFIG_FILE="${CONFIG_DIR}/.env"
+LEGACY_CONFIG_FILE="${INSTALL_DIR}/.env"
+LEGACY_SESSION_DIR="${INSTALL_DIR}/session_state"
 IS_UPGRADE=false
 FORCE_RECONFIGURE=false
 
@@ -69,6 +75,7 @@ ok "git $(git --version | awk '{print $3}')"
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$(dirname "$INSTALL_DIR")"
+mkdir -p "$CONFIG_DIR" "$SESSION_DIR"
 
 # ── Clone or pull ─────────────────────────────────────────────────
 
@@ -128,11 +135,22 @@ ok "outlook-cli linked to ${BIN_DIR}/outlook-cli"
 
 # ── Configuration ─────────────────────────────────────────────────
 
+if [ ! -f "$CONFIG_FILE" ] && [ -f "$LEGACY_CONFIG_FILE" ]; then
+  cp "$LEGACY_CONFIG_FILE" "$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+  ok "Migrated config to ${CONFIG_FILE}"
+fi
+
+if [ -d "$LEGACY_SESSION_DIR" ] && [ ! -e "$SESSION_DIR/tokens.json" ]; then
+  cp -a "$LEGACY_SESSION_DIR/." "$SESSION_DIR/"
+  ok "Migrated session state to ${SESSION_DIR}"
+fi
+
 env_value() {
   # Print the raw value of a key from .env, empty if missing
   local key="$1"
-  if [ -f "${INSTALL_DIR}/.env" ]; then
-    awk -F= -v k="$key" '$1 == k { sub(/^[^=]+=/, ""); print; exit }' "${INSTALL_DIR}/.env"
+  if [ -f "$CONFIG_FILE" ]; then
+    awk -F= -v k="$key" '$1 == k { sub(/^[^=]+=/, ""); print; exit }' "$CONFIG_FILE"
   fi
 }
 
@@ -145,7 +163,7 @@ NEEDS_CONFIG=false
 if [ "$FORCE_RECONFIGURE" = true ]; then
   NEEDS_CONFIG=true
 fi
-if [ ! -f "${INSTALL_DIR}/.env" ]; then
+if [ ! -f "$CONFIG_FILE" ]; then
   NEEDS_CONFIG=true
 fi
 if [ -z "$MS_EMAIL_CURRENT" ] || [ "$MS_EMAIL_CURRENT" = "$MS_EMAIL_PLACEHOLDER" ]; then
@@ -164,7 +182,7 @@ if [ "$NEEDS_CONFIG" = true ]; then
 
   printf "\noutlook-cli needs your Microsoft 365 email and password\n"
   printf "to authenticate via your organisation's SSO.\n"
-  printf "These are stored only in %s/.env\n\n" "$INSTALL_DIR"
+  printf "These are stored only in %s\n\n" "$CONFIG_FILE"
 
   # Read from /dev/tty so this works even when piped via curl | bash
   exec 3</dev/tty
@@ -208,7 +226,7 @@ if [ "$NEEDS_CONFIG" = true ]; then
 
   exec 3<&-
 
-  cat > "${INSTALL_DIR}/.env" << EOF
+  cat > "$CONFIG_FILE" << EOF
 MS_EMAIL=${MS_EMAIL}
 MS_PASSWORD=${MS_PASSWORD}
 LOCAL_TIMEZONE=${LOCAL_TIMEZONE}
@@ -217,8 +235,8 @@ SIGNATURE_NEW_FILE=signature-new.html
 SIGNATURE_REPLY_FILE=signature-reply.html
 EOF
 
-  chmod 600 "${INSTALL_DIR}/.env"
-  ok ".env written to ${INSTALL_DIR}/.env"
+  chmod 600 "$CONFIG_FILE"
+  ok ".env written to ${CONFIG_FILE}"
 else
   ok ".env already configured, not modified (use --reconfigure to rewrite)"
 fi

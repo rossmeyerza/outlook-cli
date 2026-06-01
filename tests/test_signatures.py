@@ -15,12 +15,12 @@ def test_resolve_config_path_uses_default_when_env_missing(monkeypatch: pytest.M
     assert config.resolve_config_path("SIGNATURE_NEW_FILE", default) == default
 
 
-def test_resolve_config_path_resolves_relative_paths_from_project_root(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_config_path_resolves_relative_paths_from_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SIGNATURE_NEW_FILE", "custom/signature.html")
     default = Path("/tmp/default-signature.html")
 
     assert config.resolve_config_path("SIGNATURE_NEW_FILE", default) == (
-        config._project_root / "custom/signature.html"
+        config.DATA_DIR / "custom/signature.html"
     )
 
 
