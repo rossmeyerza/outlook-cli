@@ -72,8 +72,16 @@ outlook-cli contact update <n> --company <company>
 
 # Browse Teams chats (read-only)
 outlook-cli teams list -n 20               # list chats
+outlook-cli teams self                     # check access to Teams self-chat
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
+
+# Teams gateway to Pi/Marlow
+outlook-cli gateway start --self-chat      # monitor Teams self-chat via 48:notes
+outlook-cli gateway start --chat-id "19:..." --trigger "@Marlow" --poll 30
+outlook-cli gateway start --self-chat --model sonnet:high
+outlook-cli gateway status                 # show chat, state, workspace, sessions, model
+outlook-cli gateway stop
 
 # Files (OneDrive and SharePoint)
 outlook-cli files sites                    # list SharePoint sites you're a member of
@@ -115,6 +123,11 @@ outlook-cli config check                   # validate local config without print
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
+- **Teams self-chat**: `teams self` checks access to the Microsoft Graph special self-chat thread, `48:notes`. This is the real Teams "chat with yourself" stream and is different from normal one-person `/me/chats` entries.
+- **Teams gateway**: `gateway start --self-chat` watches `48:notes` for `@Marlow`, sends prompts to `pi --mode rpc`, and posts responses back into Teams. The gateway posts a short `...` receipt, soft-deletes it before the final response where Graph allows it, and can surface compact Pi tool progress. If the Graph token expires and headless reauth fails, the gateway records the auth error and exits instead of retrying every poll interval.
+- **Gateway state**: Runtime state is outside git under `~/.local/share/outlook-cli/session_state/`. Pi sessions live under `session_state/gateway_sessions/<chat-hash>/`; per-chat workspaces live under `~/.local/share/outlook-cli/gateway_workspaces/<chat-hash>/`. These are local data/state, not tracked or pushed.
+- **Gateway model controls**: Start with `outlook-cli gateway start --self-chat --model <model> [--provider <provider>] [--thinking <level>]`. Inside Teams use `@Marlow !model`, `@Marlow !model <model>`, `@Marlow !model --provider <provider> --model <model> --thinking <level>`, or `@Marlow !model reset`.
+- **Gateway commands in Teams**: Use `@Marlow !help` or `@Marlow !commands` to list commands. Current commands include `!status`, `!new`, `!reset`, `!model`, `!pause`, `!resume`, `!tools`, and `!logs`.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Files**: `files sites` lists SharePoint sites via M365 group membership. `--site` does a case-insensitive partial name match. Without `--site`, operations target personal OneDrive. Uploads under 4 MB use a single PUT; larger files use chunked upload sessions. Uses the Microsoft Graph token.
 - **Signatures**: `signature fetch` opens a headless browser with the saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
