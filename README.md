@@ -162,6 +162,32 @@ outlook-cli teams messages 1 -n 20
 
 Lists Teams chats, shows chat details, and reads messages. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
 
+### Teams Gateway
+
+```bash
+outlook-cli gateway start
+outlook-cli gateway start --chat-id "19:..." --trigger "@Marlow" --poll 30
+outlook-cli gateway status
+outlook-cli gateway stop
+```
+
+The gateway watches one configured Teams chat for the trigger, sends the prompt to `pi --mode rpc`, and posts Marlow's response back into the chat. Runtime state lives in `~/.local/share/outlook-cli/session_state/`, including `gateway_state.json`, `gateway.pid`, `gateway.log`, and per-chat Pi session files.
+
+Gateway-native chat commands use `!` after the trigger so they do not collide with Teams slash commands:
+
+```text
+@Marlow !help
+@Marlow !status
+@Marlow !new
+@Marlow !reset
+@Marlow !pause
+@Marlow !resume
+@Marlow !tools
+@Marlow !logs
+```
+
+`!new` starts a fresh Pi conversation for the chat. `!reset` clears that chat's persisted Pi session before starting fresh. `!pause` ignores normal prompts until `!resume`, while command messages still work.
+
 ### Files (OneDrive and SharePoint)
 
 ```bash

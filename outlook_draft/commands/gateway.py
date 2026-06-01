@@ -12,7 +12,9 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
+import json
 import os
 import re
 import shutil
@@ -26,7 +28,7 @@ from pathlib import Path
 from rich.console import Console
 
 from .. import config
-from ..errors import OutlookAPIError
+from ..errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from ..outlook_client import OutlookClient
 from ..token_manager import TokenManager
 from .pi_session import PiSession, PiSessionError
@@ -37,6 +39,11 @@ def _graph_client() -> OutlookClient:
         token_domain=config.GRAPH_TOKEN_DOMAIN,
         token_label="Graph",
     )
+    if tm.is_expired:
+        _log("Graph token missing or expired; attempting headless re-authentication")
+        if not tm.run_reauth(headless=True):
+            raise TokenExpiredError("Graph token has expired and re-authentication failed")
+        _log("Graph re-authentication succeeded")
     return OutlookClient(tm, base_url=config.GRAPH_BASE_URL)
 
 
@@ -45,6 +52,48 @@ def _log(message: str) -> None:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with config.GATEWAY_LOG_FILE.open("a") as f:
         f.write(f"[{ts}] {message}\n")
+
+
+def _read_gateway_state() -> dict:
+    if not config.GATEWAY_STATE_FILE.exists():
+        return {}
+    try:
+        return json.loads(config.GATEWAY_STATE_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _write_gateway_state(**updates: object) -> None:
+    config.SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    state = _read_gateway_state()
+    state.update(updates)
+    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config.GATEWAY_STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    config.GATEWAY_STATE_FILE.chmod(0o600)
+
+
+def _session_dir_for_chat(chat_id: str) -> Path:
+    digest = hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:16]
+    return config.SESSION_DIR / "gateway_sessions" / digest
+
+
+def _display_time(value: str) -> str:
+    if "T" in value and len(value) >= 16:
+        return value[11:16]
+    return value[:16] if value else ""
+
+
+def _parse_graph_time(value: str) -> datetime:
+    if not value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _strip_html(text: str) -> str:
@@ -74,10 +123,15 @@ def _chat_label(chat: dict, members: list[dict] | None) -> str:
 def _resolve_chat_id(args: argparse.Namespace, console: Console) -> str:
     chat_id = getattr(args, "chat_id", None) or config.GATEWAY_CHAT_ID
     if chat_id:
+        _write_gateway_state(chat_id=chat_id)
         return chat_id
+    state_chat_id = str(_read_gateway_state().get("chat_id") or "").strip()
+    if state_chat_id:
+        return state_chat_id
     if config.GATEWAY_CHAT_ID_FILE.exists():
         stored = config.GATEWAY_CHAT_ID_FILE.read_text().strip()
         if stored:
+            _write_gateway_state(chat_id=stored)
             return stored
 
     console.print("[yellow]No gateway chat configured. Fetching ALL your Teams chats (this can take a moment)...[/]")
@@ -110,7 +164,13 @@ def _resolve_chat_id(args: argparse.Namespace, console: Console) -> str:
         sys.exit(1)
 
     selected_id: str = chosen["id"]
+    selected_label = next(
+        (label for label, chat in labels if chat is chosen),
+        _chat_label(chosen, None),
+    )
     config.GATEWAY_CHAT_ID_FILE.write_text(selected_id)
+    config.GATEWAY_CHAT_ID_FILE.chmod(0o600)
+    _write_gateway_state(chat_id=selected_id, chat_label=selected_label)
     console.print(f"[green]Chat saved:[/] {selected_id}")
     return selected_id
 
@@ -212,11 +272,33 @@ def _get_pi_session(chat_id: str) -> PiSession:
             sess.close()
         except Exception:
             pass
-    session_dir = config.SESSION_DIR / "gateway_sessions" / f"{abs(hash(chat_id))}"
+    session_dir = _session_dir_for_chat(chat_id)
     sess = PiSession(session_dir, log_fn=_log)
     sess.start()
     _pi_sessions[chat_id] = sess
     return sess
+
+
+def _new_pi_session(chat_id: str, *, clear: bool = False) -> str:
+    sess = _pi_sessions.pop(chat_id, None)
+    if sess:
+        try:
+            sess.close()
+        except Exception:
+            pass
+
+    session_dir = _session_dir_for_chat(chat_id)
+    if clear and session_dir.exists():
+        shutil.rmtree(session_dir)
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    sess = PiSession(session_dir, log_fn=_log, resume=False)
+    sess.start()
+    sess._preamble_sent = False  # type: ignore[attr-defined]
+    _pi_sessions[chat_id] = sess
+    _last_marlow_turn_time.pop(chat_id, None)
+    _write_gateway_state(active_session_dir=str(session_dir), last_command="reset" if clear else "new")
+    return str(session_dir)
 
 
 def _build_preamble(
@@ -303,7 +385,7 @@ def _format_catchup(
         if m.get("deletedDateTime"):
             continue
         m_time = m.get("createdDateTime") or ""
-        if m_time <= since_time:
+        if _parse_graph_time(m_time) <= _parse_graph_time(since_time):
             continue
         body = m.get("body", {})
         content = body.get("content", "")
@@ -334,9 +416,11 @@ def _call_pi(
     try:
         sess = _get_pi_session(chat_id)
         is_first = (
-            not sess.has_existing_session()
+            not getattr(sess, "resumed_existing", False)
             and not getattr(sess, "_preamble_sent", False)
         )
+
+        display_sender_time = _display_time(sender_time)
 
         if is_first:
             preamble = _build_preamble(
@@ -350,7 +434,7 @@ def _call_pi(
             )
             full_prompt = (
                 preamble
-                + f"\n\nLATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+                + f"\n\nLATEST MESSAGE\n[{display_sender_time}] {sender}: {prompt}"
             )
             sess._preamble_sent = True  # type: ignore[attr-defined]
         else:
@@ -366,15 +450,16 @@ def _call_pi(
                 full_prompt = (
                     "CATCH-UP (chat that happened while you were away)\n"
                     f"{catchup}\n\n"
-                    f"LATEST MESSAGE\n[{sender_time}] {sender}: {prompt}"
+                    f"LATEST MESSAGE\n[{display_sender_time}] {sender}: {prompt}"
                 )
             else:
-                full_prompt = f"[{sender_time}] {sender}: {prompt}"
+                full_prompt = f"[{display_sender_time}] {sender}: {prompt}"
 
         response = sess.prompt(full_prompt)
         # Mark this trigger time as the last Marlow turn for catch-up tracking
         if sender_time:
             _last_marlow_turn_time[chat_id] = sender_time
+            _write_gateway_state(last_marlow_turn_time=sender_time)
         return response
     except PiSessionError as exc:
         _log(f"PiSession error: {exc}")
@@ -391,12 +476,147 @@ def _call_pi(
         return f"[pi error: {exc}]"
 
 
+def _format_gateway_status(chat_id: str, trigger: str, poll_interval: int) -> str:
+    pid = _read_pid()
+    running = bool(pid and _process_is_running(pid))
+    state = _read_gateway_state()
+    lines = [
+        f"Gateway: {'running' if running else 'not running'}" + (f" (PID {pid})" if pid else ""),
+        f"Chat: {state.get('chat_label') or chat_id}",
+        f"Trigger: {trigger}",
+        f"Poll: every {poll_interval}s",
+        f"Paused: {'yes' if state.get('paused') else 'no'}",
+    ]
+    if state.get("last_seen_time"):
+        lines.append(f"Last seen: {state['last_seen_time']}")
+    if state.get("last_marlow_turn_time"):
+        lines.append(f"Last Marlow turn: {state['last_marlow_turn_time']}")
+    return "\n".join(lines)
+
+
+def _recent_gateway_logs(limit: int = 10) -> str:
+    if not config.GATEWAY_LOG_FILE.exists():
+        return "No gateway log yet."
+    lines = config.GATEWAY_LOG_FILE.read_text().splitlines()[-limit:]
+    return "\n".join(lines) if lines else "No gateway log yet."
+
+
+def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_interval: int) -> str | None:
+    stripped = command_text.strip()
+    if not stripped.startswith("!"):
+        return None
+
+    parts = stripped[1:].split()
+    command = parts[0].lower() if parts else "help"
+
+    if command in {"help", "commands"}:
+        return (
+            "Marlow gateway commands:\n"
+            "!help - show this help\n"
+            "!status - show gateway and session status\n"
+            "!new - start a fresh Pi conversation for this chat\n"
+            "!reset - clear this chat's Pi session and start fresh\n"
+            "!pause - ignore normal prompts until resumed\n"
+            "!resume - resume normal prompt handling\n"
+            "!tools - show what Marlow can use\n"
+            "!logs - show recent gateway log lines"
+        )
+    if command == "status":
+        return _format_gateway_status(chat_id, trigger, poll_interval)
+    if command == "new":
+        try:
+            session_dir = _new_pi_session(chat_id, clear=False)
+            _log(f"Gateway command !new: fresh session in {session_dir}")
+            return "Started a fresh Pi conversation for this chat."
+        except PiSessionError as exc:
+            _log(f"Gateway command !new failed: {exc}")
+            return f"Could not start a fresh Pi conversation: {exc}"
+    if command == "reset":
+        try:
+            session_dir = _new_pi_session(chat_id, clear=True)
+            _log(f"Gateway command !reset: cleared session in {session_dir}")
+            return "Reset this chat's Pi session and started fresh."
+        except PiSessionError as exc:
+            _log(f"Gateway command !reset failed: {exc}")
+            return f"Could not reset the Pi conversation: {exc}"
+    if command == "pause":
+        _write_gateway_state(paused=True, last_command="pause")
+        _log("Gateway command !pause: normal prompts paused")
+        return "Paused normal Marlow prompts in this chat. Use @Marlow !resume to turn them back on."
+    if command == "resume":
+        _write_gateway_state(paused=False, last_command="resume")
+        _log("Gateway command !resume: normal prompts resumed")
+        return "Resumed normal Marlow prompts in this chat."
+    if command == "tools":
+        return (
+            "Marlow can use the Pi agent tools available on this machine, plus installed CLIs "
+            "such as outlook-cli and workbook-cli. Gateway commands use !command after @Marlow."
+        )
+    if command == "logs":
+        return _recent_gateway_logs(limit=8)
+    if command in {"compact", "prune"}:
+        return "Context pruning is not wired into the gateway yet. Use !new or !reset for now."
+
+    return f"Unknown gateway command: !{command}. Try !help."
+
+
+def _chunk_response(response: str, *, max_chars: int = 3500) -> list[str]:
+    if len(response) <= max_chars:
+        return [response]
+
+    chunks: list[str] = []
+    remaining = response
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n", 0, max_chars)
+        if split_at < max_chars // 2:
+            split_at = remaining.rfind(" ", 0, max_chars)
+        if split_at < max_chars // 2:
+            split_at = max_chars
+        chunks.append(remaining[:split_at].strip())
+        remaining = remaining[split_at:].strip()
+    return [chunk for chunk in chunks if chunk]
+
+
+def _post_gateway_response(chat_id: str, response: str) -> None:
+    for chunk in _chunk_response(response):
+        _post_gateway_response_chunk(chat_id, chunk)
+
+
+def _post_gateway_response_chunk(chat_id: str, response: str) -> None:
+    html_body = (
+        "<div style='border-left:3px solid #6264a7;"
+        "padding:6px 12px;background:#f3f2f1;'>"
+        "<strong>\U0001f916 Marlow</strong><br>"
+        f"{html.escape(response).replace(chr(10), '<br>')}"
+        "</div>"
+    )
+    post_client = _graph_client()
+    try:
+        post_client._send_teams_message_internal(
+            chat_id,
+            html_body,
+            content_type="html",
+        )
+    finally:
+        post_client.close()
+
+
 def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
     trigger_re = re.compile(re.escape(trigger), re.IGNORECASE)
-    last_seen_time = datetime.now(timezone.utc).isoformat()
+    state = _read_gateway_state()
+    last_seen_time = state.get("last_seen_time") or datetime.now(timezone.utc).isoformat()
     seen_ids: set[str] = set()
 
     _log(f"Gateway started. chat={chat_id} trigger={trigger} poll={poll_interval}s")
+    _write_gateway_state(
+        chat_id=chat_id,
+        trigger=trigger,
+        poll_interval=poll_interval,
+        last_seen_time=last_seen_time,
+    )
 
     while True:
         try:
@@ -414,7 +634,7 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                 if msg_id in seen_ids:
                     continue
                 seen_ids.add(msg_id)
-                if msg_time <= last_seen_time:
+                if _parse_graph_time(msg_time) <= _parse_graph_time(last_seen_time):
                     continue
                 if msg.get("deletedDateTime"):
                     continue
@@ -439,6 +659,26 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                     or "unknown"
                 )
                 _log(f"Triggered by {sender}: {prompt[:120]}")
+                last_seen_time = msg_time
+                _write_gateway_state(last_seen_time=last_seen_time)
+
+                command_response = _handle_gateway_command(
+                    chat_id,
+                    prompt,
+                    trigger,
+                    poll_interval,
+                )
+                if command_response is not None:
+                    try:
+                        _post_gateway_response(chat_id, command_response)
+                        _log(f"Gateway command response posted ({len(command_response)} chars).")
+                    except Exception as exc:
+                        _log(f"Failed to post gateway command response: {exc}")
+                    continue
+
+                if _read_gateway_state().get("paused"):
+                    _log("Gateway is paused; normal prompt ignored")
+                    continue
 
                 # Fetch chat metadata + members for context (cheap, cached effectively
                 # because pi keeps the session alive across messages — the preamble is
@@ -465,37 +705,22 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                     chat_type=chat_type,
                     members=members,
                     sender=sender,
-                    sender_time=msg_time[:16],
+                    sender_time=msg_time,
                     recent_messages=messages,
                     trigger_msg_id=msg_id,
                 )
                 _log(f"Response ({len(response)} chars): {response[:80]}")
 
-                # Format as HTML with robot emoji prefix and a styled block
-                html_body = (
-                    "<div style='border-left:3px solid #6264a7;"
-                    "padding:6px 12px;background:#f3f2f1;'>"
-                    "<strong>\U0001f916 Marlow</strong><br>"
-                    f"{html.escape(response).replace(chr(10), '<br>')}"
-                    "</div>"
-                )
-
                 try:
-                    post_client = _graph_client()
-                    try:
-                        post_client._send_teams_message_internal(
-                            chat_id,
-                            html_body,
-                            content_type="html",
-                        )
-                    finally:
-                        post_client.close()
+                    _post_gateway_response(chat_id, response)
                     _log("Response posted to Teams.")
                 except Exception as exc:
                     _log(f"Failed to post response: {exc}")
 
         except OutlookAPIError as exc:
             _log(f"Graph API error: {exc}")
+        except (TokenExpiredError, TokenNotFoundError) as exc:
+            _log(f"Graph auth error: {exc}")
         except Exception as exc:
             _log(f"Unexpected poll error: {exc}")
 
@@ -513,6 +738,7 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     chat_id = _resolve_chat_id(args, console)
     trigger = getattr(args, "trigger", None) or config.GATEWAY_TRIGGER
     poll_interval = getattr(args, "poll", None) or config.GATEWAY_POLL_INTERVAL
+    _write_gateway_state(chat_id=chat_id, trigger=trigger, poll_interval=poll_interval)
 
     console.print("[green]Starting gateway...[/]")
     console.print(f"  Chat:    [bold]{chat_id}[/]")
@@ -567,6 +793,9 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
     running = bool(pid and _process_is_running(pid))
 
     chat_id = config.GATEWAY_CHAT_ID
+    state = _read_gateway_state()
+    if not chat_id:
+        chat_id = str(state.get("chat_id") or "")
     if not chat_id and config.GATEWAY_CHAT_ID_FILE.exists():
         chat_id = config.GATEWAY_CHAT_ID_FILE.read_text().strip()
 
@@ -576,9 +805,17 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
         console.print("[dim]Gateway is not running.[/]")
 
     if chat_id:
-        console.print(f"  Chat:    {chat_id}")
-    console.print(f"  Trigger: {config.GATEWAY_TRIGGER}")
-    console.print(f"  Poll:    every {config.GATEWAY_POLL_INTERVAL}s")
+        console.print(f"  Chat:    {state.get('chat_label') or chat_id}")
+        if state.get("chat_label"):
+            console.print(f"  Chat ID: {chat_id}")
+    console.print(f"  Trigger: {state.get('trigger') or config.GATEWAY_TRIGGER}")
+    console.print(f"  Poll:    every {state.get('poll_interval') or config.GATEWAY_POLL_INTERVAL}s")
+    if state.get("last_seen_time"):
+        console.print(f"  Last seen: {state['last_seen_time']}")
+    if state.get("last_marlow_turn_time"):
+        console.print(f"  Last Marlow turn: {state['last_marlow_turn_time']}")
+    if state.get("paused"):
+        console.print("  Paused:  yes")
     console.print(f"  Log:     {config.GATEWAY_LOG_FILE}")
 
     if config.GATEWAY_LOG_FILE.exists():

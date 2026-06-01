@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import shutil
+import queue
 import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 
 class PiSessionError(Exception):
@@ -29,10 +28,12 @@ class PiSession:
     Thread safety: only one outstanding prompt() at a time per instance.
     """
 
-    def __init__(self, session_dir: Path, log_fn=None):
+    def __init__(self, session_dir: Path, log_fn=None, *, resume: bool = True):
         self.session_dir = session_dir
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self._log = log_fn or (lambda msg: None)
+        self._resume = resume
+        self.resumed_existing = False
         self._proc: subprocess.Popen | None = None
         self._reader_thread: threading.Thread | None = None
         self._events: queue.Queue = queue.Queue()
@@ -50,10 +51,11 @@ class PiSession:
             raise PiSessionError("pi not found in PATH")
 
         cmd = [pi_bin, "--mode", "rpc", "--session-dir", str(self.session_dir)]
-        # If there's an existing session jsonl in the dir, resume the latest one
+        # If there's an existing session jsonl in the dir, resume the latest one.
         existing = sorted(self.session_dir.glob("*.jsonl"), key=os.path.getmtime)
-        if existing:
+        if self._resume and existing:
             cmd += ["--session", str(existing[-1])]
+            self.resumed_existing = True
 
         self._log(f"Spawning: {' '.join(cmd)}")
         self._proc = subprocess.Popen(
