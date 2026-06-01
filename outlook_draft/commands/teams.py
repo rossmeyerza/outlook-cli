@@ -357,7 +357,7 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
     try:
         found = find_self_chat(client)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to find Teams self-chat: {e}[/]")
+        console.print(f"[red]Failed to read Teams self-chat: {e}[/]")
         sys.exit(1)
     finally:
         client.close()

@@ -1123,7 +1123,7 @@ def main() -> None:
     cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_show_cmd.set_defaults(func=teams_commands.cmd_teams_show, _teams_ctx=teams_ctx)
 
-    cmd_teams_self_cmd = teams_sub.add_parser("self", help="Find your Teams self-chat")
+    cmd_teams_self_cmd = teams_sub.add_parser("self", help="Show your Teams self-chat")
     cmd_teams_self_cmd.set_defaults(func=teams_commands.cmd_teams_self, _teams_ctx=teams_ctx)
 
     cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
