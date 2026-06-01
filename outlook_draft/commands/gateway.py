@@ -32,7 +32,7 @@ from ..errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from ..outlook_client import OutlookClient
 from ..token_manager import TokenManager
 from .pi_session import PiSession, PiSessionError
-from .teams import _chat_title, find_self_chat
+from .teams import SELF_CHAT_ID, _chat_title, find_self_chat
 
 
 def _graph_client() -> OutlookClient:
@@ -133,8 +133,12 @@ def _resolve_chat_id(args: argparse.Namespace, console: Console) -> str:
             console.print("[red]No Teams self-chat found in Microsoft Graph.[/]")
             sys.exit(1)
         chat, members = found
-        chat_id = chat["id"]
-        _write_gateway_state(chat_id=chat_id, chat_label=_chat_title(chat, members))
+        chat_id = SELF_CHAT_ID
+        _write_gateway_state(
+            chat_id=chat_id,
+            chat_label=_chat_title(chat, members),
+            last_seen_time=datetime.now(timezone.utc).isoformat(),
+        )
         config.GATEWAY_CHAT_ID_FILE.write_text(chat_id)
         config.GATEWAY_CHAT_ID_FILE.chmod(0o600)
         return chat_id

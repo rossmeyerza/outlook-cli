@@ -15,6 +15,7 @@ from ..links import extract_links_from_html, looks_like_share_url
 
 
 JsonDict = dict[str, Any]
+SELF_CHAT_ID = "48:notes"
 
 
 def _ctx(args: argparse.Namespace) -> dict[str, Any]:
@@ -57,6 +58,8 @@ def _member_label(member: JsonDict) -> str:
 
 
 def _chat_title(chat: JsonDict, members: list[JsonDict] | None = None) -> str:
+    if chat.get("id") == SELF_CHAT_ID:
+        return "Self chat"
     if chat.get("topic"):
         return chat["topic"]
 
@@ -123,6 +126,27 @@ def find_self_chat(client: Any, *, top: int = 500) -> tuple[JsonDict, list[JsonD
         or config.MS_EMAIL
         or ""
     ).lower()
+    self_member = {
+        "displayName": current_user.get("displayName") or "Self",
+        "email": self_email,
+        "userId": self_id,
+    }
+
+    try:
+        messages = client.list_teams_message_metadata(SELF_CHAT_ID, top=1)
+        latest = messages[0].get("createdDateTime", "") if messages else ""
+        return (
+            {
+                "id": SELF_CHAT_ID,
+                "topic": "Self chat",
+                "chatType": "oneOnOne",
+                "lastUpdatedDateTime": latest,
+                "webUrl": "",
+            },
+            [self_member],
+        )
+    except OutlookAPIError:
+        pass
 
     chats = client.list_teams_chats(top=top)
     chats.sort(key=lambda chat: chat.get("lastUpdatedDateTime") or "", reverse=True)
@@ -298,8 +322,14 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
     client = _get_graph_client(args)
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
-        chat = client.get_teams_chat(chat_id)
-        members = client.list_teams_chat_members(chat_id, top=50)
+        if chat_id == SELF_CHAT_ID:
+            found = find_self_chat(client)
+            if not found:
+                raise OutlookAPIError(404, "Teams self-chat not found")
+            chat, members = found
+        else:
+            chat = client.get_teams_chat(chat_id)
+            members = client.list_teams_chat_members(chat_id, top=50)
     except OutlookAPIError as e:
         console.print(f"[red]Failed to fetch Teams chat: {e}[/]")
         sys.exit(1)
@@ -516,8 +546,12 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
     client = _get_graph_client(args)
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
-        chat = client.get_teams_chat(chat_id)
-        members = client.list_teams_chat_members(chat_id, top=20)
+        if chat_id == SELF_CHAT_ID:
+            chat = {"id": SELF_CHAT_ID, "topic": "Self chat", "chatType": "oneOnOne"}
+            members = []
+        else:
+            chat = client.get_teams_chat(chat_id)
+            members = client.list_teams_chat_members(chat_id, top=20)
         messages = client.list_teams_messages(chat_id, top=args.count)
     except OutlookAPIError as e:
         console.print(f"[red]Failed to fetch Teams messages: {e}[/]")

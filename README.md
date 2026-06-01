@@ -175,6 +175,8 @@ outlook-cli gateway stop
 
 The gateway watches one configured Teams chat for the trigger, sends the prompt to `pi --mode rpc`, and posts Marlow's response back into the chat. Runtime state lives in `~/.local/share/outlook-cli/session_state/`, including `gateway_state.json`, `gateway.pid`, `gateway.log`, and per-chat Pi session files.
 
+`--self-chat` uses the Microsoft Graph special self-chat thread, `48:notes`. This is different from the normal `/me/chats` entry that can appear as a one-person chat.
+
 Gateway-native chat commands use `!` after the trigger so they do not collide with Teams slash commands:
 
 ```text

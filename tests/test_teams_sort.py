@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from outlook_draft.commands.teams import _chat_title, _is_received_user_message, find_self_chat
+from outlook_draft.commands.teams import SELF_CHAT_ID, _chat_title, _is_received_user_message, find_self_chat
+from outlook_draft.errors import OutlookAPIError
 
 
 def test_received_message_filter_ignores_system_deleted_and_self_messages() -> None:
@@ -21,6 +22,7 @@ def test_received_message_filter_ignores_system_deleted_and_self_messages() -> N
 def test_chat_title_labels_self_chat(monkeypatch) -> None:
     monkeypatch.setattr("outlook_draft.commands.teams.config.MS_EMAIL", "ross@example.com")
 
+    assert _chat_title({"id": SELF_CHAT_ID}) == "Self chat"
     assert _chat_title(
         {"chatType": "oneOnOne", "id": "19:self@unq.gbl.spaces"},
         [{"displayName": "Ross Meyer", "email": "ross@example.com"}],
@@ -43,7 +45,26 @@ def test_find_self_chat_detects_single_current_user_member() -> None:
                 return [{"userId": "other", "email": "other@example.com"}]
             return [{"userId": "self", "email": "ross@example.com", "displayName": "Ross Meyer"}]
 
+        def list_teams_message_metadata(self, chat_id, top=10):
+            raise OutlookAPIError(404, "not found")
+
     found = find_self_chat(Client())
 
     assert found is not None
     assert found[0]["id"] == "self-chat"
+
+
+def test_find_self_chat_prefers_special_notes_thread() -> None:
+    class Client:
+        def get_current_user(self):
+            return {"id": "self", "mail": "ross@example.com", "displayName": "Ross Meyer"}
+
+        def list_teams_message_metadata(self, chat_id, top=10):
+            assert chat_id == SELF_CHAT_ID
+            return [{"createdDateTime": "2026-06-01T19:17:16.87Z"}]
+
+    found = find_self_chat(Client())
+
+    assert found is not None
+    assert found[0]["id"] == SELF_CHAT_ID
+    assert found[0]["lastUpdatedDateTime"] == "2026-06-01T19:17:16.87Z"
