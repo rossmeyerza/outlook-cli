@@ -579,18 +579,8 @@ def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_
     command = parts[0].lower() if parts else "help"
 
     if command in {"help", "commands"}:
-        return (
-            "Marlow gateway commands:\n"
-            "!help - show this help\n"
-            "!status - show gateway and session status\n"
-            "!new - start a fresh Pi conversation for this chat\n"
-            "!reset - clear this chat's Pi session and start fresh\n"
-            "!model - show or change the Pi model for this chat\n"
-            "!pause - ignore normal prompts until resumed\n"
-            "!resume - resume normal prompt handling\n"
-            "!tools - show what Marlow can use\n"
-            "!logs - show recent gateway log lines"
-        )
+        topic = parts[1].lower() if len(parts) > 1 else ""
+        return _gateway_command_help(topic)
     if command == "status":
         return _format_gateway_status(chat_id, trigger, poll_interval)
     if command == "new":
@@ -641,6 +631,13 @@ def _handle_model_command(chat_id: str, command_text: str) -> str:
     args = tokens[1:]
     if not args:
         return "Current Pi settings:\n" + _format_pi_settings(chat_id)
+
+    if args[0] in {"help", "-h", "--help"}:
+        return _model_help()
+
+    if args[0] == "list":
+        search = " ".join(args[1:]).strip()
+        return _list_pi_models(search or None)
 
     if args == ["reset"]:
         _write_gateway_state(
@@ -701,6 +698,84 @@ def _handle_model_command(chat_id: str, command_text: str) -> str:
         old.close()
 
     return "Updated Pi settings. The next prompt will restart Pi with:\n" + _format_pi_settings(chat_id)
+
+
+def _gateway_command_help(topic: str = "") -> str:
+    if topic in {"", "commands"}:
+        return (
+            "Marlow gateway commands:\n"
+            "!help [command] - show command help\n"
+            "!status - show gateway, model, session, and workspace status\n"
+            "!new - start a fresh Pi conversation for this chat\n"
+            "!reset - clear this chat's Pi session and start fresh\n"
+            "!model - show or change the Pi model for this chat\n"
+            "!pause - ignore normal prompts until resumed\n"
+            "!resume - resume normal prompt handling\n"
+            "!tools - show what Marlow can use\n"
+            "!logs - show recent gateway log lines"
+        )
+    if topic == "model":
+        return _model_help()
+    if topic == "status":
+        return "!status\nShows gateway state, current model settings, workspace, session path, auth errors, and recent activity."
+    if topic == "new":
+        return "!new\nStarts a fresh Pi conversation for this chat without deleting old session files."
+    if topic == "reset":
+        return "!reset\nClears this chat's persisted Pi session and starts fresh."
+    if topic == "pause":
+        return "!pause\nStops normal prompts from going to Marlow. Gateway commands still work."
+    if topic == "resume":
+        return "!resume\nResumes normal Marlow prompt handling after !pause."
+    if topic == "tools":
+        return "!tools\nShows the local tools and CLIs Marlow can use."
+    if topic == "logs":
+        return "!logs\nShows recent gateway log lines."
+    return f"No help available for !{topic}. Try !help."
+
+
+def _model_help() -> str:
+    return (
+        "!model commands:\n"
+        "!model - show current Pi model settings\n"
+        "!model help - show this help\n"
+        "!model list [search] - list available Pi models, optionally filtered\n"
+        "!model <model> - set model by Pi fuzzy/pattern match\n"
+        "!model <model>:<thinking> - set model with thinking shorthand, e.g. sonnet:high\n"
+        "!model --provider <provider> --model <model> --thinking <level> - set explicit provider/model/thinking\n"
+        "!model reset - return to Pi defaults\n\n"
+        "Tip: short names like sonnet are convenient but can be ambiguous. Use !model list sonnet, then set an exact model ID when repeatability matters."
+    )
+
+
+def _list_pi_models(search: str | None = None) -> str:
+    pi_bin = shutil.which("pi")
+    if not pi_bin:
+        return "pi not found in PATH."
+
+    cmd = [pi_bin, "--list-models"]
+    if search:
+        cmd.append(search)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        return "Timed out while listing Pi models."
+    except Exception as exc:
+        return f"Could not list Pi models: {exc}"
+
+    output = (result.stdout or result.stderr or "").strip()
+    if result.returncode != 0:
+        return f"Could not list Pi models:\n{output[:2500] or f'exit {result.returncode}'}"
+    if not output:
+        return "No Pi models returned."
+    if len(output) > 3000:
+        output = output[:3000].rstrip() + "\n..."
+    label = f"Pi models matching '{search}':" if search else "Pi models:"
+    return f"{label}\n{output}"
 
 
 def _chunk_response(response: str, *, max_chars: int = 3500) -> list[str]:

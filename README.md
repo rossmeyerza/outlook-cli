@@ -190,7 +190,11 @@ Gateway-native chat commands use `!` after the trigger so they do not collide wi
 @Marlow !status
 @Marlow !new
 @Marlow !reset
+@Marlow !help model
 @Marlow !model
+@Marlow !model help
+@Marlow !model list
+@Marlow !model list sonnet
 @Marlow !model claude-opus-4.8
 @Marlow !model --provider wpp --model claude-opus-4.8 --thinking high
 @Marlow !model reset
@@ -202,7 +206,7 @@ Gateway-native chat commands use `!` after the trigger so they do not collide wi
 
 `!new` starts a fresh Pi conversation for the chat. `!reset` clears that chat's persisted Pi session before starting fresh. `!pause` ignores normal prompts until `!resume`, while command messages still work.
 
-`!model` shows the current Pi settings for the chat. `!model <model>` or `!model --provider <provider> --model <model> --thinking <level>` updates the saved settings and restarts the Pi process on the next prompt while keeping the chat's persisted session files. `!model reset` returns to Pi defaults.
+`!help <command>` shows help for a specific gateway command. `!model` shows the current Pi settings for the chat. `!model list [search]` lists available Pi models through `pi --list-models`. `!model <model>` or `!model --provider <provider> --model <model> --thinking <level>` updates the saved settings and restarts the Pi process on the next prompt while keeping the chat's persisted session files. `!model reset` returns to Pi defaults. Short model names such as `sonnet` use Pi's fuzzy/pattern matching and may change as available models change; use `!model list sonnet` and set an exact model ID when repeatability matters.
 
 ### Files (OneDrive and SharePoint)
 

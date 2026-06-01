@@ -4,7 +4,10 @@ from datetime import timezone
 
 from outlook_draft.commands.gateway import (
     _chunk_response,
+    _gateway_command_help,
     _handle_gateway_command,
+    _list_pi_models,
+    _model_help,
     _parse_graph_time,
 )
 from outlook_draft.commands.pi_session import _summarize_progress_event
@@ -22,6 +25,11 @@ def test_gateway_help_command_lists_session_controls() -> None:
     assert "!reset" in response
     assert "!status" in response
     assert "!pause" in response
+
+
+def test_gateway_help_supports_command_topics() -> None:
+    assert "!model commands" in _gateway_command_help("model")
+    assert "!model list" in _model_help()
 
 
 def test_graph_time_parser_normalizes_zulu_timestamps() -> None:
@@ -58,3 +66,26 @@ def test_summarize_progress_event_for_message_tool_call() -> None:
             },
         }
     ) == "Using bash: outlook-cli mail unread"
+
+
+def test_list_pi_models_uses_optional_search(monkeypatch) -> None:
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "wpp/claude-sonnet-4.5\nwpp/claude-opus-4.8"
+        stderr = ""
+
+    monkeypatch.setattr("outlook_draft.commands.gateway.shutil.which", lambda name: "/usr/bin/pi")
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return Result()
+
+    monkeypatch.setattr("outlook_draft.commands.gateway.subprocess.run", fake_run)
+
+    response = _list_pi_models("sonnet")
+
+    assert calls[0][0] == ["/usr/bin/pi", "--list-models", "sonnet"]
+    assert "Pi models matching 'sonnet':" in response
+    assert "wpp/claude-sonnet-4.5" in response
