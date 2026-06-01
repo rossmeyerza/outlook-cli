@@ -920,14 +920,18 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     chat_id = _resolve_chat_id(args, console)
     trigger = getattr(args, "trigger", None) or config.GATEWAY_TRIGGER
     poll_interval = getattr(args, "poll", None) or config.GATEWAY_POLL_INTERVAL
+    session_dir = _session_dir_for_chat(chat_id)
+    workspace_dir = _workspace_dir_for_chat(chat_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    workspace_dir.mkdir(parents=True, exist_ok=True)
     state_updates: dict[str, object] = dict(
         chat_id=chat_id,
         trigger=trigger,
         poll_interval=poll_interval,
         auth_error=None,
         stopped_reason=None,
-        active_session_dir=str(_session_dir_for_chat(chat_id)),
-        active_workspace_dir=str(_workspace_dir_for_chat(chat_id)),
+        active_session_dir=str(session_dir),
+        active_workspace_dir=str(workspace_dir),
     )
     if getattr(args, "provider", None):
         state_updates["pi_provider"] = args.provider
@@ -944,7 +948,7 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     console.print(f"  Trigger: [bold]{trigger}[/]")
     console.print(f"  Poll:    every [bold]{poll_interval}s[/]")
     console.print(f"  Model:   [bold]{_read_gateway_state().get('pi_model') or '(pi default)'}[/]")
-    console.print(f"  Workspace: {_workspace_dir_for_chat(chat_id)}")
+    console.print(f"  Workspace: {workspace_dir}")
     console.print(f"  Logs:    {config.GATEWAY_LOG_FILE}")
 
     pid = os.fork()
