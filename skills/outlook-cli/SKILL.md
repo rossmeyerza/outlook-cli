@@ -1,6 +1,6 @@
 ---
 name: outlook-cli
-description: Use when an agent needs to work with Microsoft 365 through the local outlook-cli: Outlook mail search/read/drafts/attachments/links, calendar agenda/events/availability/find-time/rooms/invitations, contacts, tasks, Teams chats/messages/attachments, OneDrive/SharePoint files, mailbox settings, signatures, or auth/config checks.
+description: "Use when an agent needs to work with Microsoft 365 through the local outlook-cli: Outlook mail search/read/drafts/attachments/links, calendar agenda/events/availability/find-time/rooms/invitations, contacts, tasks, Teams chats/messages/attachments, OneDrive/SharePoint files, mailbox settings, signatures, or auth/config checks."
 ---
 
 # Outlook CLI
