@@ -18,7 +18,6 @@ Usage:
 
 import base64
 import json
-import re
 from datetime import datetime
 
 import requests
@@ -42,6 +41,7 @@ KNOWN_DOMAINS = [
     "outlook.office.com",
     "substrate.office.com",
 ]
+PREFERRED_GRAPH_SCOPES = {"Notes.Read", "Notes.ReadWrite"}
 
 
 def _token_scopes(token: str) -> set[str]:
@@ -105,7 +105,12 @@ def _make_request_interceptor(captured: dict[str, str]):
                 else:
                     new_scopes = _token_scopes(new_token)
                     old_scopes = _token_scopes(captured[domain])
-                    if len(new_scopes) > len(old_scopes):
+                    has_preferred_graph_scope = (
+                        domain == "graph.microsoft.com"
+                        and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
+                        and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
+                    )
+                    if len(new_scopes) > len(old_scopes) or has_preferred_graph_scope:
                         captured[domain] = new_token
                         console.print(f"[dim]  Updated token for {domain} (broader scopes)[/]")
                 break
@@ -363,6 +368,16 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         # Fallback: extract MSAL tokens from browser storage
         if not captured:
             _extract_storage_tokens(page, captured)
+
+        # OneNote uses Graph Notes scopes that Outlook Web may not request on a
+        # normal mail/calendar visit. Navigate once so the request interceptor
+        # can capture a Notes-capable Graph token when the tenant grants it.
+        try:
+            console.print("[dim]Navigating to OneNote to capture Notes scopes...[/]")
+            page.goto("https://www.onenote.com/notebooks", wait_until="domcontentloaded")
+            page.wait_for_timeout(8000)
+        except Exception:
+            pass
 
         # Save browser session state so Playwright can reuse it without MFA
         storage_path = SESSION_DIR / "browser_state.json"

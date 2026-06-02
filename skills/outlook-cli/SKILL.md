@@ -1,6 +1,6 @@
 ---
 name: outlook-cli
-description: "Use when an agent needs to work with Microsoft 365 through the local outlook-cli: Outlook mail search/read/drafts/attachments/links, calendar agenda/events/availability/find-time/rooms/invitations, contacts, tasks, Teams chats/messages/attachments, OneDrive/SharePoint files, mailbox settings, signatures, or auth/config checks."
+description: "Use when an agent needs to work with Microsoft 365 through the local outlook-cli: Outlook mail search/read/drafts/attachments/links, calendar agenda/events/availability/find-time/rooms/invitations, contacts, tasks, Teams chats/messages/attachments, OneDrive/SharePoint files, OneNote notes, mailbox settings, signatures, or auth/config checks."
 ---
 
 # Outlook CLI
@@ -254,6 +254,49 @@ outlook-cli files move "Documents/file.pdf" "Archive"
 
 Use `files sites` to discover SharePoint site names before using `--site`. Site matching is partial by name.
 
+## Notes: OneNote
+
+OneNote commands can read, create, append, and strictly replace exact text. There is intentionally no delete command.
+
+```bash
+outlook-cli notes notebooks --json
+outlook-cli notes sections --json
+outlook-cli notes sections 1 --json
+outlook-cli notes pages --json
+outlook-cli notes pages 1 --json
+outlook-cli notes read 1 --json
+outlook-cli notes read 1
+```
+
+Create and append content:
+
+```bash
+outlook-cli notes create --section 1 --title "Daily note" --body "Plain text"
+outlook-cli notes create --section 1 --title "Meeting notes" --body-file ./notes.md --markdown
+outlook-cli notes append 1 --body-file ./summary.md --markdown
+outlook-cli notes append 1 --body-file ./snippet.html --html
+```
+
+Strict replacement:
+
+```bash
+outlook-cli notes replace 1 --old "Status: Draft" --new "Status: Final"
+outlook-cli notes replace 1 --old-file ./old.txt --new-file ./new.txt
+```
+
+Replacement rules:
+- `--old` must match the current page text exactly once.
+- Zero matches fails.
+- Multiple matches fails.
+- Use longer surrounding text in `--old` when needed to disambiguate.
+
+Input format:
+- `--body` defaults to plain text.
+- `--markdown` is preferred for agent-generated structured notes.
+- `--html` should only be used for OneNote-safe HTML.
+
+OneNote requires a Graph token with `Notes.ReadWrite`. Check `outlook-cli auth scopes --json` if commands fail with a permissions error.
+
 ## Mailbox And Signatures
 
 Mailbox settings:
@@ -280,7 +323,7 @@ Signature files default to:
 
 ## Output Notes
 
-- `--json` works broadly for mail, calendar, contacts, tasks, mailbox, auth, and config.
+- `--json` works broadly for mail, calendar, contacts, tasks, notes, mailbox, auth, and config.
 - Some Teams/files commands are table/text oriented; parse cautiously or run `--help` for the exact command if unsure.
 - Top-level flags usually work before the domain (`outlook-cli --json cal agenda`) and many commands also accept `--json` after the subcommand (`outlook-cli cal agenda --json`).
 - Use `--help` on any command before mutating if argument order is uncertain.

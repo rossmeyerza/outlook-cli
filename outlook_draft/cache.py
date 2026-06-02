@@ -10,6 +10,9 @@ CONTACT_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-contact-cache.json"
 CAL_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-cal-cache.json"
 TASK_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-task-cache.json"
 TEAMS_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-teams-cache.json"
+NOTES_NOTEBOOK_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-notes-notebook-cache.json"
+NOTES_SECTION_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-notes-section-cache.json"
+NOTES_PAGE_CACHE = Path(tempfile.gettempdir()) / "outlook-cli-notes-page-cache.json"
 
 
 def save_cache(path: Path, items: list[dict], *, id_key: str = "Id") -> None:
