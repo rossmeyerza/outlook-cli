@@ -96,15 +96,6 @@ outlook-cli files mkdir "Shared Docs/Q2" --site "Tesco"   # create SharePoint fo
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
 outlook-cli files move "Documents/file.pdf" "Archive"     # move
 
-# Notes (OneNote, no delete command)
-outlook-cli notes notebooks                # list notebooks
-outlook-cli notes sections [notebook]      # list sections, optionally in notebook
-outlook-cli notes pages [section]          # list pages, optionally in section
-outlook-cli notes read <page>              # read page text by cached index, suffix, or full ID
-outlook-cli notes create --section <section> --title "Title" --body-file note.md --markdown
-outlook-cli notes append <page> --body-file update.md --markdown
-outlook-cli notes replace <page> --old "exact text" --new "replacement"
-
 # Signatures
 outlook-cli signature fetch                # fetch new + reply signatures from OWA (no MFA after first auth)
 outlook-cli signature fetch --headed       # run with visible browser if headless fails
@@ -127,7 +118,7 @@ outlook-cli config check                   # validate local config without print
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
-- **Notes**: `notes` works with OneNote through Microsoft Graph. `create` and `append` accept plain text by default, `--markdown` for Markdown files/text, or `--html` for OneNote-safe HTML. `replace` is strict: it fetches the current page, requires `--old` text to match exactly once, and fails on zero or multiple matches. There is intentionally no delete command. OneNote requires a Graph token with `Notes.ReadWrite`; use `auth scopes` to check.
+- **OneNote**: There is intentionally no `notes` command. The tenant/browser flow currently uses the private OneNote web/WOPI protocol, not a usable public Graph OneNote token. Do not tell agents to use OneNote through this CLI.
 - **Reply drafts**: `draft reply` creates a draft tied to an existing message. Use a cached mail index from `mail unread` / `mail search`, a cached ID suffix, or a full message ID.
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).

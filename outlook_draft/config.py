@@ -43,10 +43,8 @@ def ensure_dirs() -> None:
 
 OUTLOOK_BASE_URL: str = "https://outlook.office.com/api/v2.0"
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
-ONENOTE_BASE_URL: str = "https://www.onenote.com/api/v1.0"
 OUTLOOK_TOKEN_DOMAIN: str = "outlook.office.com"
 GRAPH_TOKEN_DOMAIN: str = "graph.microsoft.com"
-ONENOTE_TOKEN_DOMAIN: str = "www.onenote.com"
 SIGNATURE_NEW_FILE: Path = resolve_config_path(
     "SIGNATURE_NEW_FILE",
     DATA_DIR / "signature-new.html",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import time
-import html
 from typing import Any
 
 import httpx
@@ -687,115 +686,6 @@ class OutlookClient:
             json_body={"type": link_type, "scope": scope},
         )
         return resp.json()
-
-    # ── OneNote ───────────────────────────────────────────────────────
-
-    def list_onenote_notebooks(self, top: int = 50) -> list[dict[str, Any]]:
-        """List OneNote notebooks for the signed-in user."""
-        resp = self._request(
-            "GET",
-            f"{self._onenote_root}/notebooks",
-            params={
-                "$top": str(top),
-                "$select": "id,displayName,createdDateTime,lastModifiedDateTime,links",
-                "$orderby": "lastModifiedDateTime desc",
-            },
-        )
-        return resp.json().get("value", [])
-
-    def list_onenote_sections(self, notebook_id: str | None = None, top: int = 100) -> list[dict[str, Any]]:
-        """List OneNote sections, optionally within a notebook."""
-        if notebook_id:
-            path = f"{self._onenote_root}/notebooks/{notebook_id}/sections"
-        else:
-            path = f"{self._onenote_root}/sections"
-        resp = self._request(
-            "GET",
-            path,
-            params={
-                "$top": str(top),
-                "$select": "id,displayName,createdDateTime,lastModifiedDateTime,links,parentNotebook",
-                "$orderby": "lastModifiedDateTime desc",
-            },
-        )
-        return resp.json().get("value", [])
-
-    def list_onenote_pages(self, section_id: str | None = None, top: int = 50) -> list[dict[str, Any]]:
-        """List OneNote pages, optionally within a section."""
-        if section_id:
-            path = f"{self._onenote_root}/sections/{section_id}/pages"
-        else:
-            path = f"{self._onenote_root}/pages"
-        resp = self._request(
-            "GET",
-            path,
-            params={
-                "$top": str(top),
-                "$select": "id,title,createdDateTime,lastModifiedDateTime,links,parentSection",
-                "$orderby": "lastModifiedDateTime desc",
-            },
-        )
-        return resp.json().get("value", [])
-
-    def get_onenote_page(self, page_id: str) -> dict[str, Any]:
-        """Get OneNote page metadata."""
-        resp = self._request(
-            "GET",
-            f"{self._onenote_root}/pages/{page_id}",
-            params={"$select": "id,title,createdDateTime,lastModifiedDateTime,links,parentSection"},
-        )
-        return resp.json()
-
-    def get_onenote_page_content(self, page_id: str, *, include_ids: bool = False) -> str:
-        """Get OneNote page HTML content."""
-        params = {"includeIDs": "true"} if include_ids else None
-        resp = self._request(
-            "GET",
-            f"{self._onenote_root}/pages/{page_id}/content",
-            params=params,
-            extra_headers={"Accept": "text/html"},
-        )
-        return resp.text
-
-    def create_onenote_page(self, *, title: str, html_body: str, section_id: str | None = None) -> dict[str, Any]:
-        """Create a OneNote page in the default notebook or a specific section."""
-        page_html = (
-            "<!DOCTYPE html><html><head>"
-            f"<title>{html.escape(title)}</title>"
-            "</head><body>"
-            f"{html_body}"
-            "</body></html>"
-        )
-        path = f"{self._onenote_root}/sections/{section_id}/pages" if section_id else f"{self._onenote_root}/pages"
-        resp = self._request(
-            "POST",
-            path,
-            data=page_html.encode("utf-8"),
-            extra_headers={"Content-Type": "text/html"},
-        )
-        return resp.json()
-
-    def append_onenote_page_content(self, page_id: str, html_body: str) -> None:
-        """Append HTML content to a OneNote page body."""
-        self.patch_onenote_page_content(
-            page_id,
-            [{"target": "body", "action": "append", "position": "last", "content": html_body}],
-        )
-
-    def patch_onenote_page_content(self, page_id: str, changes: list[dict[str, Any]]) -> None:
-        """Patch OneNote page content with Graph change objects."""
-        self._request(
-            "PATCH",
-            f"{self._onenote_root}/pages/{page_id}/content",
-            json_body=changes,
-        )
-
-    @property
-    def _onenote_root(self) -> str:
-        """Return the OneNote path root for Graph or native OneNote API."""
-        if "onenote.com" in self._base_url:
-            return "/me/notes"
-        return "/me/onenote"
 
     # ── People / contacts ─────────────────────────────────────────────
 

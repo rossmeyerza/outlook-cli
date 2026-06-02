@@ -265,7 +265,6 @@ class _GraphClient:
 
     def _upload_chunks(self, upload_url: str, data: bytes) -> dict:
         """Upload data in chunks to a pre-created upload session URL."""
-        import time
         total = len(data)
         chunks = math.ceil(total / UPLOAD_CHUNK_SIZE)
         result = {}

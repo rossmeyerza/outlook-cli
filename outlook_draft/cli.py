@@ -38,7 +38,6 @@ from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache
 from .commands import calendar as calendar_commands
 from .commands import contacts as contacts_commands
 from .commands import mail as mail_commands
-from .commands import notes as notes_commands
 from .commands import teams as teams_commands
 from .commands import tasks as tasks_commands
 from .commands.signature import cmd_signature_fetch
@@ -99,17 +98,6 @@ def _token_available(domain: str) -> bool:
         return int(float(claims.get("exp", 0)) - time.time()) > 0
     except Exception:
         return False
-
-
-def _get_onenote_client() -> OutlookClient:
-    """Build a OneNote client, preferring the native OneNote token if captured."""
-    if _token_available(config.ONENOTE_TOKEN_DOMAIN):
-        return _get_client(
-            base_url=config.ONENOTE_BASE_URL,
-            token_domain=config.ONENOTE_TOKEN_DOMAIN,
-            token_label="OneNote API",
-        )
-    return _get_graph_client()
 
 
 def _load_body(args: argparse.Namespace) -> str:
@@ -568,7 +556,6 @@ def _token_status(domain: str, label: str) -> dict[str, object]:
         "audience": audience,
         "scopes": scopes,
         "notesReadWrite": "Notes.ReadWrite" in scopes,
-        "usableForNotesCli": domain in {config.GRAPH_TOKEN_DOMAIN, config.ONENOTE_TOKEN_DOMAIN} and "Notes.ReadWrite" in scopes,
     }
 
 
@@ -585,13 +572,8 @@ def cmd_auth(args: argparse.Namespace) -> None:
             bool(item.get("notesReadWrite")) and bool(item.get("present")) and not bool(item.get("expired"))
             for item in statuses
         )
-        notes_cli_ready = any(
-            bool(item.get("usableForNotesCli")) and bool(item.get("present")) and not bool(item.get("expired"))
-            for item in statuses
-        )
         capabilities = {
             "notesReadWriteAnyToken": notes_scope_present,
-            "notesCliReady": notes_cli_ready,
             "notesTokenCaptured": notes_scope_present,
         }
         if args.json:
@@ -617,7 +599,6 @@ def cmd_auth(args: argparse.Namespace) -> None:
             table.add_row(str(item["label"]), str(item["domain"]), status, expires, notes)
         console.print(table)
         console.print(f"OneNote scope present: {'yes' if notes_scope_present else 'no'}")
-        console.print(f"OneNote CLI ready: {'yes' if notes_cli_ready else 'no'}")
         return
     if command == "clear":
         if config.TOKENS_FILE.exists():
@@ -1307,67 +1288,6 @@ def main() -> None:
     cmd_files_move_p.add_argument("dest", help="Destination folder path")
     cmd_files_move_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
     cmd_files_move_p.set_defaults(func=cmd_files_move)
-
-    # ── Notes (OneNote) ──────────────────────────────────────────────
-    notes_ctx = notes_commands.build_ctx(
-        console=console,
-        get_graph_client=_get_onenote_client,
-        format_datetime=_format_datetime,
-    )
-    p_notes = sub.add_parser("notes", help="Read and write OneNote notebooks, sections, and pages")
-    add_output_args(p_notes)
-    notes_sub = p_notes.add_subparsers(dest="command", required=True)
-
-    cmd_notes_notebooks = notes_sub.add_parser("notebooks", help="List OneNote notebooks")
-    add_output_args(cmd_notes_notebooks)
-    cmd_notes_notebooks.add_argument("--top", type=int, default=50, help="Maximum notebooks to return")
-    cmd_notes_notebooks.set_defaults(func=notes_commands.cmd_notebooks, _notes_ctx=notes_ctx)
-
-    cmd_notes_sections = notes_sub.add_parser("sections", help="List OneNote sections")
-    add_output_args(cmd_notes_sections)
-    cmd_notes_sections.add_argument("notebook", nargs="?", help="Notebook index, cached ID suffix, or full ID")
-    cmd_notes_sections.add_argument("--top", type=int, default=100, help="Maximum sections to return")
-    cmd_notes_sections.set_defaults(func=notes_commands.cmd_sections, _notes_ctx=notes_ctx)
-
-    cmd_notes_pages = notes_sub.add_parser("pages", help="List OneNote pages")
-    add_output_args(cmd_notes_pages)
-    cmd_notes_pages.add_argument("section", nargs="?", help="Section index, cached ID suffix, or full ID")
-    cmd_notes_pages.add_argument("--top", type=int, default=50, help="Maximum pages to return")
-    cmd_notes_pages.set_defaults(func=notes_commands.cmd_pages, _notes_ctx=notes_ctx)
-
-    cmd_notes_read = notes_sub.add_parser("read", help="Read a OneNote page")
-    add_output_args(cmd_notes_read)
-    cmd_notes_read.add_argument("page", help="Page index, cached ID suffix, or full ID")
-    cmd_notes_read.add_argument("--html", action="store_true", help="Print raw OneNote HTML")
-    cmd_notes_read.set_defaults(func=notes_commands.cmd_read, _notes_ctx=notes_ctx)
-
-    cmd_notes_create = notes_sub.add_parser("create", help="Create a OneNote page")
-    add_output_args(cmd_notes_create)
-    cmd_notes_create.add_argument("--section", help="Section index, cached ID suffix, or full ID")
-    cmd_notes_create.add_argument("--title", required=True, help="Page title")
-    cmd_notes_create.add_argument("--body", help="Body text")
-    cmd_notes_create.add_argument("--body-file", help="Read body from a file")
-    cmd_notes_create.add_argument("--markdown", action="store_true", help="Treat body input as Markdown")
-    cmd_notes_create.add_argument("--html", action="store_true", help="Treat body input as OneNote-safe HTML")
-    cmd_notes_create.set_defaults(func=notes_commands.cmd_create, _notes_ctx=notes_ctx)
-
-    cmd_notes_append = notes_sub.add_parser("append", help="Append content to a OneNote page")
-    add_output_args(cmd_notes_append)
-    cmd_notes_append.add_argument("page", help="Page index, cached ID suffix, or full ID")
-    cmd_notes_append.add_argument("--body", help="Body text")
-    cmd_notes_append.add_argument("--body-file", help="Read body from a file")
-    cmd_notes_append.add_argument("--markdown", action="store_true", help="Treat body input as Markdown")
-    cmd_notes_append.add_argument("--html", action="store_true", help="Treat body input as OneNote-safe HTML")
-    cmd_notes_append.set_defaults(func=notes_commands.cmd_append, _notes_ctx=notes_ctx)
-
-    cmd_notes_replace = notes_sub.add_parser("replace", help="Strictly replace exact text in a OneNote page")
-    add_output_args(cmd_notes_replace)
-    cmd_notes_replace.add_argument("page", help="Page index, cached ID suffix, or full ID")
-    cmd_notes_replace.add_argument("--old", help="Exact text to replace")
-    cmd_notes_replace.add_argument("--old-file", help="Read exact old text from a file")
-    cmd_notes_replace.add_argument("--new", help="Replacement text")
-    cmd_notes_replace.add_argument("--new-file", help="Read replacement text from a file")
-    cmd_notes_replace.set_defaults(func=notes_commands.cmd_replace, _notes_ctx=notes_ctx)
 
     # ── Signature ─────────────────────────────────────────────────────
     p_sig = sub.add_parser("signature", help="Manage email signatures")

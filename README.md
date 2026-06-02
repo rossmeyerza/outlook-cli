@@ -101,25 +101,6 @@ outlook-cli draft show 1          # by index from list
 outlook-cli draft delete 1        # by index
 ```
 
-### Notes (OneNote)
-
-```bash
-outlook-cli notes notebooks
-outlook-cli notes sections
-outlook-cli notes sections 1
-outlook-cli notes pages
-outlook-cli notes pages 1
-outlook-cli notes read 1
-outlook-cli notes read 1 --html
-outlook-cli notes create --section 1 --title "Daily note" --body "Plain text"
-outlook-cli notes create --section 1 --title "Meeting notes" --body-file notes.md --markdown
-outlook-cli notes append 1 --body-file summary.md --markdown
-outlook-cli notes replace 1 --old "Status: Draft" --new "Status: Final"
-outlook-cli notes replace 1 --old-file old.txt --new-file new.txt
-```
-
-`notes` uses Microsoft Graph OneNote APIs and never exposes a delete command. `--body` defaults to plain text, `--markdown` converts Markdown to OneNote-safe HTML, and `--html` sends HTML directly. `replace` is intentionally strict: it fetches the current page content, requires the old text to match exactly once, and throws if it matches zero or multiple places.
-
 ### Calendar
 
 ```bash
@@ -278,7 +259,7 @@ outlook-cli files move "Shared Documents/file.pdf" "Archive" --site "Tesco"
 
 Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 
-OneNote commands require the captured Microsoft Graph token to include `Notes.ReadWrite`. Check with `outlook-cli auth scopes`; if the token lacks OneNote scopes, run `outlook-cli auth --headed` or `outlook-cli auth` to re-capture tokens. Auth navigates to OneNote during capture so it can pick up Notes scopes when the tenant grants them.
+OneNote note operations are not implemented. Auth may capture Notes-capable tokens and show them in `auth status` for diagnostics, but there is intentionally no `notes` command because the current tenant/browser flow uses the private OneNote web/WOPI protocol rather than a usable public Graph OneNote API token.
 
 ### Auth and config
 
