@@ -114,7 +114,7 @@ def _make_request_interceptor(captured: dict[str, str]):
                         and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
                     )
                     has_preferred_onenote_scope = (
-                        token_domain == "www.onenote.com"
+                        token_domain in {"www.onenote.com", "substrate.office.com"}
                         and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
                         and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
                     )
@@ -385,6 +385,8 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
             console.print("[dim]Navigating to OneNote to capture Notes scopes...[/]")
             page.goto("https://www.onenote.com/notebooks", wait_until="domcontentloaded")
             page.wait_for_timeout(8000)
+            page.goto("https://www.office.com/launch/onenote", wait_until="domcontentloaded")
+            page.wait_for_timeout(12000)
         except Exception:
             pass
 

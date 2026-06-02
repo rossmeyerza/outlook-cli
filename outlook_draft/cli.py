@@ -579,7 +579,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
         statuses = [
             _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
             _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
-            _token_status(config.ONENOTE_TOKEN_DOMAIN, "OneNote API"),
+            _token_status("substrate.office.com", "Substrate"),
         ]
         notes_scope_present = any(
             bool(item.get("notesReadWrite")) and bool(item.get("present")) and not bool(item.get("expired"))
@@ -592,6 +592,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
         capabilities = {
             "notesReadWriteAnyToken": notes_scope_present,
             "notesCliReady": notes_cli_ready,
+            "notesTokenCaptured": notes_scope_present,
         }
         if args.json:
             print(json.dumps({"tokens": statuses, "capabilities": capabilities}, indent=2))
