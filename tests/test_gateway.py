@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 from outlook_draft.commands.gateway import (
     _chunk_response,
     _gateway_command_help,
+    _heartbeat_is_stale,
     _handle_gateway_command,
     _list_pi_models,
     _model_help,
@@ -37,6 +38,13 @@ def test_graph_time_parser_normalizes_zulu_timestamps() -> None:
 
     assert parsed.tzinfo == timezone.utc
     assert parsed.isoformat() == "2026-06-01T12:34:56+00:00"
+
+
+def test_heartbeat_stale_only_when_running_and_old() -> None:
+    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+
+    assert _heartbeat_is_stale({"last_poll_at": old, "poll_interval": 30}, running=True)
+    assert not _heartbeat_is_stale({"last_poll_at": old, "poll_interval": 30}, running=False)
 
 
 def test_chunk_response_splits_long_messages_on_boundaries() -> None:

@@ -125,6 +125,39 @@ def _parse_graph_time(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _format_age(value: str) -> str:
+    parsed = _parse_graph_time(value)
+    if parsed == datetime.min.replace(tzinfo=timezone.utc):
+        return "unknown"
+    seconds = max(0, int((datetime.now(timezone.utc) - parsed).total_seconds()))
+    if seconds < 90:
+        return f"{seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
+
+
+def _heartbeat_is_stale(state: dict, running: bool) -> bool:
+    if not running:
+        return False
+    last_poll = str(state.get("last_poll_at") or "")
+    parsed = _parse_graph_time(last_poll)
+    if parsed == datetime.min.replace(tzinfo=timezone.utc):
+        return False
+    poll_interval = int(state.get("poll_interval") or config.GATEWAY_POLL_INTERVAL)
+    stale_after = max(120, poll_interval * 4)
+    return (datetime.now(timezone.utc) - parsed).total_seconds() > stale_after
+
+
 def _strip_html(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     return html.unescape(text).strip()
@@ -551,6 +584,12 @@ def _format_gateway_status(chat_id: str, trigger: str, poll_interval: int) -> st
         f"Poll: every {poll_interval}s",
         f"Paused: {'yes' if state.get('paused') else 'no'}",
     ]
+    if state.get("started_at"):
+        lines.append(f"Started: {state['started_at']} ({_format_age(str(state['started_at']))})")
+    if state.get("last_poll_at"):
+        lines.append(f"Last poll: {state['last_poll_at']} ({_format_age(str(state['last_poll_at']))})")
+    if _heartbeat_is_stale(state, running):
+        lines.append("Warning: gateway heartbeat is stale")
     if state.get("last_seen_time"):
         lines.append(f"Last seen: {state['last_seen_time']}")
     if state.get("last_marlow_turn_time"):
@@ -559,6 +598,10 @@ def _format_gateway_status(chat_id: str, trigger: str, poll_interval: int) -> st
         lines.append(f"Auth error: {state['auth_error']}")
     if state.get("stopped_reason"):
         lines.append(f"Stopped reason: {state['stopped_reason']}")
+    if state.get("stopped_at"):
+        lines.append(f"Stopped at: {state['stopped_at']} ({_format_age(str(state['stopped_at']))})")
+    if state.get("last_poll_error"):
+        lines.append(f"Last poll error: {state['last_poll_error']}")
     lines.append(_format_pi_settings(chat_id))
     return "\n".join(lines)
 
@@ -859,10 +902,17 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
         trigger=trigger,
         poll_interval=poll_interval,
         last_seen_time=last_seen_time,
+        process_status="running",
+        started_at=_utc_now_iso(),
+        stopped_at=None,
+        stopped_reason=None,
+        last_poll_at=None,
+        last_poll_error=None,
     )
 
     while True:
         try:
+            _write_gateway_state(last_poll_at=_utc_now_iso(), last_poll_error=None)
             client = _graph_client()
             try:
                 # Fetch a wider window so we can build the catch-up between Marlow turns
@@ -974,12 +1024,20 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
 
         except OutlookAPIError as exc:
             _log(f"Graph API error: {exc}")
+            _write_gateway_state(last_poll_error=f"Graph API error: {exc}")
         except (TokenExpiredError, TokenNotFoundError) as exc:
             _log(f"Graph auth error: {exc}")
-            _write_gateway_state(auth_error=str(exc), stopped_reason="graph_auth_error")
+            _write_gateway_state(
+                auth_error=str(exc),
+                process_status="stopped",
+                stopped_at=_utc_now_iso(),
+                stopped_reason="graph_auth_error",
+                last_poll_error=f"Graph auth error: {exc}",
+            )
             return
         except Exception as exc:
             _log(f"Unexpected poll error: {exc}")
+            _write_gateway_state(last_poll_error=f"Unexpected poll error: {exc}")
 
         time.sleep(poll_interval)
 
@@ -991,6 +1049,13 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     if existing_pid and _process_is_running(existing_pid):
         console.print(f"[yellow]Gateway already running (PID {existing_pid}).[/]")
         return
+    if existing_pid:
+        _write_gateway_state(
+            process_status="stopped",
+            stopped_at=_utc_now_iso(),
+            stopped_reason=f"stale_pid:{existing_pid}",
+        )
+        config.GATEWAY_PID_FILE.unlink(missing_ok=True)
 
     chat_id = _resolve_chat_id(args, console)
     trigger = getattr(args, "trigger", None) or config.GATEWAY_TRIGGER
@@ -1005,6 +1070,8 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
         poll_interval=poll_interval,
         auth_error=None,
         stopped_reason=None,
+        stopped_at=None,
+        process_status="starting",
         active_session_dir=str(session_dir),
         active_workspace_dir=str(workspace_dir),
     )
@@ -1030,6 +1097,7 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
     if pid > 0:
         config.SESSION_DIR.mkdir(parents=True, exist_ok=True)
         config.GATEWAY_PID_FILE.write_text(str(pid))
+        _write_gateway_state(pid=pid, process_status="running")
         console.print(f"[green]Gateway running (PID {pid}).[/]")
         return
 
@@ -1043,6 +1111,11 @@ def cmd_gateway_start(args: argparse.Namespace) -> None:
         _poll_loop(chat_id, trigger, poll_interval)
     except Exception as exc:
         _log(f"Gateway crashed: {exc}")
+        _write_gateway_state(
+            process_status="stopped",
+            stopped_at=_utc_now_iso(),
+            stopped_reason=f"crashed:{exc}",
+        )
     finally:
         config.GATEWAY_PID_FILE.unlink(missing_ok=True)
     os._exit(0)
@@ -1052,18 +1125,22 @@ def cmd_gateway_stop(args: argparse.Namespace) -> None:
     console = Console()
     pid = _read_pid()
     if not pid:
+        _write_gateway_state(process_status="stopped", stopped_at=_utc_now_iso(), stopped_reason="manual_stop_no_pid")
         console.print("[yellow]Gateway is not running (no PID file).[/]")
         return
     if not _process_is_running(pid):
         config.GATEWAY_PID_FILE.unlink(missing_ok=True)
+        _write_gateway_state(process_status="stopped", stopped_at=_utc_now_iso(), stopped_reason=f"stale_pid:{pid}")
         console.print("[yellow]Gateway process not found. PID file cleaned up.[/]")
         return
     try:
         os.kill(pid, signal.SIGTERM)
         config.GATEWAY_PID_FILE.unlink(missing_ok=True)
+        _write_gateway_state(process_status="stopped", stopped_at=_utc_now_iso(), stopped_reason="manual_stop")
         console.print(f"[green]Gateway stopped (PID {pid}).[/]")
     except ProcessLookupError:
         config.GATEWAY_PID_FILE.unlink(missing_ok=True)
+        _write_gateway_state(process_status="stopped", stopped_at=_utc_now_iso(), stopped_reason=f"stale_pid:{pid}")
         console.print("[yellow]Process already gone.[/]")
 
 
@@ -1071,6 +1148,14 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
     console = Console()
     pid = _read_pid()
     running = bool(pid and _process_is_running(pid))
+    stale_pid = bool(pid and not running)
+    if stale_pid:
+        config.GATEWAY_PID_FILE.unlink(missing_ok=True)
+        _write_gateway_state(
+            process_status="stopped",
+            stopped_at=_utc_now_iso(),
+            stopped_reason=f"stale_pid:{pid}",
+        )
 
     chat_id = config.GATEWAY_CHAT_ID
     state = _read_gateway_state()
@@ -1081,6 +1166,8 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
 
     if running:
         console.print(f"[green]Gateway is running[/] (PID {pid})")
+    elif stale_pid:
+        console.print(f"[yellow]Gateway is not running.[/] Stale PID file cleaned up (PID {pid}).")
     else:
         console.print("[dim]Gateway is not running.[/]")
 
@@ -1092,12 +1179,22 @@ def cmd_gateway_status(args: argparse.Namespace) -> None:
     console.print(f"  Poll:    every {state.get('poll_interval') or config.GATEWAY_POLL_INTERVAL}s")
     if state.get("last_seen_time"):
         console.print(f"  Last seen: {state['last_seen_time']}")
+    if state.get("started_at"):
+        console.print(f"  Started: {state['started_at']} ({_format_age(str(state['started_at']))})")
+    if state.get("last_poll_at"):
+        console.print(f"  Last poll: {state['last_poll_at']} ({_format_age(str(state['last_poll_at']))})")
+    if _heartbeat_is_stale(state, running):
+        console.print("  [yellow]Warning: gateway heartbeat is stale.[/]")
     if state.get("last_marlow_turn_time"):
         console.print(f"  Last Marlow turn: {state['last_marlow_turn_time']}")
     if state.get("auth_error"):
         console.print(f"  Auth error: {state['auth_error']}")
     if state.get("stopped_reason"):
         console.print(f"  Stopped reason: {state['stopped_reason']}")
+    if state.get("stopped_at"):
+        console.print(f"  Stopped at: {state['stopped_at']} ({_format_age(str(state['stopped_at']))})")
+    if state.get("last_poll_error"):
+        console.print(f"  Last poll error: {state['last_poll_error']}")
     if state.get("paused"):
         console.print("  Paused:  yes")
     console.print(f"  Model:   {state.get('pi_model') or '(pi default)'}")
