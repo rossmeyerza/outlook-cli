@@ -59,6 +59,7 @@ class OutlookClient:
         *,
         params: dict[str, str] | None = None,
         json_body: dict | None = None,
+        data: bytes | None = None,
         extra_headers: dict[str, str] | None = None,
         max_retries: int = 2,
     ) -> httpx.Response:
@@ -70,7 +71,7 @@ class OutlookClient:
         for attempt in range(max_retries + 1):
             try:
                 resp = client.request(
-                    method, url, params=params, json=json_body, headers=headers,
+                    method, url, params=params, json=json_body, content=data, headers=headers,
                 )
 
                 if resp.status_code in (200, 201, 202, 204):
@@ -633,6 +634,58 @@ class OutlookClient:
             "POST",
             f"/users/{user_id}/chats/{chat_id}/messages/{message_id}/softDelete",
         )
+
+    def _onedrive_item_by_path_internal(self, path: str) -> dict[str, Any]:
+        """Resolve a OneDrive item by root-relative path for gateway publishing."""
+        path = path.strip("/")
+        if not path:
+            resp = self._request("GET", "/me/drive/root", params={"$select": "id,name,folder,webUrl"})
+        else:
+            resp = self._request(
+                "GET",
+                f"/me/drive/root:/{path}",
+                params={"$select": "id,name,folder,webUrl"},
+            )
+        return resp.json()
+
+    def _onedrive_create_folder_internal(self, parent_id: str, name: str) -> dict[str, Any]:
+        """Create a OneDrive folder for gateway publishing."""
+        resp = self._request(
+            "POST",
+            f"/me/drive/items/{parent_id}/children",
+            json_body={
+                "name": name,
+                "folder": {},
+                "@microsoft.graph.conflictBehavior": "fail",
+            },
+        )
+        return resp.json()
+
+    def _onedrive_upload_file_internal(self, remote_path: str, data: bytes) -> dict[str, Any]:
+        """Upload bytes to OneDrive by root-relative path for gateway publishing."""
+        resp = self._request(
+            "PUT",
+            f"/me/drive/root:/{remote_path.strip('/')}:/content",
+            data=data,
+            extra_headers={"Content-Type": "application/octet-stream"},
+            max_retries=1,
+        )
+        return resp.json()
+
+    def _onedrive_create_share_link_internal(
+        self,
+        item_id: str,
+        *,
+        link_type: str = "view",
+        scope: str = "organization",
+    ) -> dict[str, Any]:
+        """Create a OneDrive sharing link for gateway-published files."""
+        resp = self._request(
+            "POST",
+            f"/me/drive/items/{item_id}/createLink",
+            json_body={"type": link_type, "scope": scope},
+        )
+        return resp.json()
 
     # ── People / contacts ─────────────────────────────────────────────
 

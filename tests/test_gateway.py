@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from outlook_draft.commands.gateway import (
+    EXPORT_MANIFEST,
     _chunk_response,
     _gateway_command_help,
     _heartbeat_is_stale,
@@ -10,6 +11,8 @@ from outlook_draft.commands.gateway import (
     _list_pi_models,
     _model_help,
     _parse_graph_time,
+    _read_export_manifest,
+    _safe_workspace_file,
 )
 from outlook_draft.commands.pi_session import _summarize_progress_event
 
@@ -31,6 +34,35 @@ def test_gateway_help_command_lists_session_controls() -> None:
 def test_gateway_help_supports_command_topics() -> None:
     assert "!model commands" in _gateway_command_help("model")
     assert "!model list" in _model_help()
+    assert "!send <path>" in _gateway_command_help("send")
+
+
+def test_safe_workspace_file_rejects_path_escape(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("outlook_draft.config.GATEWAY_WORKSPACE_DIR", tmp_path)
+    workspace = tmp_path / "7ecde348ff9cda2c"
+    workspace.mkdir()
+    outside = tmp_path / "outside.html"
+    outside.write_text("nope")
+
+    try:
+        _safe_workspace_file("chat", "../outside.html")
+    except ValueError as exc:
+        assert "escapes" in str(exc)
+    else:
+        raise AssertionError("expected path escape to be rejected")
+
+
+def test_export_manifest_reads_relative_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("outlook_draft.config.GATEWAY_WORKSPACE_DIR", tmp_path)
+    workspace = tmp_path / "7ecde348ff9cda2c"
+    workspace.mkdir()
+    (workspace / EXPORT_MANIFEST).write_text(
+        '{"files":["report.html"],"message":"Created the report."}'
+    )
+
+    manifest = _read_export_manifest("chat")
+
+    assert manifest == (["report.html"], "Created the report.")
 
 
 def test_graph_time_parser_normalizes_zulu_timestamps() -> None:

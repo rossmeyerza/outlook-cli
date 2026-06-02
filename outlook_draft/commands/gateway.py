@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from rich.console import Console
 
@@ -34,6 +35,25 @@ from ..outlook_client import OutlookClient
 from ..token_manager import TokenManager
 from .pi_session import PiSession, PiSessionError
 from .teams import SELF_CHAT_ID, _chat_title, find_self_chat
+
+
+EXPORT_MANIFEST = ".marlow-export.json"
+EXPORT_MAX_BYTES = 25 * 1024 * 1024
+EXPORT_REMOTE_ROOT = "Outlook CLI/Gateway"
+EXPORT_ALLOWED_SUFFIXES = {
+    ".csv",
+    ".docx",
+    ".html",
+    ".jpeg",
+    ".jpg",
+    ".json",
+    ".md",
+    ".pdf",
+    ".png",
+    ".pptx",
+    ".txt",
+    ".xlsx",
+}
 
 
 def _graph_client() -> OutlookClient:
@@ -82,6 +102,42 @@ def _session_dir_for_chat(chat_id: str) -> Path:
 def _workspace_dir_for_chat(chat_id: str) -> Path:
     digest = hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:16]
     return config.GATEWAY_WORKSPACE_DIR / digest
+
+
+def _chat_digest(chat_id: str) -> str:
+    return hashlib.sha1(chat_id.encode("utf-8")).hexdigest()[:16]
+
+
+def _safe_export_name(name: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._ -]+", "_", Path(name).name).strip(" .")
+    return safe or "marlow-export"
+
+
+def _safe_workspace_file(chat_id: str, relpath: str) -> Path:
+    workspace = _workspace_dir_for_chat(chat_id).resolve()
+    path = Path(relpath)
+    if path.is_absolute():
+        raise ValueError("absolute paths are not allowed")
+    resolved = (workspace / path).resolve()
+    if not resolved.is_relative_to(workspace):
+        raise ValueError("path escapes the gateway workspace")
+    if not resolved.exists():
+        raise ValueError("file does not exist")
+    if not resolved.is_file():
+        raise ValueError("only regular files can be sent")
+    if resolved.name.startswith("."):
+        raise ValueError("hidden files cannot be sent")
+    if resolved.suffix.lower() not in EXPORT_ALLOWED_SUFFIXES:
+        allowed = ", ".join(sorted(EXPORT_ALLOWED_SUFFIXES))
+        raise ValueError(f"unsupported file type {resolved.suffix!r}; allowed: {allowed}")
+    size = resolved.stat().st_size
+    if size > EXPORT_MAX_BYTES:
+        raise ValueError(f"file is too large ({size} bytes, max {EXPORT_MAX_BYTES})")
+    return resolved
+
+
+def _workspace_relpath(chat_id: str, path: Path) -> str:
+    return path.resolve().relative_to(_workspace_dir_for_chat(chat_id).resolve()).as_posix()
 
 
 def _configure_pi_session(sess: PiSession, chat_id: str) -> None:
@@ -448,6 +504,10 @@ Use them only if you need information that isn't already in the chat above.
 WORKSPACE GUIDANCE
 - Your shell working directory is a per-chat gateway workspace, not a product repo.
 - Do not infer Ross's whole day from the current directory.
+- If you create files that should be sent back to Teams, keep them under this
+  workspace and write .marlow-export.json with:
+  {{"files":["relative/path.ext"],"message":"Created the report."}}
+  Use only relative paths. The gateway will upload and post links after your response.
 - For broad questions about the day, use relevant records first: calendar, Teams,
   mail, Workbook timesheets, and only inspect git repos when the user asks about
   code work or names a project.
@@ -613,6 +673,124 @@ def _recent_gateway_logs(limit: int = 10) -> str:
     return "\n".join(lines) if lines else "No gateway log yet."
 
 
+def _list_workspace_files(chat_id: str, *, limit: int = 20) -> str:
+    workspace = _workspace_dir_for_chat(chat_id)
+    if not workspace.exists():
+        return "No gateway workspace exists for this chat yet."
+    files = [
+        path
+        for path in workspace.rglob("*")
+        if path.is_file()
+        and not path.name.startswith(".")
+        and path.suffix.lower() in EXPORT_ALLOWED_SUFFIXES
+    ]
+    files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    if not files:
+        return "No sendable files found in this chat workspace."
+    lines = ["Sendable files in this chat workspace:"]
+    for path in files[:limit]:
+        stat = path.stat()
+        relpath = _workspace_relpath(chat_id, path)
+        modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+        lines.append(f"{relpath} ({stat.st_size} bytes, modified {modified})")
+    if len(files) > limit:
+        lines.append(f"... {len(files) - limit} more")
+    lines.append("Use !send <path> to publish one of these files.")
+    return "\n".join(lines)
+
+
+def _read_export_manifest(chat_id: str) -> tuple[list[str], str] | None:
+    manifest_path = _workspace_dir_for_chat(chat_id) / EXPORT_MANIFEST
+    if not manifest_path.exists():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read {EXPORT_MANIFEST}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{EXPORT_MANIFEST} must be a JSON object")
+    files = data.get("files")
+    if not isinstance(files, list) or not files:
+        raise ValueError(f"{EXPORT_MANIFEST} must include a non-empty files list")
+    paths: list[str] = []
+    for item in files:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{EXPORT_MANIFEST} files must be strings")
+        paths.append(item.strip())
+    message = data.get("message")
+    if message is not None and not isinstance(message, str):
+        raise ValueError(f"{EXPORT_MANIFEST} message must be a string")
+    return paths, (message or "Generated file(s):").strip()
+
+
+def _remote_export_path(chat_id: str, local_path: Path) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    filename = _safe_export_name(local_path.name)
+    parts = [*EXPORT_REMOTE_ROOT.split("/"), _chat_digest(chat_id), f"{stamp}-{filename}"]
+    return "/".join(quote(part.strip("/"), safe="") for part in parts)
+
+
+def _ensure_onedrive_folder(client: OutlookClient, path: str) -> None:
+    parent = client._onedrive_item_by_path_internal("")
+    current = ""
+    for raw_part in path.strip("/").split("/"):
+        part = raw_part.strip()
+        if not part:
+            continue
+        current = f"{current}/{part}".strip("/")
+        try:
+            parent = client._onedrive_item_by_path_internal(current)
+            continue
+        except OutlookAPIError as exc:
+            if exc.status != 404:
+                raise
+        try:
+            parent = client._onedrive_create_folder_internal(parent["id"], part)
+        except OutlookAPIError as exc:
+            if exc.status != 409:
+                raise
+            parent = client._onedrive_item_by_path_internal(current)
+
+
+def _publish_workspace_files(chat_id: str, relpaths: list[str], message: str = "Generated file(s):") -> str:
+    if not relpaths:
+        return "No files were provided."
+    paths = [_safe_workspace_file(chat_id, relpath) for relpath in relpaths]
+    client = _graph_client()
+    try:
+        _ensure_onedrive_folder(client, f"{EXPORT_REMOTE_ROOT}/{_chat_digest(chat_id)}")
+        lines = [message]
+        for path in paths:
+            remote_path = _remote_export_path(chat_id, path)
+            item = client._onedrive_upload_file_internal(remote_path, path.read_bytes())
+            link_url = item.get("webUrl") or ""
+            try:
+                permission = client._onedrive_create_share_link_internal(item["id"])
+                link_url = ((permission.get("link") or {}).get("webUrl")) or link_url
+            except OutlookAPIError as exc:
+                _log(f"Could not create share link for {path.name}: {exc}")
+            relpath = _workspace_relpath(chat_id, path)
+            if link_url:
+                lines.append(f"{relpath}: {link_url}")
+            else:
+                lines.append(f"{relpath}: uploaded, but Graph did not return a link")
+        return "\n".join(lines)
+    finally:
+        client.close()
+
+
+def _publish_export_manifest(chat_id: str) -> str | None:
+    manifest_path = _workspace_dir_for_chat(chat_id) / EXPORT_MANIFEST
+    manifest = _read_export_manifest(chat_id)
+    if manifest is None:
+        return None
+    relpaths, message = manifest
+    try:
+        return _publish_workspace_files(chat_id, relpaths, message)
+    finally:
+        manifest_path.unlink(missing_ok=True)
+
+
 def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_interval: int) -> str | None:
     stripped = command_text.strip()
     if not stripped.startswith("!"):
@@ -657,6 +835,20 @@ def _handle_gateway_command(chat_id: str, command_text: str, trigger: str, poll_
             "Marlow can use the Pi agent tools available on this machine, plus installed CLIs "
             "such as outlook-cli and workbook-cli. Gateway commands use !command after @Marlow."
         )
+    if command == "files":
+        return _list_workspace_files(chat_id)
+    if command == "send":
+        try:
+            send_tokens = shlex.split(stripped)
+        except ValueError as exc:
+            return f"Could not parse send command: {exc}"
+        if len(send_tokens) < 2:
+            return _gateway_command_help("send")
+        try:
+            return _publish_workspace_files(chat_id, [" ".join(send_tokens[1:])], "Published file:")
+        except (OSError, OutlookAPIError, ValueError) as exc:
+            _log(f"Gateway command !send failed: {exc}")
+            return f"Could not send file: {exc}"
     if command == "logs":
         return _recent_gateway_logs(limit=8)
     if command in {"compact", "prune"}:
@@ -755,6 +947,8 @@ def _gateway_command_help(topic: str = "") -> str:
             "!pause - ignore normal prompts until resumed\n"
             "!resume - resume normal prompt handling\n"
             "!tools - show what Marlow can use\n"
+            "!files - list sendable files in this chat workspace\n"
+            "!send <path> - publish a workspace file back to Teams\n"
             "!logs - show recent gateway log lines"
         )
     if topic == "model":
@@ -771,6 +965,10 @@ def _gateway_command_help(topic: str = "") -> str:
         return "!resume\nResumes normal Marlow prompt handling after !pause."
     if topic == "tools":
         return "!tools\nShows the local tools and CLIs Marlow can use."
+    if topic == "files":
+        return "!files\nLists recent sendable files in this chat's gateway workspace."
+    if topic == "send":
+        return "!send <path>\nUploads a file from this chat's gateway workspace to OneDrive and posts a link. Paths must be relative to the workspace."
     if topic == "logs":
         return "!logs\nShows recent gateway log lines."
     return f"No help available for !{topic}. Try !help."
@@ -1018,6 +1216,14 @@ def _poll_loop(chat_id: str, trigger: str, poll_interval: int) -> None:
                 try:
                     _delete_gateway_message(chat_id, receipt_message)
                     _post_gateway_response(chat_id, response)
+                    try:
+                        publish_response = _publish_export_manifest(chat_id)
+                        if publish_response:
+                            _post_gateway_response(chat_id, publish_response)
+                            _log("Export manifest published to Teams.")
+                    except Exception as exc:
+                        _log(f"Failed to publish export manifest: {exc}")
+                        _post_gateway_response(chat_id, f"Could not publish generated files: {exc}")
                     _log("Response posted to Teams.")
                 except Exception as exc:
                     _log(f"Failed to post response: {exc}")

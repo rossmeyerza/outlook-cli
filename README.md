@@ -201,12 +201,27 @@ Gateway-native chat commands use `!` after the trigger so they do not collide wi
 @Marlow !pause
 @Marlow !resume
 @Marlow !tools
+@Marlow !files
+@Marlow !send report.html
 @Marlow !logs
 ```
 
 `!new` starts a fresh Pi conversation for the chat. `!reset` clears that chat's persisted Pi session before starting fresh. `!pause` ignores normal prompts until `!resume`, while command messages still work.
 
 `!help <command>` shows help for a specific gateway command. `!model` shows the current Pi settings for the chat. `!model list [search]` lists available Pi models through `pi --list-models`. `!model <model>` or `!model --provider <provider> --model <model> --thinking <level>` updates the saved settings and restarts the Pi process on the next prompt while keeping the chat's persisted session files. `!model reset` returns to Pi defaults. Short model names such as `sonnet` use Pi's fuzzy/pattern matching and may change as available models change; use `!model list sonnet` and set an exact model ID when repeatability matters.
+
+Marlow can send generated workspace files back to Teams without exposing a general Teams-send tool to Pi. Files must live under the per-chat workspace and use a supported extension such as `.html`, `.md`, `.txt`, `.csv`, `.json`, `.pdf`, `.png`, `.jpg`, `.docx`, `.pptx`, or `.xlsx`. The gateway uploads the file to `Outlook CLI/Gateway/<chat-hash>/` in Ross's OneDrive, creates an organization view link, and posts that link to Teams. Use `!files` to list sendable workspace files and `!send <path>` to publish one manually.
+
+For automatic publishing, Marlow writes `.marlow-export.json` in the chat workspace after creating files:
+
+```json
+{
+  "files": ["report.html"],
+  "message": "Created the report."
+}
+```
+
+After the Pi response is posted, the gateway validates the paths, uploads the files, posts the links, and removes the manifest.
 
 ### Files (OneDrive and SharePoint)
 
