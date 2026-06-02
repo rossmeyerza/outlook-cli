@@ -106,9 +106,11 @@ class TokenManager:
 
         log.info("Running local re-authentication")
         try:
-            capture_tokens_via_browser(headless=headless)
+            captured = capture_tokens_via_browser(headless=headless)
         except Exception:
             log.exception("Local re-authentication failed")
+            return False
+        if not captured:
             return False
         self.force_reload()
         return self._token is not None and not self.is_expired

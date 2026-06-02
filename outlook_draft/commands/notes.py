@@ -218,8 +218,8 @@ def _exit_api_error(args: argparse.Namespace, exc: OutlookAPIError) -> None:
     if exc.status in {0, 401, 403}:
         _console(args).print(
             "[red]OneNote Graph request failed.[/] "
-            "Check that the Graph token includes Notes.ReadWrite with "
-            "`outlook-cli auth scopes`, then re-authenticate with `outlook-cli auth --headed` if needed."
+            "Check `outlook-cli auth status --json`; notesCliReady must be true. "
+            "Re-authenticate with `outlook-cli auth --headed` if needed."
         )
     else:
         _console(args).print(f"[red]OneNote Graph request failed: {exc}[/]")

@@ -36,6 +36,8 @@ MS_PASSWORD = config.MS_PASSWORD
 
 # Microsoft API domains we look for when intercepting requests.
 KNOWN_DOMAINS = [
+    "www.onenote.com",
+    "onenote.com",
     "graph.microsoft.com",
     "outlook.office365.com",
     "outlook.office.com",
@@ -99,20 +101,26 @@ def _make_request_interceptor(captured: dict[str, str]):
         for domain in KNOWN_DOMAINS:
             if domain in url:
                 new_token = auth.removeprefix("Bearer ")
-                if domain not in captured:
-                    captured[domain] = new_token
-                    console.print(f"[dim]  Captured token for {domain}[/]")
+                token_domain = "www.onenote.com" if domain == "onenote.com" else domain
+                if token_domain not in captured:
+                    captured[token_domain] = new_token
+                    console.print(f"[dim]  Captured token for {token_domain}[/]")
                 else:
                     new_scopes = _token_scopes(new_token)
-                    old_scopes = _token_scopes(captured[domain])
+                    old_scopes = _token_scopes(captured[token_domain])
                     has_preferred_graph_scope = (
-                        domain == "graph.microsoft.com"
+                        token_domain == "graph.microsoft.com"
                         and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
                         and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
                     )
-                    if len(new_scopes) > len(old_scopes) or has_preferred_graph_scope:
-                        captured[domain] = new_token
-                        console.print(f"[dim]  Updated token for {domain} (broader scopes)[/]")
+                    has_preferred_onenote_scope = (
+                        token_domain == "www.onenote.com"
+                        and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
+                        and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
+                    )
+                    if len(new_scopes) > len(old_scopes) or has_preferred_graph_scope or has_preferred_onenote_scope:
+                        captured[token_domain] = new_token
+                        console.print(f"[dim]  Updated token for {token_domain} (broader scopes)[/]")
                 break
     return on_request
 
@@ -294,7 +302,8 @@ def _extract_storage_tokens(page, captured: dict[str, str]) -> None:
                 secret = t.get("secret", "")
                 for domain in KNOWN_DOMAINS:
                     if domain in target:
-                        captured[domain] = secret
+                        token_domain = "www.onenote.com" if domain == "onenote.com" else domain
+                        captured[token_domain] = secret
                         break
                 else:
                     if secret and "graph.microsoft.com" not in captured:

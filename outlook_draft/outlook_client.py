@@ -694,7 +694,7 @@ class OutlookClient:
         """List OneNote notebooks for the signed-in user."""
         resp = self._request(
             "GET",
-            "/me/onenote/notebooks",
+            f"{self._onenote_root}/notebooks",
             params={
                 "$top": str(top),
                 "$select": "id,displayName,createdDateTime,lastModifiedDateTime,links",
@@ -706,9 +706,9 @@ class OutlookClient:
     def list_onenote_sections(self, notebook_id: str | None = None, top: int = 100) -> list[dict[str, Any]]:
         """List OneNote sections, optionally within a notebook."""
         if notebook_id:
-            path = f"/me/onenote/notebooks/{notebook_id}/sections"
+            path = f"{self._onenote_root}/notebooks/{notebook_id}/sections"
         else:
-            path = "/me/onenote/sections"
+            path = f"{self._onenote_root}/sections"
         resp = self._request(
             "GET",
             path,
@@ -723,9 +723,9 @@ class OutlookClient:
     def list_onenote_pages(self, section_id: str | None = None, top: int = 50) -> list[dict[str, Any]]:
         """List OneNote pages, optionally within a section."""
         if section_id:
-            path = f"/me/onenote/sections/{section_id}/pages"
+            path = f"{self._onenote_root}/sections/{section_id}/pages"
         else:
-            path = "/me/onenote/pages"
+            path = f"{self._onenote_root}/pages"
         resp = self._request(
             "GET",
             path,
@@ -741,7 +741,7 @@ class OutlookClient:
         """Get OneNote page metadata."""
         resp = self._request(
             "GET",
-            f"/me/onenote/pages/{page_id}",
+            f"{self._onenote_root}/pages/{page_id}",
             params={"$select": "id,title,createdDateTime,lastModifiedDateTime,links,parentSection"},
         )
         return resp.json()
@@ -751,7 +751,7 @@ class OutlookClient:
         params = {"includeIDs": "true"} if include_ids else None
         resp = self._request(
             "GET",
-            f"/me/onenote/pages/{page_id}/content",
+            f"{self._onenote_root}/pages/{page_id}/content",
             params=params,
             extra_headers={"Accept": "text/html"},
         )
@@ -766,7 +766,7 @@ class OutlookClient:
             f"{html_body}"
             "</body></html>"
         )
-        path = f"/me/onenote/sections/{section_id}/pages" if section_id else "/me/onenote/pages"
+        path = f"{self._onenote_root}/sections/{section_id}/pages" if section_id else f"{self._onenote_root}/pages"
         resp = self._request(
             "POST",
             path,
@@ -786,9 +786,16 @@ class OutlookClient:
         """Patch OneNote page content with Graph change objects."""
         self._request(
             "PATCH",
-            f"/me/onenote/pages/{page_id}/content",
+            f"{self._onenote_root}/pages/{page_id}/content",
             json_body=changes,
         )
+
+    @property
+    def _onenote_root(self) -> str:
+        """Return the OneNote path root for Graph or native OneNote API."""
+        if "onenote.com" in self._base_url:
+            return "/me/notes"
+        return "/me/onenote"
 
     # ── People / contacts ─────────────────────────────────────────────
 

@@ -87,6 +87,31 @@ def _get_graph_client() -> OutlookClient:
     )
 
 
+def _token_available(domain: str) -> bool:
+    if not config.TOKENS_FILE.exists():
+        return False
+    try:
+        data = json.loads(config.TOKENS_FILE.read_text())
+        token = data.get("tokens", {}).get(domain)
+        if not token:
+            return False
+        claims = _decode_token_claims(token)
+        return int(float(claims.get("exp", 0)) - time.time()) > 0
+    except Exception:
+        return False
+
+
+def _get_onenote_client() -> OutlookClient:
+    """Build a OneNote client, preferring the native OneNote token if captured."""
+    if _token_available(config.ONENOTE_TOKEN_DOMAIN):
+        return _get_client(
+            base_url=config.ONENOTE_BASE_URL,
+            token_domain=config.ONENOTE_TOKEN_DOMAIN,
+            token_label="OneNote API",
+        )
+    return _get_graph_client()
+
+
 def _load_body(args: argparse.Namespace) -> str:
     """Load a body from --body or --body-file."""
     if args.body_file:
@@ -518,14 +543,32 @@ def _decode_token_claims(token: str) -> dict[str, object]:
 
 
 def _token_status(domain: str, label: str) -> dict[str, object]:
-    tm = TokenManager(token_domain=domain, token_label=label)
-    tm.force_reload()
+    scopes: list[str] = []
+    audience = ""
+    expires_in = -1
+    if config.TOKENS_FILE.exists():
+        try:
+            data = json.loads(config.TOKENS_FILE.read_text())
+            token = data.get("tokens", {}).get(domain)
+            if token:
+                claims = _decode_token_claims(token)
+                scopes = str(claims.get("scp", "")).split()
+                audience = str(claims.get("aud", ""))
+                expires_in = int(float(claims.get("exp", 0)) - time.time())
+        except Exception:
+            pass
+    present = expires_in != -1
+    expired = expires_in <= 0
     return {
         "label": label,
         "domain": domain,
-        "present": tm.expires_in != -1,
-        "expired": tm.is_expired,
-        "expiresInSeconds": int(tm.expires_in),
+        "present": present,
+        "expired": expired,
+        "expiresInSeconds": expires_in,
+        "audience": audience,
+        "scopes": scopes,
+        "notesReadWrite": "Notes.ReadWrite" in scopes,
+        "usableForNotesCli": domain in {config.GRAPH_TOKEN_DOMAIN, config.ONENOTE_TOKEN_DOMAIN} and "Notes.ReadWrite" in scopes,
     }
 
 
@@ -536,15 +579,29 @@ def cmd_auth(args: argparse.Namespace) -> None:
         statuses = [
             _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
             _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
+            _token_status(config.ONENOTE_TOKEN_DOMAIN, "OneNote API"),
         ]
+        notes_scope_present = any(
+            bool(item.get("notesReadWrite")) and bool(item.get("present")) and not bool(item.get("expired"))
+            for item in statuses
+        )
+        notes_cli_ready = any(
+            bool(item.get("usableForNotesCli")) and bool(item.get("present")) and not bool(item.get("expired"))
+            for item in statuses
+        )
+        capabilities = {
+            "notesReadWriteAnyToken": notes_scope_present,
+            "notesCliReady": notes_cli_ready,
+        }
         if args.json:
-            print(json.dumps(statuses, indent=2))
+            print(json.dumps({"tokens": statuses, "capabilities": capabilities}, indent=2))
             return
         table = Table(title="Auth status", box=box.SIMPLE)
         table.add_column("Token")
         table.add_column("Domain")
         table.add_column("Status")
         table.add_column("Expires")
+        table.add_column("Notes")
         for item in statuses:
             if not item["present"]:
                 status = "[red]missing[/]"
@@ -555,8 +612,11 @@ def cmd_auth(args: argparse.Namespace) -> None:
             else:
                 status = "[green]valid[/]"
                 expires = f"{int(item['expiresInSeconds']) // 60} min"
-            table.add_row(str(item["label"]), str(item["domain"]), status, expires)
+            notes = "[green]yes[/]" if item.get("notesReadWrite") else ""
+            table.add_row(str(item["label"]), str(item["domain"]), status, expires, notes)
         console.print(table)
+        console.print(f"OneNote scope present: {'yes' if notes_scope_present else 'no'}")
+        console.print(f"OneNote CLI ready: {'yes' if notes_cli_ready else 'no'}")
         return
     if command == "clear":
         if config.TOKENS_FILE.exists():
@@ -1250,7 +1310,7 @@ def main() -> None:
     # ── Notes (OneNote) ──────────────────────────────────────────────
     notes_ctx = notes_commands.build_ctx(
         console=console,
-        get_graph_client=_get_graph_client,
+        get_graph_client=_get_onenote_client,
         format_datetime=_format_datetime,
     )
     p_notes = sub.add_parser("notes", help="Read and write OneNote notebooks, sections, and pages")
