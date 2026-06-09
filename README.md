@@ -57,6 +57,8 @@ The script detects an existing install and runs `git pull` and updates dependenc
 
 ## Usage
 
+Interactive commands show Rich spinners while waiting on Microsoft APIs. Use `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; spinner output goes to stderr so JSON stdout stays parseable.
+
 ### Mail
 
 ```bash
@@ -156,12 +158,13 @@ Searches the org directory and recent contacts. Personal contact create/update u
 
 ```bash
 outlook-cli teams list -n 20
+outlook-cli teams search tarik --scan 200 -n 10
 outlook-cli teams self
 outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
 ```
 
-Lists Teams chats, shows chat details, and reads messages. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
+Lists and searches Teams chats, shows chat details, and reads messages. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
 
 ### Teams Gateway
 

@@ -72,6 +72,7 @@ outlook-cli contact update <n> --company <company>
 
 # Browse Teams chats (read-only)
 outlook-cli teams list -n 20               # list chats
+outlook-cli teams search <query> --scan 200 # search chat names/participants
 outlook-cli teams self                     # check access to Teams self-chat
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
@@ -112,6 +113,7 @@ outlook-cli config check                   # validate local config without print
 
 ## Key Details
 
+- **Progress spinners**: Interactive commands render Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; JSON stdout remains parseable.
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation. Use `--json` for agent-readable summaries, `--table` for explicit human tables.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
 - **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.
@@ -123,7 +125,7 @@ outlook-cli config check                   # validate local config without print
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
-- **Teams**: `teams list`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
+- **Teams**: `teams list`, `teams search`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams search <query>` scans a bounded set of chats, matches chat topics and participants, and caches the matching chats so numeric refs work in a separate invocation. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
 - **Teams self-chat**: `teams self` checks access to the Microsoft Graph special self-chat thread, `48:notes`. This is the real Teams "chat with yourself" stream and is different from normal one-person `/me/chats` entries.
 - **Teams gateway**: `gateway start --self-chat` watches `48:notes` for `@Marlow`, sends prompts to `pi --mode rpc`, and posts responses back into Teams. The gateway posts a short `...` receipt, soft-deletes it before the final response where Graph allows it, and can surface compact Pi tool progress. If the Graph token expires and headless reauth fails, the gateway records the auth error and exits instead of retrying every poll interval.
 - **Gateway state**: Runtime state is outside git under `~/.local/share/outlook-cli/session_state/`. Pi sessions live under `session_state/gateway_sessions/<chat-hash>/`; per-chat workspaces live under `~/.local/share/outlook-cli/gateway_workspaces/<chat-hash>/`. These are local data/state, not tracked or pushed.

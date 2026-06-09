@@ -10,6 +10,7 @@ import json
 
 from ..cache import CONTACT_CACHE
 from ..errors import OutlookAPIError
+from ..progress import spinner
 
 
 def build_ctx(*, console: Any, get_client: Callable[[], Any], resolve_contact_id: Callable[[str], str] | None = None) -> dict[str, Any]:
@@ -54,7 +55,8 @@ def cmd_contacts(args: argparse.Namespace) -> None:
     """Search contacts and directory by name or email."""
     client = _get_client(args)
     try:
-        people = client.search_people(args.query, top=args.count)
+        with spinner(args, f"Searching contacts for '{args.query}'..."):
+            people = client.search_people(args.query, top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to search contacts: {e}[/]")
         sys.exit(1)
@@ -112,14 +114,15 @@ def cmd_contacts(args: argparse.Namespace) -> None:
 def cmd_contact_create(args: argparse.Namespace) -> None:
     client = _get_client(args)
     try:
-        contact = client.create_contact(
-            display_name=args.name,
-            email=args.email,
-            given_name=args.given_name,
-            surname=args.surname,
-            company=args.company,
-            mobile_phone=args.mobile,
-        )
+        with spinner(args, "Creating contact..."):
+            contact = client.create_contact(
+                display_name=args.name,
+                email=args.email,
+                given_name=args.given_name,
+                surname=args.surname,
+                company=args.company,
+                mobile_phone=args.mobile,
+            )
         _console(args).print(f"[green]Created contact:[/] {contact.get('DisplayName', args.name)}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to create contact: {e}[/]")
@@ -135,15 +138,16 @@ def cmd_contact_update(args: argparse.Namespace) -> None:
     client = _get_client(args)
     contact_id = _resolve_contact_id(args, args.contact_id)
     try:
-        client.update_contact(
-            contact_id,
-            display_name=args.name,
-            email=args.email,
-            given_name=args.given_name,
-            surname=args.surname,
-            company=args.company,
-            mobile_phone=args.mobile,
-        )
+        with spinner(args, "Updating contact..."):
+            client.update_contact(
+                contact_id,
+                display_name=args.name,
+                email=args.email,
+                given_name=args.given_name,
+                surname=args.surname,
+                company=args.company,
+                mobile_phone=args.mobile,
+            )
         _console(args).print("[green]Contact updated.[/]")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to update contact: {e}[/]")

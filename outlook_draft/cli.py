@@ -53,6 +53,7 @@ from .commands.files import (
 )
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .outlook_client import OutlookClient
+from .progress import spinner
 from .signatures import load_signature
 from .token_manager import TokenManager
 
@@ -171,15 +172,16 @@ def cmd_create(args: argparse.Namespace) -> None:
 
     client = _get_client()
     try:
-        draft = client.create_draft(
-            subject=args.subject,
-            body=html_body,
-            to=to,
-            cc=cc,
-            bcc=bcc,
-            content_type="HTML",
-            importance=importance,
-        )
+        with spinner(args, "Creating draft..."):
+            draft = client.create_draft(
+                subject=args.subject,
+                body=html_body,
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                content_type="HTML",
+                importance=importance,
+            )
     except OutlookAPIError as e:
         console.print(f"[red]Failed to create draft: {e}[/]")
         sys.exit(1)
@@ -207,27 +209,28 @@ def cmd_reply(args: argparse.Namespace) -> None:
     message_id = _resolve_message_id(client, args.message_id)
 
     try:
-        draft = client.create_reply_draft(message_id, reply_all=args.reply_all)
-        draft_id = draft.get("Id", "")
-        if not draft_id:
-            raise OutlookAPIError(0, "Reply draft was created without a draft ID")
+        with spinner(args, "Creating reply draft..."):
+            draft = client.create_reply_draft(message_id, reply_all=args.reply_all)
+            draft_id = draft.get("Id", "")
+            if not draft_id:
+                raise OutlookAPIError(0, "Reply draft was created without a draft ID")
 
-        quoted_html = draft.get("Body", {}).get("Content", "")
-        if draft.get("Body", {}).get("ContentType") == "Text":
-            quoted_html = _text_to_html(quoted_html)
+            quoted_html = draft.get("Body", {}).get("Content", "")
+            if draft.get("Body", {}).get("ContentType") == "Text":
+                quoted_html = _text_to_html(quoted_html)
 
-        reply_html = _compose_email_html(
-            body,
-            is_html=args.html,
-            signature_html=_load_signature(config.SIGNATURE_REPLY_FILE),
-            quoted_html=quoted_html,
-        )
-        draft = client.update_draft(
-            draft_id,
-            body=reply_html,
-            content_type="HTML",
-            importance=importance,
-        )
+            reply_html = _compose_email_html(
+                body,
+                is_html=args.html,
+                signature_html=_load_signature(config.SIGNATURE_REPLY_FILE),
+                quoted_html=quoted_html,
+            )
+            draft = client.update_draft(
+                draft_id,
+                body=reply_html,
+                content_type="HTML",
+                importance=importance,
+            )
     except OutlookAPIError as e:
         console.print(f"[red]Failed to create reply draft: {e}[/]")
         sys.exit(1)
@@ -251,7 +254,8 @@ def cmd_list(args: argparse.Namespace) -> None:
     """List drafts in the Drafts folder."""
     client = _get_client()
     try:
-        drafts = client.list_drafts(top=args.count)
+        with spinner(args, "Loading drafts..."):
+            drafts = client.list_drafts(top=args.count)
     except OutlookAPIError as e:
         console.print(f"[red]Failed to list drafts: {e}[/]")
         sys.exit(1)
@@ -302,7 +306,8 @@ def cmd_show(args: argparse.Namespace) -> None:
     client = _get_client()
     draft_id = _resolve_draft_id(client, args.draft_id)
     try:
-        draft = client.get_draft(draft_id)
+        with spinner(args, "Loading draft..."):
+            draft = client.get_draft(draft_id)
     except OutlookAPIError as e:
         console.print(f"[red]Failed to get draft: {e}[/]")
         sys.exit(1)
@@ -341,7 +346,8 @@ def cmd_delete(args: argparse.Namespace) -> None:
     client = _get_client()
     draft_id = _resolve_draft_id(client, args.draft_id)
     try:
-        client.delete_draft(draft_id)
+        with spinner(args, "Deleting draft..."):
+            client.delete_draft(draft_id)
     except OutlookAPIError as e:
         console.print(f"[red]Failed to delete draft: {e}[/]")
         sys.exit(1)
@@ -699,7 +705,8 @@ def cmd_config_check(args: argparse.Namespace) -> None:
 def cmd_mailbox_show(args: argparse.Namespace) -> None:
     client = _get_client()
     try:
-        settings = client.get_mailbox_settings()
+        with spinner(args, "Loading mailbox settings..."):
+            settings = client.get_mailbox_settings()
     except OutlookAPIError as e:
         console.print(f"[red]Failed to get mailbox settings: {e}[/]")
         sys.exit(1)
@@ -735,10 +742,11 @@ def cmd_mailbox_update(args: argparse.Namespace) -> None:
             automatic_replies["ExternalReplyMessage"] = args.external_reply
     client = _get_client()
     try:
-        client.update_mailbox_settings(
-            time_zone=args.timezone,
-            automatic_replies=automatic_replies,
-        )
+        with spinner(args, "Updating mailbox settings..."):
+            client.update_mailbox_settings(
+                time_zone=args.timezone,
+                automatic_replies=automatic_replies,
+            )
         console.print("[green]Mailbox settings updated.[/]")
     except OutlookAPIError as e:
         console.print(f"[red]Failed to update mailbox settings: {e}[/]")
@@ -804,6 +812,11 @@ def main() -> None:
     )
     parser.set_defaults(json=False)
     add_output_args(parser)
+    parser.add_argument(
+        "--no-spinner",
+        action="store_true",
+        help="Disable interactive progress spinners",
+    )
     sub = parser.add_subparsers(dest="domain", required=True)
 
     # ── Drafts ────────────────────────────────────────────────────────
@@ -1161,6 +1174,13 @@ def main() -> None:
     cmd_teams_list_cmd.add_argument("--sort-received", action="store_true",
         help="Sort by last received message (slower — makes one API call per chat)")
     cmd_teams_list_cmd.set_defaults(func=teams_commands.cmd_teams_list, _teams_ctx=teams_ctx)
+
+    cmd_teams_search_cmd = teams_sub.add_parser("search", help="Search Teams chats by topic or participant")
+    cmd_teams_search_cmd.add_argument("query", nargs="+", help="Name, email, or chat topic to search for")
+    cmd_teams_search_cmd.add_argument("--count", "-n", type=int, default=20, help="Max matching chats")
+    cmd_teams_search_cmd.add_argument("--scan", type=int, default=200, help="Max chats to scan")
+    cmd_teams_search_cmd.add_argument("--member-count", type=int, default=100, help="Max members to inspect per chat")
+    cmd_teams_search_cmd.set_defaults(func=teams_commands.cmd_teams_search, _teams_ctx=teams_ctx)
 
     cmd_teams_show_cmd = teams_sub.add_parser("show", help="Show Teams chat details")
     cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")

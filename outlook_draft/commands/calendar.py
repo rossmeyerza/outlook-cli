@@ -12,6 +12,7 @@ from rich.table import Table
 from ..calendar_time import outlook_datetime, parse_local_datetime
 from ..cache import CAL_CACHE, save_cache
 from ..errors import OutlookAPIError
+from ..progress import spinner
 
 
 JsonDict = dict[str, Any]
@@ -146,7 +147,8 @@ def cmd_cal_agenda(args: argparse.Namespace) -> None:
     """List upcoming calendar events."""
     client = _get_client(args)
     try:
-        events = client.get_agenda(days=args.days, top=args.count)
+        with spinner(args, "Loading calendar agenda..."):
+            events = client.get_agenda(days=args.days, top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to fetch calendar: {e}[/]")
         sys.exit(1)
@@ -198,7 +200,8 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
     client = _get_client(args)
     event_id = _resolve_cal_id(args, client, args.event_id)
     try:
-        event = client.get_event(event_id)
+        with spinner(args, "Loading calendar event..."):
+            event = client.get_event(event_id)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to fetch event: {e}[/]")
         sys.exit(1)
@@ -274,15 +277,16 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
 
     client = _get_client(args)
     try:
-        client.create_event(
-            subject=args.subject,
-            start_dt=start_local,
-            end_dt=end_local,
-            location=args.location,
-            body=args.body,
-            attendees=args.attendees,
-            is_online_meeting=args.teams,
-        )
+        with spinner(args, "Creating calendar event..."):
+            client.create_event(
+                subject=args.subject,
+                start_dt=start_local,
+                end_dt=end_local,
+                location=args.location,
+                body=args.body,
+                attendees=args.attendees,
+                is_online_meeting=args.teams,
+            )
         _console(args).print(f"[green]Created event:[/] {args.subject}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to create event: {e}[/]")
@@ -302,7 +306,8 @@ def _availability_summary(item: JsonDict) -> str:
 def cmd_cal_rooms(args: argparse.Namespace) -> None:
     client = _get_client(args)
     try:
-        rooms = client.find_rooms(room_list=args.room_list)
+        with spinner(args, "Finding rooms..."):
+            rooms = client.find_rooms(room_list=args.room_list)
     except OutlookAPIError as e:
         message = str(e)
         if "findRooms" in message and "Resource not found" in message:
@@ -331,12 +336,13 @@ def cmd_cal_availability(args: argparse.Namespace) -> None:
     start_local, end_local = _parse_event_datetimes(args)
     client = _get_client(args)
     try:
-        availability = client.get_schedule(
-            schedules=args.attendee,
-            start_dt=start_local,
-            end_dt=end_local,
-            interval_minutes=args.interval,
-        )
+        with spinner(args, "Checking availability..."):
+            availability = client.get_schedule(
+                schedules=args.attendee,
+                start_dt=start_local,
+                end_dt=end_local,
+                interval_minutes=args.interval,
+            )
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to get availability: {e}[/]")
         sys.exit(1)
@@ -353,13 +359,14 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
     start_local, end_local = _parse_event_datetimes(args)
     client = _get_client(args)
     try:
-        suggestions = client.find_meeting_times(
-            attendees=args.attendee,
-            start_dt=start_local,
-            end_dt=end_local,
-            duration_minutes=args.duration,
-            max_candidates=args.count,
-        )
+        with spinner(args, "Finding meeting times..."):
+            suggestions = client.find_meeting_times(
+                attendees=args.attendee,
+                start_dt=start_local,
+                end_dt=end_local,
+                duration_minutes=args.duration,
+                max_candidates=args.count,
+            )
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to find meeting times: {e}[/]")
         sys.exit(1)
@@ -411,16 +418,17 @@ def cmd_cal_update(args: argparse.Namespace) -> None:
     client = _get_client(args)
     event_id = _resolve_cal_id(args, client, args.event_id)
     try:
-        event = client.get_event(event_id)
-        client.update_event(
-            event_id,
-            subject=args.subject,
-            start_dt=start_local,
-            end_dt=end_local,
-            location=args.location,
-            body=args.body,
-            is_online_meeting=args.teams,
-        )
+        with spinner(args, "Updating calendar event..."):
+            event = client.get_event(event_id)
+            client.update_event(
+                event_id,
+                subject=args.subject,
+                start_dt=start_local,
+                end_dt=end_local,
+                location=args.location,
+                body=args.body,
+                is_online_meeting=args.teams,
+            )
         _console(args).print(f"[green]Updated event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to update event: {e}[/]")
@@ -434,8 +442,9 @@ def cmd_cal_delete(args: argparse.Namespace) -> None:
     client = _get_client(args)
     event_id = _resolve_cal_id(args, client, args.event_id)
     try:
-        event = client.get_event(event_id)
-        client.delete_event(event_id)
+        with spinner(args, "Deleting calendar event..."):
+            event = client.get_event(event_id)
+            client.delete_event(event_id)
         _console(args).print(f"[green]Deleted event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to delete event: {e}[/]")
@@ -448,13 +457,14 @@ def _respond_to_event(args: argparse.Namespace, response: str, label: str) -> No
     client = _get_client(args)
     event_id = _resolve_cal_id(args, client, args.event_id)
     try:
-        event = client.get_event(event_id)
-        client.respond_to_event(
-            event_id,
-            response,
-            comment=args.comment or "",
-            send_response=args.send_response,
-        )
+        with spinner(args, f"{label} calendar event..."):
+            event = client.get_event(event_id)
+            client.respond_to_event(
+                event_id,
+                response,
+                comment=args.comment or "",
+                send_response=args.send_response,
+            )
         _console(args).print(f"[green]{label} event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to {label.lower()} event: {e}[/]")
@@ -483,8 +493,9 @@ def cmd_cal_cancel(args: argparse.Namespace) -> None:
     client = _get_client(args)
     event_id = _resolve_cal_id(args, client, args.event_id)
     try:
-        event = client.get_event(event_id)
-        client.cancel_event(event_id, comment=args.comment or "")
+        with spinner(args, "Cancelling calendar event..."):
+            event = client.get_event(event_id)
+            client.cancel_event(event_id, comment=args.comment or "")
         _console(args).print(f"[green]Cancelled event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to cancel event: {e}[/]")

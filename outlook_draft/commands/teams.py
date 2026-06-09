@@ -12,6 +12,7 @@ from .. import config
 from ..cache import TEAMS_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 from ..links import extract_links_from_html, looks_like_share_url
+from ..progress import spinner
 
 
 JsonDict = dict[str, Any]
@@ -57,6 +58,54 @@ def _member_label(member: JsonDict) -> str:
     return member.get("displayName") or member.get("email") or member.get("userId") or member.get("id", "")
 
 
+def _normalize_search_text(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _matches_query(values: list[str], query: str) -> bool:
+    normalized_query = _normalize_search_text(query)
+    if not normalized_query:
+        return False
+
+    haystack = _normalize_search_text(" ".join(value for value in values if value))
+    if not haystack:
+        return False
+    if normalized_query in haystack:
+        return True
+
+    terms = normalized_query.split()
+    return bool(terms) and all(term in haystack for term in terms)
+
+
+def _member_search_values(member: JsonDict) -> list[str]:
+    return [
+        member.get("displayName") or "",
+        member.get("email") or "",
+        member.get("userId") or "",
+        member.get("id") or "",
+    ]
+
+
+def _chat_match_reasons(chat: JsonDict, members: list[JsonDict], query: str) -> list[str]:
+    reasons: list[str] = []
+    topic = chat.get("topic") or ""
+    if topic and _matches_query([topic], query):
+        reasons.append("topic")
+
+    member_matches: list[str] = []
+    for member in members:
+        if _matches_query(_member_search_values(member), query):
+            label = _member_label(member)
+            if label and label not in member_matches:
+                member_matches.append(label)
+
+    if member_matches:
+        suffix = f" +{len(member_matches) - 2}" if len(member_matches) > 2 else ""
+        reasons.append("member: " + ", ".join(member_matches[:2]) + suffix)
+
+    return reasons
+
+
 def _chat_title(chat: JsonDict, members: list[JsonDict] | None = None) -> str:
     if chat.get("id") == SELF_CHAT_ID:
         return "Self chat"
@@ -100,7 +149,7 @@ def _resolve_teams_chat_id(args: argparse.Namespace, ref: str) -> str:
         if cached and 1 <= idx <= len(cached):
             return cached[idx - 1]["Id"]
         if not cached:
-            console.print("[red]No Teams chats cached. Run 'outlook-cli teams list' first.[/]")
+            console.print("[red]No Teams chats cached. Run 'outlook-cli teams list' or 'outlook-cli teams search <query>' first.[/]")
         else:
             console.print(f"[red]Index {idx} out of range. Only {len(cached)} chats cached.[/]")
         sys.exit(1)
@@ -253,29 +302,29 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
     console = _console(args)
     client = _get_graph_client(args)
     try:
-        chats = client.list_teams_chats(top=args.count)
-        if getattr(args, 'sort_received', False):
-            # Slow path: fetch messages per chat to find last received
-            try:
-                current_user = client.get_current_user()
-                self_user_id = current_user.get("id", "")
-            except OutlookAPIError:
-                self_user_id = ""
-            console.print("[dim]Sorting by last received message (slow)...[/]")
-            for chat in chats:
-                chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
-                    client, chat, self_user_id,
+        with spinner(args, "Loading Teams chats..."):
+            chats = client.list_teams_chats(top=args.count)
+            if getattr(args, 'sort_received', False):
+                # Slow path: fetch messages per chat to find last received
+                try:
+                    current_user = client.get_current_user()
+                    self_user_id = current_user.get("id", "")
+                except OutlookAPIError:
+                    self_user_id = ""
+                for chat in chats:
+                    chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
+                        client, chat, self_user_id,
+                    )
+                chats.sort(
+                    key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
+                    reverse=True,
                 )
-            chats.sort(
-                key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
-                reverse=True,
-            )
-        else:
-            # Fast path: sort by lastUpdatedDateTime (already in response)
-            chats.sort(
-                key=lambda chat: chat.get("lastUpdatedDateTime") or "",
-                reverse=True,
-            )
+            else:
+                # Fast path: sort by lastUpdatedDateTime (already in response)
+                chats.sort(
+                    key=lambda chat: chat.get("lastUpdatedDateTime") or "",
+                    reverse=True,
+                )
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
         console.print(f"[red]Failed to list Teams chats: {e}[/]")
@@ -296,25 +345,106 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
 
     client = _get_graph_client(args)
     try:
-        for i, chat in enumerate(chats, 1):
-            members = []
-            if not chat.get("topic"):
-                try:
-                    members = client.list_teams_chat_members(chat["id"], top=10)
-                except OutlookAPIError:
-                    members = []
-            table.add_row(
-                str(i),
-                _format_datetime(args, chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
-                chat.get("chatType", ""),
-                _chat_title(chat, members),
-                chat.get("id", "")[-16:],
-            )
+        with spinner(args, "Resolving Teams chat participants..."):
+            for i, chat in enumerate(chats, 1):
+                members = []
+                if not chat.get("topic"):
+                    try:
+                        members = client.list_teams_chat_members(chat["id"], top=10)
+                    except OutlookAPIError:
+                        members = []
+                table.add_row(
+                    str(i),
+                    _format_datetime(args, chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
+                    chat.get("chatType", ""),
+                    _chat_title(chat, members),
+                    chat.get("id", "")[-16:],
+                )
     finally:
         client.close()
 
     console.print(table)
     console.print("[dim]Use 'outlook-cli teams show <n>' or 'outlook-cli teams messages <n>' to inspect a chat.[/]")
+
+
+def cmd_teams_search(args: argparse.Namespace) -> None:
+    console = _console(args)
+    client = _get_graph_client(args)
+    query = " ".join(args.query).strip() if isinstance(args.query, list) else args.query.strip()
+    if not query:
+        console.print("[red]Provide a search query.[/]")
+        sys.exit(1)
+
+    scan_count = max(args.scan, 1)
+    result_count = max(args.count, 1)
+    member_count = max(args.member_count, 1)
+    results: list[tuple[JsonDict, list[JsonDict], list[str]]] = []
+    scanned = 0
+    member_errors = 0
+
+    try:
+        with spinner(args, f"Scanning up to {scan_count} Teams chats by topic and participants..."):
+            chats = client.list_teams_chats(top=scan_count)
+            chats.sort(
+                key=lambda chat: chat.get("lastUpdatedDateTime") or "",
+                reverse=True,
+            )
+
+            for chat in chats:
+                scanned += 1
+                members: list[JsonDict] = []
+                topic = chat.get("topic") or ""
+                topic_matches = _matches_query([topic], query)
+                if not topic_matches:
+                    try:
+                        members = client.list_teams_chat_members(chat["id"], top=member_count)
+                    except OutlookAPIError:
+                        member_errors += 1
+                        members = []
+                reasons = _chat_match_reasons(chat, members, query)
+                if reasons:
+                    results.append((chat, members, reasons))
+                    if len(results) >= result_count:
+                        break
+    except OutlookAPIError as e:
+        console.print(f"[red]Failed to search Teams chats: {e}[/]")
+        sys.exit(1)
+    finally:
+        client.close()
+
+    matched_chats = [chat for chat, _, _ in results]
+    save_cache(TEAMS_CACHE, matched_chats, id_key="id")
+
+    if not results:
+        console.print(f"[dim]No Teams chats matched '{query}' in {scanned} scanned chats.[/]")
+        console.print("[dim]Increase --scan to search more chats.[/]")
+        return
+
+    table = Table(title=f"Teams chats matching '{query}' ({len(results)})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Updated", style="dim", width=12)
+    table.add_column("Type", width=12)
+    table.add_column("Match", ratio=1, min_width=18)
+    table.add_column("Chat", ratio=2, min_width=24)
+    table.add_column("ID", style="dim", width=16, no_wrap=True)
+
+    for i, (chat, members, reasons) in enumerate(results, 1):
+        table.add_row(
+            str(i),
+            _format_datetime(args, chat.get("lastUpdatedDateTime", "")),
+            chat.get("chatType", ""),
+            "; ".join(reasons),
+            _chat_title(chat, members),
+            chat.get("id", "")[-16:],
+        )
+
+    console.print(table)
+    console.print(
+        f"[dim]Scanned {scanned} chats. Use 'outlook-cli teams show <n>' or "
+        "'outlook-cli teams messages <n>' to inspect a result.[/]"
+    )
+    if member_errors:
+        console.print(f"[dim]Could not read members for {member_errors} chats.[/]")
 
 
 def cmd_teams_show(args: argparse.Namespace) -> None:

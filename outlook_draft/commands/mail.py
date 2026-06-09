@@ -14,6 +14,7 @@ from rich.table import Table
 from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
+from ..progress import spinner
 
 
 JsonDict = dict[str, Any]
@@ -141,7 +142,8 @@ def cmd_unread(args: argparse.Namespace) -> None:
     """List unread emails from the Inbox."""
     client = _get_client(args)
     try:
-        messages = client.list_unread(top=args.count)
+        with spinner(args, "Loading unread emails..."):
+            messages = client.list_unread(top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to list unread emails: {e}[/]")
         sys.exit(1)
@@ -166,7 +168,8 @@ def cmd_mail(args: argparse.Namespace) -> None:
     """Search emails by keyword."""
     client = _get_client(args)
     try:
-        messages = client.search_messages(args.query, top=args.count)
+        with spinner(args, f"Searching emails for '{args.query}'..."):
+            messages = client.search_messages(args.query, top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to search emails: {e}[/]")
         sys.exit(1)
@@ -192,7 +195,8 @@ def cmd_read(args: argparse.Namespace) -> None:
     client = _get_client(args)
     message_id = _resolve_message_id(args, client, args.message_id)
     try:
-        msg = client.get_message(message_id)
+        with spinner(args, "Loading email..."):
+            msg = client.get_message(message_id)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
@@ -299,7 +303,8 @@ def cmd_move(args: argparse.Namespace) -> None:
 def cmd_folders(args: argparse.Namespace) -> None:
     client = _get_client(args)
     try:
-        folders = client.list_mail_folders(top=args.count)
+        with spinner(args, "Loading mail folders..."):
+            folders = client.list_mail_folders(top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to list folders: {e}[/]")
         sys.exit(1)
@@ -341,7 +346,8 @@ def cmd_attachments(args: argparse.Namespace) -> None:
     client = _get_client(args)
     message_id = _resolve_message_id(args, client, args.message_id)
     try:
-        attachments = client.list_message_attachments(message_id)
+        with spinner(args, "Loading attachments..."):
+            attachments = client.list_message_attachments(message_id)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to list attachments: {e}[/]")
         sys.exit(1)
@@ -405,19 +411,20 @@ def cmd_download_attachments(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     skip_inline = not getattr(args, "include_inline", False)
     try:
-        attachments = client.list_message_attachments(message_id)
-        downloaded: list[Path] = []
-        for attachment in attachments:
-            if skip_inline and attachment.get("IsInline"):
-                continue
-            full = client.get_message_attachment(message_id, attachment.get("Id", ""))
-            content = full.get("ContentBytes")
-            if not content:
-                continue
-            filename = _safe_filename(full.get("Name") or "attachment")
-            path = _unique_path(out_dir, filename, overwrite=args.overwrite)
-            path.write_bytes(base64.b64decode(content))
-            downloaded.append(path)
+        with spinner(args, "Downloading email attachments..."):
+            attachments = client.list_message_attachments(message_id)
+            downloaded: list[Path] = []
+            for attachment in attachments:
+                if skip_inline and attachment.get("IsInline"):
+                    continue
+                full = client.get_message_attachment(message_id, attachment.get("Id", ""))
+                content = full.get("ContentBytes")
+                if not content:
+                    continue
+                filename = _safe_filename(full.get("Name") or "attachment")
+                path = _unique_path(out_dir, filename, overwrite=args.overwrite)
+                path.write_bytes(base64.b64decode(content))
+                downloaded.append(path)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to download attachments: {e}[/]")
         sys.exit(1)
@@ -446,7 +453,8 @@ def cmd_links(args: argparse.Namespace) -> None:
     client = _get_client(args)
     message_id = _resolve_message_id(args, client, args.message_id)
     try:
-        message = client.get_message(message_id)
+        with spinner(args, "Loading email links..."):
+            message = client.get_message(message_id)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
@@ -483,7 +491,8 @@ def cmd_download_links(args: argparse.Namespace) -> None:
     client = _get_client(args)
     message_id = _resolve_message_id(args, client, args.message_id)
     try:
-        message = client.get_message(message_id)
+        with spinner(args, "Loading email links..."):
+            message = client.get_message(message_id)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
@@ -502,20 +511,21 @@ def cmd_download_links(args: argparse.Namespace) -> None:
     graph = _get_graph_client()
     downloaded: list[Path] = []
     try:
-        for link in candidates:
-            url = link["url"]
-            if not looks_like_share_url(url):
-                continue
-            try:
-                metadata = graph.get_share_drive_item(url)
-                content = graph.download_share_url(url)
-            except OutlookAPIError as e:
-                _console(args).print(f"[yellow]Skipped {url}: {e}[/]")
-                continue
-            filename = _safe_filename(metadata.get("name") or link.get("label") or "download")
-            path = _unique_path(out_dir, filename, overwrite=args.overwrite)
-            path.write_bytes(content)
-            downloaded.append(path)
+        with spinner(args, "Downloading linked files..."):
+            for link in candidates:
+                url = link["url"]
+                if not looks_like_share_url(url):
+                    continue
+                try:
+                    metadata = graph.get_share_drive_item(url)
+                    content = graph.download_share_url(url)
+                except OutlookAPIError as e:
+                    _console(args).print(f"[yellow]Skipped {url}: {e}[/]")
+                    continue
+                filename = _safe_filename(metadata.get("name") or link.get("label") or "download")
+                path = _unique_path(out_dir, filename, overwrite=args.overwrite)
+                path.write_bytes(content)
+                downloaded.append(path)
     finally:
         graph.close()
 

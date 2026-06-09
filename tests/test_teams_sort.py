@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from outlook_draft.commands.teams import SELF_CHAT_ID, _chat_title, _is_received_user_message, find_self_chat
+from outlook_draft.commands.teams import (
+    SELF_CHAT_ID,
+    _chat_match_reasons,
+    _chat_title,
+    _is_received_user_message,
+    find_self_chat,
+)
 from outlook_draft.errors import OutlookAPIError
 
 
@@ -27,6 +33,37 @@ def test_chat_title_labels_self_chat(monkeypatch) -> None:
         {"chatType": "oneOnOne", "id": "19:self@unq.gbl.spaces"},
         [{"displayName": "Ross Meyer", "email": "ross@example.com"}],
     ) == "Self chat"
+
+
+def test_chat_match_reasons_matches_topic() -> None:
+    reasons = _chat_match_reasons(
+        {"topic": "Q2 budget review"},
+        [],
+        "budget",
+    )
+
+    assert reasons == ["topic"]
+
+
+def test_chat_match_reasons_matches_member_name_and_email_terms() -> None:
+    reasons = _chat_match_reasons(
+        {"topic": ""},
+        [
+            {
+                "displayName": "Tarik Patel",
+                "email": "tarik.patel@example.com",
+                "userId": "user-1",
+            },
+            {
+                "displayName": "Ada Lovelace",
+                "email": "ada@example.com",
+                "userId": "user-2",
+            },
+        ],
+        "tarik example",
+    )
+
+    assert reasons == ["member: Tarik Patel"]
 
 
 def test_find_self_chat_detects_single_current_user_member() -> None:

@@ -14,6 +14,7 @@ from rich.table import Table
 from ..calendar_time import outlook_datetime
 from ..cache import TASK_CACHE, save_cache
 from ..errors import OutlookAPIError
+from ..progress import spinner
 
 
 def build_ctx(
@@ -49,7 +50,8 @@ def cmd_task_list(args: argparse.Namespace) -> None:
     """List incomplete tasks."""
     client = _get_client(args)
     try:
-        tasks = client.list_tasks(top=args.count)
+        with spinner(args, "Loading tasks..."):
+            tasks = client.list_tasks(top=args.count)
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to list tasks: {e}[/]")
         sys.exit(1)
@@ -107,7 +109,8 @@ def cmd_task_create(args: argparse.Namespace) -> None:
     """Create a new task."""
     client = _get_client(args)
     try:
-        client.create_task(args.subject)
+        with spinner(args, "Creating task..."):
+            client.create_task(args.subject)
         _console(args).print(f"[green]Created task:[/] {args.subject}")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to create task: {e}[/]")
@@ -131,13 +134,14 @@ def cmd_task_update(args: argparse.Namespace) -> None:
     client = _get_client(args)
     task_id = _resolve_task_id(args, client, args.task_id)
     try:
-        client.update_task(
-            task_id,
-            subject=args.subject,
-            due_dt=due_dt,
-            importance=args.importance,
-            status=args.status,
-        )
+        with spinner(args, "Updating task..."):
+            client.update_task(
+                task_id,
+                subject=args.subject,
+                due_dt=due_dt,
+                importance=args.importance,
+                status=args.status,
+            )
         _console(args).print("[green]Task updated.[/]")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to update task: {e}[/]")
@@ -151,7 +155,8 @@ def cmd_task_complete(args: argparse.Namespace) -> None:
     client = _get_client(args)
     task_id = _resolve_task_id(args, client, args.task_id)
     try:
-        client.complete_task(task_id)
+        with spinner(args, "Completing task..."):
+            client.complete_task(task_id)
         _console(args).print("[green]Task marked as complete.[/]")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to complete task: {e}[/]")
@@ -165,7 +170,8 @@ def cmd_task_delete(args: argparse.Namespace) -> None:
     client = _get_client(args)
     task_id = _resolve_task_id(args, client, args.task_id)
     try:
-        client.delete_task(task_id)
+        with spinner(args, "Deleting task..."):
+            client.delete_task(task_id)
         _console(args).print("[green]Task deleted.[/]")
     except OutlookAPIError as e:
         _console(args).print(f"[red]Failed to delete task: {e}[/]")

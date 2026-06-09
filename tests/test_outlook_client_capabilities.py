@@ -182,6 +182,51 @@ def test_list_teams_chats_caps_page_size_to_graph_limit() -> None:
 
     assert client.calls[0]["path"] == "/me/chats"
     assert client.calls[0]["params"]["$top"] == "50"
+    assert client.calls[0]["params"]["$orderby"] == "lastMessagePreview/createdDateTime desc"
+
+
+
+def test_list_teams_chat_members_follows_paging_without_top_query() -> None:
+    class PagingClient(RecordingClient):
+        def _request(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict[str, str] | None = None,
+            json_body: dict | None = None,
+            extra_headers: dict[str, str] | None = None,
+            max_retries: int = 2,
+        ) -> httpx.Response:
+            self.calls.append(
+                {
+                    "method": method,
+                    "path": path,
+                    "params": params,
+                    "json_body": json_body,
+                    "extra_headers": extra_headers,
+                    "max_retries": max_retries,
+                }
+            )
+            if path == "/chats/chat-1/members":
+                return httpx.Response(
+                    200,
+                    json={
+                        "value": [{"id": f"member-{i}"} for i in range(50)],
+                        "@odata.nextLink": "https://graph.microsoft.com/v1.0/chats/chat-1/members?page=2",
+                    },
+                )
+            return httpx.Response(200, json={"value": [{"id": "member-50"}]})
+
+    client = PagingClient()
+
+    members = client.list_teams_chat_members("chat-1", top=51)
+
+    assert len(members) == 51
+    assert client.calls[0]["path"] == "/chats/chat-1/members"
+    assert client.calls[0]["params"] is None
+    assert client.calls[1]["path"] == "https://graph.microsoft.com/v1.0/chats/chat-1/members?page=2"
+    assert client.calls[1]["params"] is None
 
 
 def test_teams_sender_handles_null_from() -> None:

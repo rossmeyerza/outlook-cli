@@ -549,6 +549,7 @@ class OutlookClient:
         params: dict[str, str] | None = {
             "$top": str(page_size),
             "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,lastMessagePreview,webUrl",
+            "$orderby": "lastMessagePreview/createdDateTime desc",
         }
 
         while len(chats) < top and path:
@@ -575,12 +576,21 @@ class OutlookClient:
         return resp.json()
 
     def list_teams_chat_members(self, chat_id: str, top: int = 50) -> list[dict[str, Any]]:
-        """List members in a Teams chat."""
-        resp = self._request(
-            "GET",
-            f"/chats/{chat_id}/members",
-        )
-        members = resp.json().get("value", [])
+        """List members in a Teams chat, following Graph paging."""
+        members: list[dict[str, Any]] = []
+        path = f"/chats/{chat_id}/members"
+        params: dict[str, str] | None = None
+
+        while len(members) < top and path:
+            resp = self._request("GET", path, params=params)
+            data = resp.json()
+            members.extend(data.get("value", []))
+            next_link = data.get("@odata.nextLink")
+            if not next_link:
+                break
+            path = next_link
+            params = None
+
         return members[:top]
 
     def list_teams_messages(self, chat_id: str, top: int = 20) -> list[dict[str, Any]]:

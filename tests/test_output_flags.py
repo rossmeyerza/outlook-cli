@@ -40,3 +40,9 @@ def test_calendar_table_alias_is_accepted() -> None:
 
     assert "--json" in output
     assert "--table" in output
+
+
+def test_no_spinner_global_flag_is_accepted() -> None:
+    output = run_help("--no-spinner", "teams", "search", "ross")
+
+    assert "--scan" in output

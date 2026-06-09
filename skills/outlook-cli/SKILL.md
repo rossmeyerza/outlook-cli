@@ -9,6 +9,8 @@ Use `outlook-cli` for Microsoft 365 work. It is installed globally and authentic
 
 Default output is human tables. Prefer `--json` for agent reads when a command supports it. `--table` is useful when answering a human directly.
 
+Interactive commands may show Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` when quiet stderr matters.
+
 ## Operating Rules
 
 - Start read-only. Mutating commands require explicit user intent.
@@ -215,6 +217,7 @@ Teams support is for browsing and downloading attachments/links. Sending Teams m
 ```bash
 outlook-cli teams list --count 20
 outlook-cli teams list --count 20 --sort-received
+outlook-cli teams search "person or topic" --scan 200 --count 10
 outlook-cli teams show 1
 outlook-cli teams messages 1 --count 20
 outlook-cli teams attachments 1 --scan 50
@@ -228,7 +231,7 @@ outlook-cli teams download-attachments 1 --attachment 2 --dir ./attachments
 outlook-cli teams download-attachments 1 --attachment "filename-or-url-substring" --overwrite
 ```
 
-Teams identifiers can be a chat index from `teams list`, cached ID suffix, or full chat ID.
+Teams identifiers can be a chat index from `teams list` or `teams search`, cached ID suffix, or full chat ID.
 
 ## Files: OneDrive And SharePoint
 

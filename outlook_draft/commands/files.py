@@ -14,6 +14,7 @@ from rich.table import Table
 
 from .. import config
 from ..errors import OutlookAPIError
+from ..progress import spinner
 from ..token_manager import TokenManager
 
 log = logging.getLogger(__name__)
@@ -386,7 +387,8 @@ def cmd_files_sites(args) -> None:
     """List SharePoint sites."""
     gc = _GraphClient()
     try:
-        groups = gc.sp_list_sites()
+        with spinner(args, "Loading SharePoint sites..."):
+            groups = gc.sp_list_sites()
     except OutlookAPIError as e:
         console.print(f"[red]Error:[/] {e}")
         return
@@ -419,15 +421,17 @@ def cmd_files_list(args) -> None:
 
     gc = _GraphClient()
     try:
-        if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
-            item = gc.sp_item_by_path(drive_id, path)
-            children = gc.sp_list_children(drive_id, item["id"])
-            _print_items(children, path, f"SharePoint: {site}")
-        else:
-            item = gc.od_item_by_path(path)
-            children = gc.od_list_children(item["id"])
-            _print_items(children, path, "OneDrive")
+        with spinner(args, "Loading files..."):
+            if site:
+                _, site_id, drive_id = _resolve_site(gc, site)
+                item = gc.sp_item_by_path(drive_id, path)
+                children = gc.sp_list_children(drive_id, item["id"])
+                location = f"SharePoint: {site}"
+            else:
+                item = gc.od_item_by_path(path)
+                children = gc.od_list_children(item["id"])
+                location = "OneDrive"
+        _print_items(children, path, location)
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -474,20 +478,21 @@ def cmd_files_download(args) -> None:
 
     gc = _GraphClient()
     try:
-        if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
-            item = gc.sp_item_by_path(drive_id, remote_path)
-            if "folder" in item:
-                raise ValueError("Download currently supports files, not folders.")
-            data = gc.sp_download(drive_id, item["id"])
-        else:
-            item = gc.od_item_by_path(remote_path)
-            if "folder" in item:
-                raise ValueError("Download currently supports files, not folders.")
-            data = gc.od_download(item["id"])
+        with spinner(args, "Downloading file..."):
+            if site:
+                _, site_id, drive_id = _resolve_site(gc, site)
+                item = gc.sp_item_by_path(drive_id, remote_path)
+                if "folder" in item:
+                    raise ValueError("Download currently supports files, not folders.")
+                data = gc.sp_download(drive_id, item["id"])
+            else:
+                item = gc.od_item_by_path(remote_path)
+                if "folder" in item:
+                    raise ValueError("Download currently supports files, not folders.")
+                data = gc.od_download(item["id"])
 
-        output_path = _download_destination(dest, item["name"])
-        _write_download(output_path, data, overwrite=overwrite)
+            output_path = _download_destination(dest, item["name"])
+            _write_download(output_path, data, overwrite=overwrite)
         console.print(f"[green]Downloaded[/] {item['name']} → {output_path} "
                       f"({_fmt_size(len(data))})")
     except (OutlookAPIError, ValueError, FileExistsError, OSError) as e:
@@ -508,13 +513,14 @@ def cmd_files_mkdir(args) -> None:
 
     gc = _GraphClient()
     try:
-        if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
-            parent = gc.sp_item_by_path(drive_id, parent_path)
-            result = gc.sp_mkdir(drive_id, parent["id"], name)
-        else:
-            parent = gc.od_item_by_path(parent_path)
-            result = gc.od_mkdir(parent["id"], name)
+        with spinner(args, "Creating folder..."):
+            if site:
+                _, site_id, drive_id = _resolve_site(gc, site)
+                parent = gc.sp_item_by_path(drive_id, parent_path)
+                result = gc.sp_mkdir(drive_id, parent["id"], name)
+            else:
+                parent = gc.od_item_by_path(parent_path)
+                result = gc.od_mkdir(parent["id"], name)
         console.print(f"[green]Created[/] folder: {result.get('name')}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
@@ -530,13 +536,14 @@ def cmd_files_rename(args) -> None:
 
     gc = _GraphClient()
     try:
-        if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
-            item = gc.sp_item_by_path(drive_id, item_path)
-            result = gc.sp_rename(drive_id, item["id"], new_name)
-        else:
-            item = gc.od_item_by_path(item_path)
-            result = gc.od_rename(item["id"], new_name)
+        with spinner(args, "Renaming item..."):
+            if site:
+                _, site_id, drive_id = _resolve_site(gc, site)
+                item = gc.sp_item_by_path(drive_id, item_path)
+                result = gc.sp_rename(drive_id, item["id"], new_name)
+            else:
+                item = gc.od_item_by_path(item_path)
+                result = gc.od_rename(item["id"], new_name)
         console.print(f"[green]Renamed[/] → {result.get('name')}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
@@ -552,15 +559,16 @@ def cmd_files_move(args) -> None:
 
     gc = _GraphClient()
     try:
-        if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
-            item = gc.sp_item_by_path(drive_id, item_path)
-            dest = gc.sp_item_by_path(drive_id, dest_path)
-            result = gc.sp_move(drive_id, item["id"], dest["id"])
-        else:
-            item = gc.od_item_by_path(item_path)
-            dest = gc.od_item_by_path(dest_path)
-            result = gc.od_move(item["id"], dest["id"])
+        with spinner(args, "Moving item..."):
+            if site:
+                _, site_id, drive_id = _resolve_site(gc, site)
+                item = gc.sp_item_by_path(drive_id, item_path)
+                dest = gc.sp_item_by_path(drive_id, dest_path)
+                result = gc.sp_move(drive_id, item["id"], dest["id"])
+            else:
+                item = gc.od_item_by_path(item_path)
+                dest = gc.od_item_by_path(dest_path)
+                result = gc.od_move(item["id"], dest["id"])
         console.print(f"[green]Moved[/] → {result.get('name')}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
