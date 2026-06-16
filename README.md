@@ -2,7 +2,7 @@
 
 CLI tool for managing Outlook email, drafts, and contacts via the Outlook REST API v2.0.
 
-Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally under `~/.local/share/outlook-cli/session_state/`.
+Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally. Single-account installs use `~/.local/share/outlook-cli/session_state/`; account profiles use isolated stores under `~/.local/share/outlook-cli/accounts/<name>/`.
 
 ## Installation
 
@@ -267,6 +267,13 @@ OneNote note operations are not implemented. Auth may capture Notes-capable toke
 ### Auth and config
 
 ```bash
+outlook-cli account add wpp --email ross@wpp.com --switch
+outlook-cli account add ikea --email ross@ikea.example
+outlook-cli account list
+outlook-cli account current
+outlook-cli account switch ikea
+outlook-cli --account wpp mail unread
+
 outlook-cli auth                         # run headless login
 outlook-cli auth status                  # show token status
 outlook-cli auth status --json           # machine-readable token status
@@ -281,9 +288,11 @@ outlook-cli signature fetch              # fetch new and reply signatures from O
 outlook-cli signature fetch --headed     # run with a visible browser if headless fails
 ```
 
-`outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the files configured in `~/.config/outlook-cli/.env`. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
+Account profiles are separate `.env` files in `~/.config/outlook-cli/accounts/<name>.env`. Each profile gets its own tokens, browser session, command caches, signatures, and gateway state under `~/.local/share/outlook-cli/accounts/<name>/`. `account switch` sets the default profile; `--account <name>` overrides it for one command.
 
-`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from `~/.config/outlook-cli/.env`, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to `~/.local/share/outlook-cli/session_state/tokens.json`.
+`outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the active account's signature files. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
+
+`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from the active account env file, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to the active account's `session_state/tokens.json`.
 
 Use a visible browser instead:
 
@@ -297,6 +306,10 @@ Config file:
 
 `~/.config/outlook-cli/.env`
 
+Account profile files:
+
+`~/.config/outlook-cli/accounts/<name>.env`
+
 ```
 MS_EMAIL=your.email@company.com
 MS_PASSWORD=your-password
@@ -306,11 +319,11 @@ SIGNATURE_NEW_FILE=signature-new.html
 SIGNATURE_REPLY_FILE=signature-reply.html
 ```
 
-The token file is at `~/.local/share/outlook-cli/session_state/tokens.json`. The browser session state (used by `signature fetch` to avoid re-auth) is at `~/.local/share/outlook-cli/session_state/browser_state.json`.
+For the legacy/global config, the token file is at `~/.local/share/outlook-cli/session_state/tokens.json`. For account profiles, it is at `~/.local/share/outlook-cli/accounts/<name>/session_state/tokens.json`. Browser session state follows the same pattern as `browser_state.json`.
 
 `LOCAL_TIMEZONE` is the Python timezone used to interpret calendar times you type. `OUTLOOK_TIMEZONE` is the Microsoft timezone sent to Outlook. For the UK, use `Europe/London` and `GMT Standard Time`.
 
-Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATURE_REPLY_FILE`. Relative paths are resolved from `~/.local/share/outlook-cli`. If unset, the CLI defaults to:
+Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATURE_REPLY_FILE`. Relative paths are resolved from the active account data directory. If unset, the CLI defaults to:
 
 - `signature-new.html` for new drafts
 - `signature-reply.html` for reply drafts

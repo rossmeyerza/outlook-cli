@@ -102,6 +102,12 @@ outlook-cli signature fetch                # fetch new + reply signatures from O
 outlook-cli signature fetch --headed       # run with visible browser if headless fails
 
 # Auth and config
+outlook-cli account add wpp --email <email> --password <password> --switch # create/switch account profile
+outlook-cli account add ikea --email <email> --password <password>        # create another profile
+outlook-cli account list                   # list account profiles
+outlook-cli account current                # show active account/profile paths
+outlook-cli account switch ikea            # switch default active account
+outlook-cli --account wpp mail unread      # one-command account override
 outlook-cli auth                           # force headless re-authentication
 outlook-cli auth status                    # show token status
 outlook-cli auth clear                     # delete local token cache
@@ -114,6 +120,7 @@ outlook-cli config check                   # validate local config without print
 ## Key Details
 
 - **Progress spinners**: Interactive commands render Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; JSON stdout remains parseable.
+- **Account profiles**: Multiple credentials are supported with `account add/list/current/switch/remove` and the global `--account <name>` override. Profile env files live at `~/.config/outlook-cli/accounts/<name>.env`; profile data lives at `~/.local/share/outlook-cli/accounts/<name>/`. Each profile has isolated tokens, browser state, caches, signatures, and gateway state. With no active profile, the legacy/global `.env` and `~/.local/share/outlook-cli/session_state/` layout still works.
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation. Use `--json` for agent-readable summaries, `--table` for explicit human tables.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
 - **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.
@@ -128,14 +135,14 @@ outlook-cli config check                   # validate local config without print
 - **Teams**: `teams list`, `teams search`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `teams search <query>` scans a bounded set of chats, matches chat topics and participants, and caches the matching chats so numeric refs work in a separate invocation. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Teams sending is intentionally disabled for agent safety.
 - **Teams self-chat**: `teams self` checks access to the Microsoft Graph special self-chat thread, `48:notes`. This is the real Teams "chat with yourself" stream and is different from normal one-person `/me/chats` entries.
 - **Teams gateway**: `gateway start --self-chat` watches `48:notes` for `@Marlow`, sends prompts to `pi --mode rpc`, and posts responses back into Teams. The gateway posts a short `...` receipt, soft-deletes it before the final response where Graph allows it, and can surface compact Pi tool progress. If the Graph token expires and headless reauth fails, the gateway records the auth error and exits instead of retrying every poll interval.
-- **Gateway state**: Runtime state is outside git under `~/.local/share/outlook-cli/session_state/`. Pi sessions live under `session_state/gateway_sessions/<chat-hash>/`; per-chat workspaces live under `~/.local/share/outlook-cli/gateway_workspaces/<chat-hash>/`. These are local data/state, not tracked or pushed.
+- **Gateway state**: Runtime state is outside git under the active account's `session_state/` directory. For legacy/global config this is `~/.local/share/outlook-cli/session_state/`; for profiles this is `~/.local/share/outlook-cli/accounts/<name>/session_state/`. Pi sessions live under `session_state/gateway_sessions/<chat-hash>/`; per-chat workspaces live under the active account's `gateway_workspaces/<chat-hash>/`. These are local data/state, not tracked or pushed.
 - **Gateway model controls**: Start with `outlook-cli gateway start --self-chat --model <model> [--provider <provider>] [--thinking <level>]`. Inside Teams use `@Marlow !model`, `@Marlow !model help`, `@Marlow !model list [search]`, `@Marlow !model <model>`, `@Marlow !model --provider <provider> --model <model> --thinking <level>`, or `@Marlow !model reset`. Short names such as `sonnet` rely on Pi fuzzy/pattern matching; use `!model list sonnet` and an exact model ID when repeatability matters.
 - **Gateway file publishing**: Pi must not send Teams messages directly. To send generated files back to Teams, create files under the per-chat workspace and write `.marlow-export.json` with JSON like `{"files":["report.html"],"message":"Created the report."}`. The gateway validates relative paths, uploads supported file types to OneDrive under `Outlook CLI/Gateway/<chat-hash>/`, creates organization view links, posts them, and removes the manifest.
 - **Gateway commands in Teams**: Use `@Marlow !help`, `@Marlow !commands`, or `@Marlow !help <command>` to list commands. Current commands include `!status`, `!new`, `!reset`, `!model`, `!pause`, `!resume`, `!tools`, `!files`, `!send`, and `!logs`.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Files**: `files sites` lists SharePoint sites via M365 group membership. `--site` does a case-insensitive partial name match. Without `--site`, operations target personal OneDrive. Uploads under 4 MB use a single PUT; larger files use chunked upload sessions. Uses the Microsoft Graph token.
-- **Signatures**: `signature fetch` opens a headless browser with the saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
-- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser.
+- **Signatures**: `signature fetch` opens a headless browser with the active account's saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
+- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state for the active account. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser. Existing single-account installs keep using `~/.config/outlook-cli/.env` and do not need to re-authenticate unless you switch to a new profile or tokens are expired.
 
 ## File Layout
 
@@ -143,10 +150,17 @@ outlook-cli config check                   # validate local config without print
 /home/ross/.local/lib/outlook-cli/
   .env                          # MS_EMAIL, MS_PASSWORD, timezone, signature path config, ignored by git
   .env.example                  # Example local config
+  ~/.config/outlook-cli/accounts/<name>.env # Optional per-account profile env files
   install.sh                    # Installer/updater script (served at outlook-cli.21436587.xyz)
   session_state/                # Local token + browser session cache, ignored by git
     tokens.json                 # API tokens
     browser_state.json          # Playwright browser session (used by signature fetch)
+  ~/.local/share/outlook-cli/accounts/<name>/ # Per-profile data root
+    session_state/tokens.json    # Per-profile API tokens
+    session_state/browser_state.json # Per-profile Playwright browser session
+    cache/                       # Per-profile numeric ref caches
+    signature-new.html           # Per-profile new-message signature default
+    signature-reply.html         # Per-profile reply signature default
   outlook_draft/
     auth.py                     # Playwright auth, token capture, browser session save
     calendar_time.py            # Calendar timezone parsing and Outlook headers

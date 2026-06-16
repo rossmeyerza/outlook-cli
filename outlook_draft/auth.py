@@ -29,10 +29,6 @@ from . import config
 console = Console()
 
 config.ensure_dirs()
-SESSION_DIR = config.SESSION_DIR
-TOKENS_PATH = config.TOKENS_FILE
-MS_EMAIL = config.MS_EMAIL
-MS_PASSWORD = config.MS_PASSWORD
 
 # Microsoft API domains we look for when intercepting requests.
 KNOWN_DOMAINS = [
@@ -64,15 +60,15 @@ def _save_tokens(tokens: dict[str, str]):
         "tokens": tokens,
         "captured_at": datetime.now().isoformat(),
     }
-    TOKENS_PATH.write_text(json.dumps(data, indent=2))
+    config.TOKENS_FILE.write_text(json.dumps(data, indent=2))
 
 
 def _load_tokens() -> dict[str, str]:
     """Load saved tokens from disk."""
-    if not TOKENS_PATH.exists():
+    if not config.TOKENS_FILE.exists():
         return {}
     try:
-        data = json.loads(TOKENS_PATH.read_text())
+        data = json.loads(config.TOKENS_FILE.read_text())
         return data.get("tokens", {})
     except Exception:
         return {}
@@ -322,7 +318,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
     Returns a dict of {domain: token} for each Microsoft API domain seen.
     """
     if headless:
-        if not MS_EMAIL or not MS_PASSWORD:
+        if not config.MS_EMAIL or not config.MS_PASSWORD:
             console.print("[red]Headless mode requires MS_EMAIL and MS_PASSWORD in .env[/]")
             return {}
         console.print("[cyan]Starting headless login...[/]")
@@ -353,11 +349,11 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
             or "login.microsoft" in current_url
         )
 
-        if on_login_page and MS_EMAIL:
-            _enter_email(page, MS_EMAIL)
+        if on_login_page and config.MS_EMAIL:
+            _enter_email(page, config.MS_EMAIL)
 
-        if on_login_page and MS_PASSWORD:
-            _enter_password(page, MS_PASSWORD)
+        if on_login_page and config.MS_PASSWORD:
+            _enter_password(page, config.MS_PASSWORD)
 
         if on_login_page:
             _wait_for_mfa(page)
@@ -391,7 +387,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
             pass
 
         # Save browser session state so Playwright can reuse it without MFA
-        storage_path = SESSION_DIR / "browser_state.json"
+        storage_path = config.SESSION_DIR / "browser_state.json"
         try:
             context.storage_state(path=str(storage_path))
             console.print(f"[dim]Browser session saved to {storage_path}[/]")

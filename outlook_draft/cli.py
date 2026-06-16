@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import shutil
 import sys
 import time
 from datetime import datetime
@@ -34,6 +35,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import config
+from . import cache
 from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache
 from .commands import calendar as calendar_commands
 from .commands import contacts as contacts_commands
@@ -58,6 +60,25 @@ from .signatures import load_signature
 from .token_manager import TokenManager
 
 console = Console()
+
+
+def _refresh_account_paths() -> None:
+    """Refresh imported path constants after activating an account."""
+    global CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE
+
+    config.ensure_dirs()
+    cache.refresh_paths()
+    MAIL_CACHE = cache.MAIL_CACHE
+    CONTACT_CACHE = cache.CONTACT_CACHE
+    CAL_CACHE = cache.CAL_CACHE
+    TASK_CACHE = cache.TASK_CACHE
+
+    mail_commands.MAIL_CACHE = cache.MAIL_CACHE
+    mail_commands.MAIL_FOLDER_CACHE = cache.MAIL_FOLDER_CACHE
+    calendar_commands.CAL_CACHE = cache.CAL_CACHE
+    contacts_commands.CONTACT_CACHE = cache.CONTACT_CACHE
+    tasks_commands.TASK_CACHE = cache.TASK_CACHE
+    teams_commands.TEAMS_CACHE = cache.TEAMS_CACHE
 
 
 def _get_client(
@@ -565,6 +586,132 @@ def _token_status(domain: str, label: str) -> dict[str, object]:
     }
 
 
+def _format_env_value(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _read_account_email(account: str) -> str:
+    path = config.account_env_file(account)
+    try:
+        for line in path.read_text().splitlines():
+            if line.startswith("MS_EMAIL="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def cmd_account_list(args: argparse.Namespace) -> None:
+    accounts = config.list_accounts()
+    active = config.ACTIVE_ACCOUNT
+    if args.json:
+        print(json.dumps({
+            "activeAccount": active,
+            "accounts": [
+                {
+                    "name": account,
+                    "active": account == active,
+                    "email": _read_account_email(account),
+                    "envFile": str(config.account_env_file(account)),
+                    "dataDir": str(config.ACCOUNTS_DATA_DIR / account),
+                }
+                for account in accounts
+            ],
+        }, indent=2))
+        return
+    if not accounts:
+        console.print("[dim]No account profiles configured.[/]")
+        return
+    table = Table(title="Outlook accounts", box=box.SIMPLE)
+    table.add_column("Active")
+    table.add_column("Name")
+    table.add_column("Email")
+    table.add_column("Env file")
+    for account in accounts:
+        table.add_row(
+            "*" if account == active else "",
+            account,
+            _read_account_email(account),
+            str(config.account_env_file(account)),
+        )
+    console.print(table)
+
+
+def cmd_account_current(args: argparse.Namespace) -> None:
+    active = config.ACTIVE_ACCOUNT
+    payload = {
+        "activeAccount": active,
+        "email": config.MS_EMAIL,
+        "envFile": str(config.account_env_file(active)) if active else str(config.CONFIG_FILE),
+        "dataDir": str(config.ACCOUNT_DATA_DIR),
+        "sessionDir": str(config.SESSION_DIR),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return
+    if not active:
+        console.print("[yellow]No account profile is active; using legacy/global config.[/]")
+        console.print(f"Config:  {config.CONFIG_FILE}")
+        console.print(f"Data:    {config.DATA_DIR}")
+        return
+    console.print(f"Active account: [bold]{active}[/]")
+    console.print(f"Email:          {config.MS_EMAIL or '(missing)'}")
+    console.print(f"Env file:       {config.account_env_file(active)}")
+    console.print(f"Data dir:       {config.ACCOUNT_DATA_DIR}")
+
+
+def cmd_account_add(args: argparse.Namespace) -> None:
+    path = config.account_env_file(args.name)
+    if path.exists() and not args.force:
+        console.print(f"[red]Account '{args.name}' already exists. Use --force to overwrite.[/]")
+        sys.exit(1)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f"MS_EMAIL={_format_env_value(args.email)}",
+    ]
+    if args.password:
+        lines.append(f"MS_PASSWORD={_format_env_value(args.password)}")
+    else:
+        lines.append("MS_PASSWORD=")
+    lines.append(f"LOCAL_TIMEZONE={_format_env_value(args.local_timezone)}")
+    lines.append(f"OUTLOOK_TIMEZONE={_format_env_value(args.outlook_timezone)}")
+    path.write_text("\n".join(lines) + "\n")
+    path.chmod(0o600)
+    (config.ACCOUNTS_DATA_DIR / args.name).mkdir(parents=True, exist_ok=True)
+    if args.switch:
+        config.set_active_account(args.name)
+        _refresh_account_paths()
+    console.print(f"[green]Account profile saved:[/] {args.name}")
+    console.print(f"Env file: {path}")
+    if not args.password:
+        console.print("[yellow]MS_PASSWORD is blank; add it to the env file before headless auth.[/]")
+
+
+def cmd_account_switch(args: argparse.Namespace) -> None:
+    try:
+        config.set_active_account(args.name)
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/]")
+        sys.exit(1)
+    _refresh_account_paths()
+    console.print(f"[green]Active account:[/] {args.name}")
+
+
+def cmd_account_remove(args: argparse.Namespace) -> None:
+    path = config.account_env_file(args.name)
+    if not path.exists():
+        console.print(f"[red]No account profile named '{args.name}'.[/]")
+        sys.exit(1)
+    path.unlink()
+    if args.purge_data:
+        shutil.rmtree(config.ACCOUNTS_DATA_DIR / args.name, ignore_errors=True)
+    if config.ACTIVE_ACCOUNT == args.name:
+        config.clear_active_account()
+        _refresh_account_paths()
+    console.print(f"[green]Removed account profile:[/] {args.name}")
+
+
 def cmd_auth(args: argparse.Namespace) -> None:
     """Manage authentication."""
     command = args.auth_command or "login"
@@ -583,9 +730,20 @@ def cmd_auth(args: argparse.Namespace) -> None:
             "notesTokenCaptured": notes_scope_present,
         }
         if args.json:
-            print(json.dumps({"tokens": statuses, "capabilities": capabilities}, indent=2))
+            print(json.dumps({
+                "account": {
+                    "active": config.ACTIVE_ACCOUNT,
+                    "email": config.MS_EMAIL,
+                    "sessionDir": str(config.SESSION_DIR),
+                },
+                "tokens": statuses,
+                "capabilities": capabilities,
+            }, indent=2))
             return
-        table = Table(title="Auth status", box=box.SIMPLE)
+        title = "Auth status"
+        if config.ACTIVE_ACCOUNT:
+            title += f" ({config.ACTIVE_ACCOUNT})"
+        table = Table(title=title, box=box.SIMPLE)
         table.add_column("Token")
         table.add_column("Domain")
         table.add_column("Status")
@@ -654,9 +812,13 @@ def _config_check_items() -> list[dict[str, object]]:
     def add(name: str, ok: bool, detail: str = "") -> None:
         items.append({"name": name, "ok": ok, "detail": detail})
 
-    add("MS_EMAIL", bool(config.MS_EMAIL), "set" if config.MS_EMAIL else "missing")
+    add("account", True, config.ACTIVE_ACCOUNT or "legacy/global")
+    add("MS_EMAIL", bool(config.MS_EMAIL), config.MS_EMAIL or "missing")
     add("MS_PASSWORD", bool(config.MS_PASSWORD), "set" if config.MS_PASSWORD else "missing")
     add("config file", config.CONFIG_FILE.exists(), str(config.CONFIG_FILE))
+    if config.ACTIVE_ACCOUNT:
+        account_file = config.account_env_file(config.ACTIVE_ACCOUNT)
+        add("account env file", account_file.exists(), str(account_file))
     try:
         ZoneInfo(config.LOCAL_TIMEZONE)
         add("LOCAL_TIMEZONE", True, config.LOCAL_TIMEZONE)
@@ -805,19 +967,81 @@ def add_output_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
+    """Allow --account to appear before or after the top-level command."""
+    cleaned: list[str] = []
+    account: str | None = None
+    idx = 0
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg == "--account":
+            if idx + 1 >= len(argv):
+                cleaned.append(arg)
+                idx += 1
+                continue
+            account = argv[idx + 1]
+            idx += 2
+            continue
+        if arg.startswith("--account="):
+            account = arg.split("=", 1)[1]
+            idx += 1
+            continue
+        cleaned.append(arg)
+        idx += 1
+    return cleaned, account
+
+
 def main() -> None:
+    argv, account_override = _extract_account_arg(sys.argv[1:])
     parser = argparse.ArgumentParser(
         prog="outlook-cli",
         description="Manage Outlook mail, drafts, calendar, contacts, and Teams chats",
     )
     parser.set_defaults(json=False)
+    parser.set_defaults(account=account_override)
     add_output_args(parser)
     parser.add_argument(
         "--no-spinner",
         action="store_true",
         help="Disable interactive progress spinners",
     )
+    parser.add_argument(
+        "--account",
+        help="Use an account profile for this invocation",
+    )
     sub = parser.add_subparsers(dest="domain", required=True)
+
+    # ── Accounts ─────────────────────────────────────────────────────
+    p_account = sub.add_parser("account", help="Manage account profiles")
+    add_output_args(p_account)
+    account_sub = p_account.add_subparsers(dest="command", required=True)
+
+    cmd_account_list_parser = account_sub.add_parser("list", help="List account profiles")
+    add_output_args(cmd_account_list_parser)
+    cmd_account_list_parser.set_defaults(func=cmd_account_list)
+
+    cmd_account_current_parser = account_sub.add_parser("current", help="Show the active account")
+    add_output_args(cmd_account_current_parser)
+    cmd_account_current_parser.set_defaults(func=cmd_account_current)
+
+    cmd_account_add_parser = account_sub.add_parser("add", help="Create an account profile")
+    cmd_account_add_parser.add_argument("name", help="Profile name, e.g. wpp or ikea")
+    cmd_account_add_parser.add_argument("--email", required=True, help="Account email address")
+    cmd_account_add_parser.add_argument("--password", help="Password for headless auth")
+    cmd_account_add_parser.add_argument("--local-timezone", default=config.LOCAL_TIMEZONE, help="Local timezone")
+    cmd_account_add_parser.add_argument("--outlook-timezone", default=config.OUTLOOK_TIMEZONE, help="Outlook timezone")
+    cmd_account_add_parser.add_argument("--switch", action="store_true", help="Make this profile active")
+    cmd_account_add_parser.add_argument("--force", action="store_true", help="Overwrite an existing profile")
+    cmd_account_add_parser.set_defaults(func=cmd_account_add)
+
+    cmd_account_switch_parser = account_sub.add_parser("switch", help="Set the active account")
+    cmd_account_switch_parser.add_argument("name", help="Profile name")
+    cmd_account_switch_parser.set_defaults(func=cmd_account_switch)
+
+    cmd_account_remove_parser = account_sub.add_parser("remove", help="Remove an account profile")
+    cmd_account_remove_parser.add_argument("name", help="Profile name")
+    cmd_account_remove_parser.add_argument("--purge-data", action="store_true", help="Also delete tokens, browser state, caches, signatures, and gateway state")
+    cmd_account_remove_parser.set_defaults(func=cmd_account_remove)
 
     # ── Drafts ────────────────────────────────────────────────────────
     p_draft = sub.add_parser("draft", help="Manage email drafts")
@@ -1352,7 +1576,14 @@ def main() -> None:
     add_output_args(cmd_config_check_parser)
     cmd_config_check_parser.set_defaults(func=cmd_config_check)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.account:
+        if not config.account_exists(args.account):
+            console.print(f"[red]No account profile named '{args.account}'.[/]")
+            sys.exit(1)
+        config.activate_account(args.account)
+    _refresh_account_paths()
 
     if args.domain == "auth":
         cmd_auth(args)

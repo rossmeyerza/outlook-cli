@@ -29,12 +29,12 @@ class TokenManager:
 
     def __init__(
         self,
-        tokens_file: Path = config.TOKENS_FILE,
+        tokens_file: Path | None = None,
         *,
         token_domain: str = config.OUTLOOK_TOKEN_DOMAIN,
         token_label: str = "Outlook API",
     ):
-        self._tokens_file = tokens_file
+        self._tokens_file = tokens_file or config.TOKENS_FILE
         self._token_domain = token_domain
         self._token_label = token_label
         self._token: str | None = None
