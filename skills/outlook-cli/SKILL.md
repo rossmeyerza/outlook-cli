@@ -18,14 +18,38 @@ Interactive commands may show Rich spinners on stderr while waiting on Microsoft
 - Use cached numeric indexes only after running the matching list/search command, or when cache freshness is acceptable.
 - For ambiguous people, search contacts first, then use the confirmed email address.
 - For calendar work, use exact local times like `"2026-06-01 14:00"`; the CLI uses configured local/Outlook time zones.
-- Config lives at `~/.config/outlook-cli/.env`.
-- Runtime state lives under `~/.local/share/outlook-cli/`, especially `session_state/tokens.json` and `session_state/browser_state.json`.
+- Legacy/default config lives at `~/.config/outlook-cli/.env`; account profile env files live at `~/.config/outlook-cli/accounts/<name>.env`.
+- Runtime state lives under `~/.local/share/outlook-cli/`. Legacy/default auth uses `session_state/tokens.json` and `session_state/browser_state.json`; profiles use `accounts/<name>/session_state/`.
+- Use `outlook-cli account current` or `outlook-cli account list` before account-sensitive work if the intended mailbox is unclear.
+
+## Accounts
+
+Multiple credentials are supported with account profiles. The legacy/global `.env` appears as `(default)` in `account list` when no profile is active.
+
+```bash
+outlook-cli account list --json
+outlook-cli account current --json
+outlook-cli account add wpp --email person@wpp.com --password "password" --switch
+outlook-cli account add ikea --email person@ikea.example --password "password"
+outlook-cli account switch ikea
+outlook-cli account switch default
+outlook-cli --account wpp mail unread --json
+outlook-cli account remove ikea
+```
+
+Profile behavior:
+- `account add` creates `~/.config/outlook-cli/accounts/<name>.env`; it does not store credentials in JSON.
+- `account switch <name>` writes the active profile selector under `~/.local/share/outlook-cli/`.
+- `account switch default` clears the active profile selector and returns to `~/.config/outlook-cli/.env`.
+- `--account <name>` is a one-command override; it does not change the active profile.
+- Each profile has isolated tokens, browser state, caches, signatures, and gateway state under `~/.local/share/outlook-cli/accounts/<name>/`.
 
 ## Health And Auth
 
 Use these before deeper work if auth or config may be stale:
 
 ```bash
+outlook-cli account current --json
 outlook-cli config check --json
 outlook-cli auth status --json
 outlook-cli auth scopes --json
@@ -39,7 +63,7 @@ outlook-cli auth --headed
 outlook-cli auth clear
 ```
 
-Headless auth enters the configured email/password, prints the MFA challenge number when Okta/Microsoft shows one, and waits for approval. If Okta rejects credentials before MFA, update `MS_PASSWORD` in `~/.config/outlook-cli/.env`.
+Headless auth enters the configured email/password for the active account, prints the MFA challenge number when Okta/Microsoft shows one, and waits for approval. If Okta rejects credentials before MFA, update `MS_PASSWORD` in the active account env file (`~/.config/outlook-cli/.env` for `(default)`, or `~/.config/outlook-cli/accounts/<name>.env` for profiles).
 
 ## Mail
 
@@ -283,8 +307,8 @@ outlook-cli signature fetch --headed
 ```
 
 Signature files default to:
-- `~/.local/share/outlook-cli/signature-new.html`
-- `~/.local/share/outlook-cli/signature-reply.html`
+- `(default)`: `~/.local/share/outlook-cli/signature-new.html` and `~/.local/share/outlook-cli/signature-reply.html`
+- profiles: `~/.local/share/outlook-cli/accounts/<name>/signature-new.html` and `~/.local/share/outlook-cli/accounts/<name>/signature-reply.html`
 
 ## Output Notes
 
