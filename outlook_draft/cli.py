@@ -705,6 +705,11 @@ def cmd_account_add(args: argparse.Namespace) -> None:
 
 
 def cmd_account_switch(args: argparse.Namespace) -> None:
+    if args.name == "default":
+        config.clear_active_account()
+        _refresh_account_paths()
+        console.print("[green]Active account:[/] (default)")
+        return
     try:
         config.set_active_account(args.name)
     except FileNotFoundError as e:

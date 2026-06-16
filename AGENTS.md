@@ -107,6 +107,7 @@ outlook-cli account add ikea --email <email> --password <password>        # crea
 outlook-cli account list                   # list account profiles
 outlook-cli account current                # show active account/profile paths
 outlook-cli account switch ikea            # switch default active account
+outlook-cli account switch default         # return to legacy/global .env
 outlook-cli --account wpp mail unread      # one-command account override
 outlook-cli auth                           # force headless re-authentication
 outlook-cli auth status                    # show token status
@@ -120,7 +121,7 @@ outlook-cli config check                   # validate local config without print
 ## Key Details
 
 - **Progress spinners**: Interactive commands render Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; JSON stdout remains parseable.
-- **Account profiles**: Multiple credentials are supported with `account add/list/current/switch/remove` and the global `--account <name>` override. Profile env files live at `~/.config/outlook-cli/accounts/<name>.env`; profile data lives at `~/.local/share/outlook-cli/accounts/<name>/`. Each profile has isolated tokens, browser state, caches, signatures, and gateway state. With no active profile, the legacy/global `.env` and `~/.local/share/outlook-cli/session_state/` layout still works and appears in `account list` as `(default)`.
+- **Account profiles**: Multiple credentials are supported with `account add/list/current/switch/remove` and the global `--account <name>` override. Profile env files live at `~/.config/outlook-cli/accounts/<name>.env`; profile data lives at `~/.local/share/outlook-cli/accounts/<name>/`. Each profile has isolated tokens, browser state, caches, signatures, and gateway state. `account switch default` returns to the legacy/global `.env` and `~/.local/share/outlook-cli/session_state/` layout, which appears in `account list` as `(default)`.
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation. Use `--json` for agent-readable summaries, `--table` for explicit human tables.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
 - **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.

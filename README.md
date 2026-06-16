@@ -272,6 +272,7 @@ outlook-cli account add ikea --email ross@ikea.example
 outlook-cli account list
 outlook-cli account current
 outlook-cli account switch ikea
+outlook-cli account switch default
 outlook-cli --account wpp mail unread
 
 outlook-cli auth                         # run headless login
@@ -288,7 +289,7 @@ outlook-cli signature fetch              # fetch new and reply signatures from O
 outlook-cli signature fetch --headed     # run with a visible browser if headless fails
 ```
 
-Account profiles are separate `.env` files in `~/.config/outlook-cli/accounts/<name>.env`. Each profile gets its own tokens, browser session, command caches, signatures, and gateway state under `~/.local/share/outlook-cli/accounts/<name>/`. `account switch` sets the default profile; `--account <name>` overrides it for one command. If no profile is active, `account list` shows the legacy `~/.config/outlook-cli/.env` as `(default)`.
+Account profiles are separate `.env` files in `~/.config/outlook-cli/accounts/<name>.env`. Each profile gets its own tokens, browser session, command caches, signatures, and gateway state under `~/.local/share/outlook-cli/accounts/<name>/`. `account switch <name>` sets the default profile; `account switch default` returns to the legacy `~/.config/outlook-cli/.env`; `--account <name>` overrides it for one command. If no profile is active, `account list` shows the legacy config as `(default)`.
 
 `outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the active account's signature files. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 

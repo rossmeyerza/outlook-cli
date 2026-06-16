@@ -136,3 +136,32 @@ def test_account_override_can_appear_after_domain(tmp_path: Path) -> None:
     payload = json.loads(current.stdout)
 
     assert payload["activeAccount"] == "ikea"
+
+
+def test_account_switch_default_returns_to_global_env(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    data_home = tmp_path / "data"
+    config_dir = config_home / "outlook-cli"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text("MS_EMAIL=global@example.com\n", encoding="utf-8")
+    run_cli(
+        config_home,
+        data_home,
+        "account",
+        "add",
+        "ikea",
+        "--email",
+        "ikea@example.com",
+        "--switch",
+    )
+
+    run_cli(config_home, data_home, "account", "switch", "default")
+    current = run_cli(config_home, data_home, "account", "current", "--json")
+    listed = run_cli(config_home, data_home, "account", "list", "--json")
+    current_payload = json.loads(current.stdout)
+    list_payload = json.loads(listed.stdout)
+
+    assert current_payload["activeAccount"] is None
+    assert current_payload["email"] == "global@example.com"
+    assert list_payload["accounts"][0]["name"] == "(default)"
+    assert list_payload["accounts"][0]["active"] is True
