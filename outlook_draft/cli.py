@@ -593,6 +593,10 @@ def _format_env_value(value: str) -> str:
 
 def _read_account_email(account: str) -> str:
     path = config.account_env_file(account)
+    return _read_env_email(path)
+
+
+def _read_env_email(path: Path) -> str:
     try:
         for line in path.read_text().splitlines():
             if line.startswith("MS_EMAIL="):
@@ -605,35 +609,47 @@ def _read_account_email(account: str) -> str:
 def cmd_account_list(args: argparse.Namespace) -> None:
     accounts = config.list_accounts()
     active = config.ACTIVE_ACCOUNT
+    rows = []
+    if config.CONFIG_FILE.exists():
+        rows.append({
+            "name": "(default)",
+            "active": active is None,
+            "email": _read_env_email(config.CONFIG_FILE),
+            "envFile": str(config.CONFIG_FILE),
+            "dataDir": str(config.DATA_DIR),
+            "kind": "legacy",
+        })
+    rows.extend(
+        {
+            "name": account,
+            "active": account == active,
+            "email": _read_account_email(account),
+            "envFile": str(config.account_env_file(account)),
+            "dataDir": str(config.ACCOUNTS_DATA_DIR / account),
+            "kind": "profile",
+        }
+        for account in accounts
+    )
     if args.json:
         print(json.dumps({
             "activeAccount": active,
-            "accounts": [
-                {
-                    "name": account,
-                    "active": account == active,
-                    "email": _read_account_email(account),
-                    "envFile": str(config.account_env_file(account)),
-                    "dataDir": str(config.ACCOUNTS_DATA_DIR / account),
-                }
-                for account in accounts
-            ],
+            "accounts": rows,
         }, indent=2))
         return
-    if not accounts:
-        console.print("[dim]No account profiles configured.[/]")
+    if not rows:
+        console.print("[dim]No account profiles or default .env configured.[/]")
         return
     table = Table(title="Outlook accounts", box=box.SIMPLE)
     table.add_column("Active")
     table.add_column("Name")
     table.add_column("Email")
     table.add_column("Env file")
-    for account in accounts:
+    for row in rows:
         table.add_row(
-            "*" if account == active else "",
-            account,
-            _read_account_email(account),
-            str(config.account_env_file(account)),
+            "*" if row["active"] else "",
+            str(row["name"]),
+            str(row["email"]),
+            str(row["envFile"]),
         )
     console.print(table)
 

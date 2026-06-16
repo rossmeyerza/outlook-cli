@@ -50,6 +50,39 @@ def test_account_add_switch_and_current_json(tmp_path: Path) -> None:
     assert payload["sessionDir"].endswith("/outlook-cli/accounts/ikea/session_state")
 
 
+def test_account_list_shows_default_when_global_env_exists(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    data_home = tmp_path / "data"
+    config_dir = config_home / "outlook-cli"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text(
+        "MS_EMAIL=global@example.com\nMS_PASSWORD=global-secret\n",
+        encoding="utf-8",
+    )
+
+    listed = run_cli(config_home, data_home, "account", "list", "--json")
+    payload = json.loads(listed.stdout)
+
+    assert payload["activeAccount"] is None
+    assert payload["accounts"][0]["name"] == "(default)"
+    assert payload["accounts"][0]["active"] is True
+    assert payload["accounts"][0]["email"] == "global@example.com"
+    assert payload["accounts"][0]["kind"] == "legacy"
+
+
+def test_account_list_human_output_shows_default_when_global_env_exists(tmp_path: Path) -> None:
+    config_home = tmp_path / "config"
+    data_home = tmp_path / "data"
+    config_dir = config_home / "outlook-cli"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text("MS_EMAIL=global@example.com\n", encoding="utf-8")
+
+    listed = run_cli(config_home, data_home, "account", "list")
+
+    assert "(default)" in listed.stdout
+    assert "global@example.com" in listed.stdout
+
+
 def test_account_env_does_not_inherit_global_password(tmp_path: Path) -> None:
     config_home = tmp_path / "config"
     data_home = tmp_path / "data"
