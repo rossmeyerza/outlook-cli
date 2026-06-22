@@ -4,7 +4,36 @@ from pathlib import Path
 
 import pytest
 
-from outlook_draft.commands.files import _download_destination, _write_download
+from outlook_draft.errors import OutlookAPIError
+from outlook_draft.commands.files import (
+    _find_sp_item_by_path,
+    _match_library,
+    _download_destination,
+    _write_download,
+)
+
+
+class FakeGraphClient:
+    def __init__(self, items_by_drive: dict[str, dict[str, dict]]):
+        self.items_by_drive = items_by_drive
+
+    def sp_list_sites(self) -> list[dict]:
+        return [{"id": "group-1", "displayName": "MAP PaidMedia", "groupTypes": ["Unified"]}]
+
+    def sp_get_site(self, group_id: str) -> dict:
+        return {"id": "site-1", "displayName": "MAP PaidMedia"}
+
+    def sp_list_drives(self, site_id: str) -> list[dict]:
+        return [
+            {"id": "drive-1", "name": "Documents", "driveType": "documentLibrary"},
+            {"id": "drive-2", "name": "Campaign Assets", "driveType": "documentLibrary"},
+        ]
+
+    def sp_item_by_path(self, drive_id: str, path: str) -> dict:
+        try:
+            return self.items_by_drive[drive_id][path]
+        except KeyError as exc:
+            raise OutlookAPIError(404, "not found") from exc
 
 
 def test_download_destination_defaults_to_current_directory() -> None:
@@ -35,3 +64,42 @@ def test_write_download_requires_overwrite_for_existing_file(tmp_path: Path) -> 
     _write_download(output, b"new", overwrite=True)
 
     assert output.read_bytes() == b"new"
+
+
+def test_match_library_uses_case_insensitive_partial_name() -> None:
+    drive = _match_library(
+        [
+            {"id": "drive-1", "name": "Documents"},
+            {"id": "drive-2", "name": "Campaign Assets"},
+        ],
+        "campaign",
+    )
+
+    assert drive["id"] == "drive-2"
+
+
+def test_find_sharepoint_path_searches_all_document_libraries() -> None:
+    gc = FakeGraphClient({
+        "drive-1": {},
+        "drive-2": {"Briefs": {"id": "item-1", "name": "Briefs", "folder": {}}},
+    })
+
+    drive, item = _find_sp_item_by_path(gc, "paidmedia", "Briefs")
+
+    assert drive["name"] == "Campaign Assets"
+    assert item["id"] == "item-1"
+
+
+def test_find_sharepoint_path_requires_library_when_ambiguous() -> None:
+    gc = FakeGraphClient({
+        "drive-1": {"General": {"id": "item-1", "name": "General", "folder": {}}},
+        "drive-2": {"General": {"id": "item-2", "name": "General", "folder": {}}},
+    })
+
+    with pytest.raises(ValueError, match="multiple libraries"):
+        _find_sp_item_by_path(gc, "paidmedia", "General")
+
+    drive, item = _find_sp_item_by_path(gc, "paidmedia", "General", "campaign")
+
+    assert drive["name"] == "Campaign Assets"
+    assert item["id"] == "item-2"

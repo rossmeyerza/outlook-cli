@@ -263,23 +263,40 @@ Browse:
 
 ```bash
 outlook-cli files sites
+outlook-cli files libraries --site "Client"
 outlook-cli files list
 outlook-cli files list "Documents"
-outlook-cli files list "Shared Documents" --site "Client"
+outlook-cli files list --site "Client"
+outlook-cli files list "General" --site "Client" --library "Documents"
+outlook-cli files search "budget" --site "Client" --count 20
+outlook-cli files search "budget" --site "Client" --library "Documents"
 ```
 
 Download/upload/mutate only when requested:
 
 ```bash
 outlook-cli files download "Documents/report.pdf" ./downloads/
-outlook-cli files download "Shared Documents/report.pdf" ./downloads/ --site "Client" --overwrite
-outlook-cli files upload ./deck.pptx "Shared Documents" --site "Client"
+outlook-cli files download "General/report.pdf" ./downloads/ --site "Client" --library "Documents" --overwrite
+outlook-cli files upload ./deck.pptx "General" --site "Client" --library "Documents"
 outlook-cli files mkdir "Documents/Reports"
+outlook-cli files mkdir "Reports" --site "Client" --library "Documents"
 outlook-cli files rename "Documents/old.pdf" "new.pdf"
 outlook-cli files move "Documents/file.pdf" "Archive"
 ```
 
-Use `files sites` to discover SharePoint site names before using `--site`. Site matching is partial by name.
+Use `files sites` to discover SharePoint site names before using `--site`. Use `files libraries --site <name>` before SharePoint browsing if the document library is unclear. Site and library matching are partial by name. `files list --site <name>` lists the available document libraries; pass `--library <name>` to browse a library root. When `--library` is omitted for a non-root SharePoint path, the CLI checks all document libraries and asks for `--library` if the path is ambiguous.
+
+## Shell Completion
+
+```bash
+outlook-cli completion bash
+outlook-cli completion zsh
+outlook-cli completion fish
+outlook-cli completion powershell
+outlook-cli completion nushell
+```
+
+Bash/zsh/fish/PowerShell completions use `argcomplete` against the live parser. Nushell emits static `extern` definitions; regenerate after upgrading to pick up new commands and flags.
 
 ## OneNote
 

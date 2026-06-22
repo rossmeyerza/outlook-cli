@@ -86,16 +86,26 @@ outlook-cli gateway stop
 
 # Files (OneDrive and SharePoint)
 outlook-cli files sites                    # list SharePoint sites you're a member of
+outlook-cli files libraries --site "Tesco" # list SharePoint document libraries
 outlook-cli files list                     # list OneDrive root
 outlook-cli files list "Documents/Reports" # list OneDrive subfolder
-outlook-cli files list --site "Tesco"      # list SharePoint site root
-outlook-cli files list --site "Tesco" "Shared Documents"  # list SharePoint subfolder
+outlook-cli files list --site "Tesco"      # list SharePoint document libraries
+outlook-cli files list --site "Tesco" --library "Documents" "General" # list SharePoint folder
+outlook-cli files search budget --site "Tesco" -n 20 # search SharePoint libraries
+outlook-cli files search budget --site "Tesco" --library "Documents" # search one library
 outlook-cli files upload ./file.pdf "Documents"            # upload to OneDrive
-outlook-cli files upload ./file.pdf "Shared Documents" --site "Tesco"  # upload to SharePoint
+outlook-cli files upload ./file.pdf "General" --site "Tesco" --library "Documents" # upload to SharePoint
 outlook-cli files mkdir "Documents/Q2"     # create OneDrive folder
-outlook-cli files mkdir "Shared Docs/Q2" --site "Tesco"   # create SharePoint folder
+outlook-cli files mkdir "Q2" --site "Tesco" --library "Documents" # create SharePoint folder
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
 outlook-cli files move "Documents/file.pdf" "Archive"     # move
+
+# Shell completion
+outlook-cli completion bash                # print bash completion script
+outlook-cli completion zsh                 # print zsh completion script
+outlook-cli completion fish                # print fish completion script
+outlook-cli completion powershell          # print PowerShell completion script
+outlook-cli completion nushell             # print Nushell extern definitions
 
 # Signatures
 outlook-cli signature fetch                # fetch new + reply signatures from OWA (no MFA after first auth)
@@ -141,7 +151,8 @@ outlook-cli config check                   # validate local config without print
 - **Gateway file publishing**: Pi must not send Teams messages directly. To send generated files back to Teams, create files under the per-chat workspace and write `.marlow-export.json` with JSON like `{"files":["report.html"],"message":"Created the report."}`. The gateway validates relative paths, uploads supported file types to OneDrive under `Outlook CLI/Gateway/<chat-hash>/`, creates organization view links, posts them, and removes the manifest.
 - **Gateway commands in Teams**: Use `@Marlow !help`, `@Marlow !commands`, or `@Marlow !help <command>` to list commands. Current commands include `!status`, `!new`, `!reset`, `!model`, `!pause`, `!resume`, `!tools`, `!files`, `!send`, and `!logs`.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
-- **Files**: `files sites` lists SharePoint sites via M365 group membership. `--site` does a case-insensitive partial name match. Without `--site`, operations target personal OneDrive. Uploads under 4 MB use a single PUT; larger files use chunked upload sessions. Uses the Microsoft Graph token.
+- **Files**: `files sites` lists SharePoint sites via M365 group membership. `files libraries --site <name>` lists SharePoint document libraries. `files list --site <name>` shows libraries; use `--library <name>` to browse or mutate a specific document library. `files search <query> --site <name>` searches across document libraries, or one library with `--library`. `--site` and `--library` do case-insensitive partial name matches. Without `--site`, operations target personal OneDrive. Uploads under 4 MB use a single PUT; larger files use chunked upload sessions. Uses the Microsoft Graph token.
+- **Shell completion**: `completion <bash|zsh|fish|powershell|nushell>` prints a completion script. Bash/zsh/fish/PowerShell use `argcomplete`; Nushell emits static extern definitions.
 - **Signatures**: `signature fetch` opens a headless browser with the active account's saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 - **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state for the active account. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser. Existing single-account installs keep using `~/.config/outlook-cli/.env` and do not need to re-authenticate unless you switch to a new profile or tokens are expired.
 

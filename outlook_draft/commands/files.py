@@ -6,6 +6,7 @@ import logging
 import math
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from rich.console import Console
@@ -192,9 +193,16 @@ class _GraphClient:
         return resp.json()
 
     def sp_list_drives(self, site_id: str) -> list[dict]:
-        resp = self._request("GET", f"{GRAPH_BASE}/sites/{site_id}/drives",
-                             params={"$select": "id,name,driveType,webUrl"})
-        return resp.json().get("value", [])
+        url = f"{GRAPH_BASE}/sites/{site_id}/drives"
+        params: dict | None = {"$select": "id,name,driveType,webUrl", "$top": "200"}
+        drives = []
+        while url:
+            resp = self._request("GET", url, params=params)
+            data = resp.json()
+            drives.extend(data.get("value", []))
+            url = data.get("@odata.nextLink")
+            params = None
+        return drives
 
     def sp_item_by_path(self, drive_id: str, path: str) -> dict:
         path = path.strip("/")
@@ -217,6 +225,19 @@ class _GraphClient:
             url = data.get("@odata.nextLink")
             params = None
         return items
+
+    def sp_search(self, drive_id: str, query: str, top: int) -> list[dict]:
+        encoded_query = quote(query.replace("'", "''"), safe="")
+        url = f"{GRAPH_BASE}/drives/{drive_id}/root/search(q='{encoded_query}')"
+        params: dict | None = {"$select": ITEM_SELECT, "$top": str(top)}
+        items = []
+        while url and len(items) < top:
+            resp = self._request("GET", url, params=params)
+            data = resp.json()
+            items.extend(data.get("value", []))
+            url = data.get("@odata.nextLink")
+            params = None
+        return items[:top]
 
     def sp_upload(self, drive_id: str, parent_id: str, name: str, local_path: Path) -> dict:
         data = local_path.read_bytes()
@@ -288,11 +309,10 @@ class _GraphClient:
 
 # ── Site resolution helper ────────────────────────────────────────
 
-def _resolve_site(gc: _GraphClient, site_hint: str) -> tuple[str, str, str]:
-    """Resolve a site hint to (group_id, site_id, drive_id).
+def _resolve_site_drives(gc: _GraphClient, site_hint: str) -> tuple[dict, str, list[dict]]:
+    """Resolve a site hint to (group, site_id, drives).
 
     site_hint is matched case-insensitively against group displayName.
-    Returns the default document library drive.
     """
     groups = gc.sp_list_sites()
     hint_lower = site_hint.lower()
@@ -312,13 +332,77 @@ def _resolve_site(gc: _GraphClient, site_hint: str) -> tuple[str, str, str]:
     group = matches[0]
     site = gc.sp_get_site(group["id"])
     site_id = site["id"]
-
     drives = gc.sp_list_drives(site_id)
-    # Prefer the default document library (driveType == documentLibrary)
-    doc_drives = [d for d in drives if d.get("driveType") == "documentLibrary"]
-    drive = doc_drives[0] if doc_drives else drives[0]
+    return group, site_id, drives
 
+
+def _document_library_drives(drives: list[dict]) -> list[dict]:
+    doc_drives = [d for d in drives if d.get("driveType") == "documentLibrary"]
+    return doc_drives or drives
+
+
+def _match_library(drives: list[dict], library_hint: str) -> dict:
+    hint_lower = library_hint.lower()
+    matches = [d for d in drives if hint_lower in d.get("name", "").lower()]
+
+    if not matches:
+        names = [d.get("name", "") for d in drives]
+        raise ValueError(
+            f"No library matching {library_hint!r}. Available: {', '.join(names)}"
+        )
+    if len(matches) > 1:
+        names = [d.get("name", "") for d in matches]
+        raise ValueError(
+            f"Ambiguous library {library_hint!r}, matched: {', '.join(names)}. Be more specific."
+        )
+    return matches[0]
+
+
+def _resolve_site(gc: _GraphClient, site_hint: str, library_hint: str | None = None) -> tuple[str, str, str]:
+    """Resolve a site hint to (group_id, site_id, drive_id)."""
+    group, site_id, drives = _resolve_site_drives(gc, site_hint)
+    candidate_drives = _document_library_drives(drives)
+    if not candidate_drives:
+        raise ValueError(f"No document libraries found for site {site_hint!r}.")
+    drive = _match_library(candidate_drives, library_hint) if library_hint else candidate_drives[0]
     return group["id"], site_id, drive["id"]
+
+
+def _find_sp_item_by_path(
+    gc: _GraphClient,
+    site_hint: str,
+    path: str,
+    library_hint: str | None = None,
+) -> tuple[dict, dict]:
+    """Resolve a SharePoint path, checking all document libraries when needed."""
+    _, _, drives = _resolve_site_drives(gc, site_hint)
+    candidate_drives = _document_library_drives(drives)
+    if library_hint:
+        candidate_drives = [_match_library(candidate_drives, library_hint)]
+    if not candidate_drives:
+        raise ValueError(f"No document libraries found for site {site_hint!r}.")
+
+    errors = []
+    matches = []
+    for drive in candidate_drives:
+        try:
+            item = gc.sp_item_by_path(drive["id"], path)
+        except OutlookAPIError as e:
+            errors.append(e)
+            continue
+        matches.append((drive, item))
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        names = [d.get("name", "") for d, _ in matches]
+        raise ValueError(
+            f"Path {path or '/'} exists in multiple libraries: {', '.join(names)}. "
+            "Use --library to choose one."
+        )
+    if errors:
+        raise errors[0]
+    raise ValueError(f"Path not found: {path or '/'}")
 
 
 # ── Formatting helpers ────────────────────────────────────────────
@@ -362,6 +446,58 @@ def _print_items(items: list[dict], path: str, location: str) -> None:
     console.print(f"[dim]{location}[/] [cyan]{path or '/'}[/]")
     console.print(table)
     console.print(f"[dim]{len(folders)} folder(s), {len(files)} file(s)[/]")
+
+
+def _print_libraries(drives: list[dict], site: str) -> None:
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("URL")
+
+    for drive in sorted(drives, key=lambda x: x.get("name", "").lower()):
+        table.add_row(
+            f"[bold blue]{drive.get('name', '')}[/]",
+            drive.get("driveType", ""),
+            drive.get("webUrl", ""),
+        )
+
+    console.print(f"[dim]SharePoint: {site} libraries[/]")
+    console.print(table)
+    console.print(f"[dim]{len(drives)} library/libraries[/]")
+
+
+def _parent_path(item: dict, fallback_library: str = "") -> str:
+    parent = item.get("parentReference") or {}
+    parent_path = parent.get("path") or ""
+    marker = "/root:"
+    if marker not in parent_path:
+        return fallback_library
+    relpath = parent_path.split(marker, 1)[1].strip("/")
+    if fallback_library and relpath:
+        return f"{fallback_library}/{relpath}"
+    return relpath or fallback_library
+
+
+def _print_search_results(items: list[dict], query: str, location: str) -> None:
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
+    table.add_column("Name")
+    table.add_column("Type", width=6)
+    table.add_column("Size", justify="right", width=10)
+    table.add_column("Path")
+    table.add_column("Modified", width=20)
+
+    for item in items:
+        table.add_row(
+            item.get("name", ""),
+            "dir" if "folder" in item else "file",
+            "" if "folder" in item else _fmt_size(item.get("size")),
+            _parent_path(item, item.get("_library", "")),
+            item.get("lastModifiedDateTime", "")[:10],
+        )
+
+    console.print(f"[dim]{location} search[/] [cyan]{query}[/]")
+    console.print(table)
+    console.print(f"[dim]{len(items)} result(s)[/]")
 
 
 def _download_destination(dest: str, remote_name: str) -> Path:
@@ -414,24 +550,78 @@ def cmd_files_sites(args) -> None:
     console.print(f"[dim]{len(groups)} site(s)[/]")
 
 
+def cmd_files_libraries(args) -> None:
+    """List document libraries in a SharePoint site."""
+    site: str = args.site
+    gc = _GraphClient()
+    try:
+        with spinner(args, "Loading SharePoint libraries..."):
+            _, _, drives = _resolve_site_drives(gc, site)
+            libraries = _document_library_drives(drives)
+        _print_libraries(libraries, site)
+    except (OutlookAPIError, ValueError) as e:
+        console.print(f"[red]Error:[/] {e}")
+    finally:
+        gc.close()
+
+
 def cmd_files_list(args) -> None:
     """List files in OneDrive or a SharePoint site."""
     path: str = getattr(args, "path", "") or ""
     site: str | None = getattr(args, "site", None)
+    library: str | None = getattr(args, "library", None)
 
     gc = _GraphClient()
     try:
         with spinner(args, "Loading files..."):
             if site:
-                _, site_id, drive_id = _resolve_site(gc, site)
-                item = gc.sp_item_by_path(drive_id, path)
+                if not path and not library:
+                    _, _, drives = _resolve_site_drives(gc, site)
+                    children = []
+                    location = f"SharePoint: {site}"
+                    _print_libraries(_document_library_drives(drives), site)
+                    return
+                drive, item = _find_sp_item_by_path(gc, site, path, library)
+                drive_id = drive["id"]
                 children = gc.sp_list_children(drive_id, item["id"])
-                location = f"SharePoint: {site}"
+                location = f"SharePoint: {site} / {drive.get('name', '')}"
             else:
                 item = gc.od_item_by_path(path)
                 children = gc.od_list_children(item["id"])
                 location = "OneDrive"
         _print_items(children, path, location)
+    except (OutlookAPIError, ValueError) as e:
+        console.print(f"[red]Error:[/] {e}")
+    finally:
+        gc.close()
+
+
+def cmd_files_search(args) -> None:
+    """Search files in OneDrive or SharePoint document libraries."""
+    query: str = args.query
+    count: int = args.count
+    site: str | None = getattr(args, "site", None)
+    library: str | None = getattr(args, "library", None)
+
+    gc = _GraphClient()
+    try:
+        with spinner(args, "Searching files..."):
+            if site:
+                _, _, drives = _resolve_site_drives(gc, site)
+                candidate_drives = _document_library_drives(drives)
+                if library:
+                    candidate_drives = [_match_library(candidate_drives, library)]
+                results = []
+                per_drive_count = count if len(candidate_drives) == 1 else max(count, 25)
+                for drive in candidate_drives:
+                    for item in gc.sp_search(drive["id"], query, per_drive_count):
+                        item["_library"] = drive.get("name", "")
+                        results.append(item)
+                results = results[:count]
+                location = f"SharePoint: {site}"
+            else:
+                raise ValueError("Search currently requires --site for SharePoint.")
+        _print_search_results(results, query, location)
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -455,7 +645,8 @@ def cmd_files_upload(args) -> None:
     gc = _GraphClient()
     try:
         if site:
-            _, site_id, drive_id = _resolve_site(gc, site)
+            library: str | None = getattr(args, "library", None)
+            _, _, drive_id = _resolve_site(gc, site, library)
             parent = gc.sp_item_by_path(drive_id, remote_path)
             result = gc.sp_upload(drive_id, parent["id"], name, local_path)
         else:
@@ -480,8 +671,9 @@ def cmd_files_download(args) -> None:
     try:
         with spinner(args, "Downloading file..."):
             if site:
-                _, site_id, drive_id = _resolve_site(gc, site)
-                item = gc.sp_item_by_path(drive_id, remote_path)
+                library: str | None = getattr(args, "library", None)
+                drive, item = _find_sp_item_by_path(gc, site, remote_path, library)
+                drive_id = drive["id"]
                 if "folder" in item:
                     raise ValueError("Download currently supports files, not folders.")
                 data = gc.sp_download(drive_id, item["id"])
@@ -515,7 +707,8 @@ def cmd_files_mkdir(args) -> None:
     try:
         with spinner(args, "Creating folder..."):
             if site:
-                _, site_id, drive_id = _resolve_site(gc, site)
+                library: str | None = getattr(args, "library", None)
+                _, _, drive_id = _resolve_site(gc, site, library)
                 parent = gc.sp_item_by_path(drive_id, parent_path)
                 result = gc.sp_mkdir(drive_id, parent["id"], name)
             else:
@@ -538,8 +731,9 @@ def cmd_files_rename(args) -> None:
     try:
         with spinner(args, "Renaming item..."):
             if site:
-                _, site_id, drive_id = _resolve_site(gc, site)
-                item = gc.sp_item_by_path(drive_id, item_path)
+                library: str | None = getattr(args, "library", None)
+                drive, item = _find_sp_item_by_path(gc, site, item_path, library)
+                drive_id = drive["id"]
                 result = gc.sp_rename(drive_id, item["id"], new_name)
             else:
                 item = gc.od_item_by_path(item_path)
@@ -561,8 +755,9 @@ def cmd_files_move(args) -> None:
     try:
         with spinner(args, "Moving item..."):
             if site:
-                _, site_id, drive_id = _resolve_site(gc, site)
-                item = gc.sp_item_by_path(drive_id, item_path)
+                library: str | None = getattr(args, "library", None)
+                drive, item = _find_sp_item_by_path(gc, site, item_path, library)
+                drive_id = drive["id"]
                 dest = gc.sp_item_by_path(drive_id, dest_path)
                 result = gc.sp_move(drive_id, item["id"], dest["id"])
             else:
