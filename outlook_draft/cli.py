@@ -36,6 +36,7 @@ from rich.table import Table
 
 from . import config
 from . import cache
+from . import completion
 from .cache import CAL_CACHE, CONTACT_CACHE, MAIL_CACHE, TASK_CACHE, load_cache
 from .commands import calendar as calendar_commands
 from .commands import contacts as contacts_commands
@@ -1012,6 +1013,10 @@ def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
     return cleaned, account
 
 
+def cmd_completion(args: argparse.Namespace) -> None:
+    completion.print_completion(args.shell, args._parser)
+
+
 def main() -> None:
     argv, account_override = _extract_account_arg(sys.argv[1:])
     parser = argparse.ArgumentParser(
@@ -1596,6 +1601,22 @@ def main() -> None:
     cmd_config_check_parser = config_sub.add_parser("check", help="Validate local configuration")
     add_output_args(cmd_config_check_parser)
     cmd_config_check_parser.set_defaults(func=cmd_config_check)
+
+    # ── Completion ────────────────────────────────────────────────────
+    p_completion = sub.add_parser(
+        "completion",
+        help="Print a shell completion script",
+    )
+    p_completion.add_argument("shell", choices=list(completion.SHELLS))
+    p_completion.set_defaults(func=cmd_completion, _parser=parser)
+
+    # Let argcomplete service tab-completion requests for bash/zsh/fish.
+    try:
+        import argcomplete
+    except ImportError:
+        pass
+    else:
+        argcomplete.autocomplete(parser)
 
     args = parser.parse_args(argv)
 

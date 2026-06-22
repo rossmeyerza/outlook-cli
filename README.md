@@ -301,6 +301,39 @@ Use a visible browser instead:
 outlook-cli auth --headed
 ```
 
+### Shell completions
+
+`outlook-cli completion <shell>` prints a completion script for `bash`, `zsh`,
+`fish`, `powershell`, or `nushell`.
+
+bash / zsh / fish / powershell are powered by [argcomplete](https://github.com/kislyuk/argcomplete),
+which completes against the live command tree (subcommands, flags, and
+choices like `--importance Low/Normal/High`). Register it once in your shell:
+
+```bash
+# bash (~/.bashrc) or zsh (~/.zshrc)
+eval "$(outlook-cli completion bash)"   # use zsh in zsh
+
+# fish (~/.config/fish/config.fish)
+outlook-cli completion fish | source
+```
+
+```powershell
+# PowerShell ($PROFILE)
+outlook-cli completion powershell | Out-String | Invoke-Expression
+```
+
+Nushell has no argparse bridge, so the script is a generated module of
+`extern` definitions. Save it and source it from your config:
+
+```nushell
+outlook-cli completion nushell | save -f ~/.cache/outlook-cli.nu
+# then in config.nu:
+source ~/.cache/outlook-cli.nu
+```
+
+Re-run the command after upgrading to pick up new subcommands or flags.
+
 ## Configuration
 
 Config file:
