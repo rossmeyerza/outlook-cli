@@ -268,8 +268,11 @@ outlook-cli files list
 outlook-cli files list "Documents"
 outlook-cli files list --site "Client"
 outlook-cli files list "General" --site "Client" --library "Documents"
+outlook-cli files list "General" --site "Client" --library "Documents" --links
+outlook-cli files list "General" --site "Client" --library "Documents" --json
 outlook-cli files search "budget" --site "Client" --count 20
-outlook-cli files search "budget" --site "Client" --library "Documents"
+outlook-cli files search "budget" --site "Client" --library "Documents" --links
+outlook-cli files search "budget" --site "Client" --json
 ```
 
 Download/upload/mutate only when requested:
@@ -285,6 +288,8 @@ outlook-cli files move "Documents/file.pdf" "Archive"
 ```
 
 Use `files sites` to discover SharePoint site names before using `--site`. Use `files libraries --site <name>` before SharePoint browsing if the document library is unclear. Site and library matching are partial by name. `files list --site <name>` lists the available document libraries; pass `--library <name>` to browse a library root. When `--library` is omitted for a non-root SharePoint path, the CLI checks all document libraries and asks for `--library` if the path is ambiguous.
+
+Use `--json` for agent-readable file output; list and search results include `path`, `parentPath`, `library`, and `webUrl`. Use `--links` when a human-readable table should include SharePoint/OneDrive browser links. Browser links open the item in Microsoft 365; `files download` downloads file bytes to local disk.
 
 ## Shell Completion
 

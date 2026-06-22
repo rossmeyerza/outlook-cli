@@ -46,3 +46,17 @@ def test_no_spinner_global_flag_is_accepted() -> None:
     output = run_help("--no-spinner", "teams", "search", "ross")
 
     assert "--scan" in output
+
+
+def test_files_list_output_flags_are_accepted() -> None:
+    output = run_help("files", "list", "--json")
+
+    assert "--json" in output
+    assert "--links" in output
+
+
+def test_files_search_links_flag_is_accepted() -> None:
+    output = run_help("files", "search", "budget", "--site", "Client", "--links")
+
+    assert "--json" in output
+    assert "--links" in output

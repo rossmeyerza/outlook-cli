@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -23,7 +24,7 @@ console = Console()
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 UPLOAD_CHUNK_SIZE = 10 * 320 * 1024  # 3.2 MB
-ITEM_SELECT = "id,name,size,lastModifiedDateTime,file,folder,parentReference"
+ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentReference"
 
 
 # ── Graph client (sync, reuses existing token infrastructure) ─────
@@ -417,12 +418,60 @@ def _fmt_size(size: int | None) -> str:
     return f"{size:.1f} TB"
 
 
-def _print_items(items: list[dict], path: str, location: str) -> None:
+def _print_json(value: Any) -> None:
+    print(json.dumps(value, indent=2, ensure_ascii=False))
+
+
+def _item_type(item: dict) -> str:
+    return "dir" if "folder" in item else "file"
+
+
+def _item_path(item: dict, fallback_library: str = "") -> str:
+    parent = _parent_path(item, fallback_library)
+    name = item.get("name", "")
+    return f"{parent}/{name}".strip("/") if parent else name
+
+
+def _item_summary(item: dict, *, library: str = "") -> dict:
+    return {
+        "id": item.get("id", ""),
+        "name": item.get("name", ""),
+        "type": _item_type(item),
+        "size": item.get("size"),
+        "modified": item.get("lastModifiedDateTime", ""),
+        "path": _item_path(item, library),
+        "parentPath": _parent_path(item, library),
+        "webUrl": item.get("webUrl", ""),
+        "library": library,
+    }
+
+
+def _drive_summary(drive: dict) -> dict:
+    return {
+        "id": drive.get("id", ""),
+        "name": drive.get("name", ""),
+        "type": drive.get("driveType", ""),
+        "webUrl": drive.get("webUrl", ""),
+    }
+
+
+def _site_summary(group: dict) -> dict:
+    return {
+        "id": group.get("id", ""),
+        "name": group.get("displayName", ""),
+        "email": group.get("mail", ""),
+        "description": group.get("description") or "",
+    }
+
+
+def _print_items(items: list[dict], path: str, location: str, *, show_links: bool = False) -> None:
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     table.add_column("Name")
     table.add_column("Type", width=6)
     table.add_column("Size", justify="right", width=10)
     table.add_column("Modified", width=20)
+    if show_links:
+        table.add_column("Link", overflow="fold")
 
     # Folders first, then files
     folders = [i for i in items if "folder" in i]
@@ -434,6 +483,7 @@ def _print_items(items: list[dict], path: str, location: str) -> None:
             "dir",
             "",
             item.get("lastModifiedDateTime", "")[:10],
+            *([item.get("webUrl", "")] if show_links else []),
         )
     for item in sorted(files, key=lambda x: x["name"].lower()):
         table.add_row(
@@ -441,6 +491,7 @@ def _print_items(items: list[dict], path: str, location: str) -> None:
             "file",
             _fmt_size(item.get("size")),
             item.get("lastModifiedDateTime", "")[:10],
+            *([item.get("webUrl", "")] if show_links else []),
         )
 
     console.print(f"[dim]{location}[/] [cyan]{path or '/'}[/]")
@@ -448,17 +499,18 @@ def _print_items(items: list[dict], path: str, location: str) -> None:
     console.print(f"[dim]{len(folders)} folder(s), {len(files)} file(s)[/]")
 
 
-def _print_libraries(drives: list[dict], site: str) -> None:
+def _print_libraries(drives: list[dict], site: str, *, show_links: bool = True) -> None:
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     table.add_column("Name")
     table.add_column("Type")
-    table.add_column("URL")
+    if show_links:
+        table.add_column("URL", overflow="fold")
 
     for drive in sorted(drives, key=lambda x: x.get("name", "").lower()):
         table.add_row(
             f"[bold blue]{drive.get('name', '')}[/]",
             drive.get("driveType", ""),
-            drive.get("webUrl", ""),
+            *([drive.get("webUrl", "")] if show_links else []),
         )
 
     console.print(f"[dim]SharePoint: {site} libraries[/]")
@@ -478,13 +530,15 @@ def _parent_path(item: dict, fallback_library: str = "") -> str:
     return relpath or fallback_library
 
 
-def _print_search_results(items: list[dict], query: str, location: str) -> None:
+def _print_search_results(items: list[dict], query: str, location: str, *, show_links: bool = False) -> None:
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     table.add_column("Name")
     table.add_column("Type", width=6)
     table.add_column("Size", justify="right", width=10)
     table.add_column("Path")
     table.add_column("Modified", width=20)
+    if show_links:
+        table.add_column("Link", overflow="fold")
 
     for item in items:
         table.add_row(
@@ -493,6 +547,7 @@ def _print_search_results(items: list[dict], query: str, location: str) -> None:
             "" if "folder" in item else _fmt_size(item.get("size")),
             _parent_path(item, item.get("_library", "")),
             item.get("lastModifiedDateTime", "")[:10],
+            *([item.get("webUrl", "")] if show_links else []),
         )
 
     console.print(f"[dim]{location} search[/] [cyan]{query}[/]")
@@ -532,7 +587,14 @@ def cmd_files_sites(args) -> None:
         gc.close()
 
     if not groups:
+        if getattr(args, "json", False):
+            _print_json([])
+            return
         console.print("No SharePoint sites found.")
+        return
+
+    if getattr(args, "json", False):
+        _print_json([_site_summary(g) for g in sorted(groups, key=lambda x: x["displayName"].lower())])
         return
 
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold")
@@ -558,7 +620,10 @@ def cmd_files_libraries(args) -> None:
         with spinner(args, "Loading SharePoint libraries..."):
             _, _, drives = _resolve_site_drives(gc, site)
             libraries = _document_library_drives(drives)
-        _print_libraries(libraries, site)
+        if getattr(args, "json", False):
+            _print_json([_drive_summary(d) for d in libraries])
+            return
+        _print_libraries(libraries, site, show_links=getattr(args, "links", True))
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -570,6 +635,7 @@ def cmd_files_list(args) -> None:
     path: str = getattr(args, "path", "") or ""
     site: str | None = getattr(args, "site", None)
     library: str | None = getattr(args, "library", None)
+    show_links: bool = bool(getattr(args, "links", False))
 
     gc = _GraphClient()
     try:
@@ -577,19 +643,26 @@ def cmd_files_list(args) -> None:
             if site:
                 if not path and not library:
                     _, _, drives = _resolve_site_drives(gc, site)
-                    children = []
-                    location = f"SharePoint: {site}"
-                    _print_libraries(_document_library_drives(drives), site)
+                    libraries = _document_library_drives(drives)
+                    if getattr(args, "json", False):
+                        _print_json([_drive_summary(d) for d in libraries])
+                        return
+                    _print_libraries(libraries, site, show_links=True)
                     return
                 drive, item = _find_sp_item_by_path(gc, site, path, library)
                 drive_id = drive["id"]
                 children = gc.sp_list_children(drive_id, item["id"])
                 location = f"SharePoint: {site} / {drive.get('name', '')}"
+                item_library = drive.get("name", "")
             else:
                 item = gc.od_item_by_path(path)
                 children = gc.od_list_children(item["id"])
                 location = "OneDrive"
-        _print_items(children, path, location)
+                item_library = ""
+        if getattr(args, "json", False):
+            _print_json([_item_summary(i, library=item_library) for i in children])
+            return
+        _print_items(children, path, location, show_links=show_links)
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -602,6 +675,7 @@ def cmd_files_search(args) -> None:
     count: int = args.count
     site: str | None = getattr(args, "site", None)
     library: str | None = getattr(args, "library", None)
+    show_links: bool = bool(getattr(args, "links", False))
 
     gc = _GraphClient()
     try:
@@ -621,7 +695,10 @@ def cmd_files_search(args) -> None:
                 location = f"SharePoint: {site}"
             else:
                 raise ValueError("Search currently requires --site for SharePoint.")
-        _print_search_results(results, query, location)
+        if getattr(args, "json", False):
+            _print_json([_item_summary(i, library=i.get("_library", "")) for i in results])
+            return
+        _print_search_results(results, query, location, show_links=show_links)
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -654,6 +731,8 @@ def cmd_files_upload(args) -> None:
             result = gc.od_upload(parent["id"], name, local_path)
         console.print(f"[green]Uploaded[/] → {result.get('name')} "
                       f"({_fmt_size(result.get('size'))})")
+        if result.get("webUrl"):
+            console.print(f"[dim]Link:[/] {result['webUrl']}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -715,6 +794,8 @@ def cmd_files_mkdir(args) -> None:
                 parent = gc.od_item_by_path(parent_path)
                 result = gc.od_mkdir(parent["id"], name)
         console.print(f"[green]Created[/] folder: {result.get('name')}")
+        if result.get("webUrl"):
+            console.print(f"[dim]Link:[/] {result['webUrl']}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -739,6 +820,8 @@ def cmd_files_rename(args) -> None:
                 item = gc.od_item_by_path(item_path)
                 result = gc.od_rename(item["id"], new_name)
         console.print(f"[green]Renamed[/] → {result.get('name')}")
+        if result.get("webUrl"):
+            console.print(f"[dim]Link:[/] {result['webUrl']}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:
@@ -765,6 +848,8 @@ def cmd_files_move(args) -> None:
                 dest = gc.od_item_by_path(dest_path)
                 result = gc.od_move(item["id"], dest["id"])
         console.print(f"[green]Moved[/] → {result.get('name')}")
+        if result.get("webUrl"):
+            console.print(f"[dim]Link:[/] {result['webUrl']}")
     except (OutlookAPIError, ValueError) as e:
         console.print(f"[red]Error:[/] {e}")
     finally:

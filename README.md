@@ -231,34 +231,42 @@ After the Pi response is posted, the gateway validates the paths, uploads the fi
 ```bash
 # Discover SharePoint sites
 outlook-cli files sites
+outlook-cli files libraries --site "Tesco"
 
 # Browse
 outlook-cli files list                                     # OneDrive root
 outlook-cli files list "Documents/Reports"                 # OneDrive subfolder
-outlook-cli files list --site "Tesco"                      # SharePoint site root
-outlook-cli files list --site "Tesco" "Shared Documents"   # SharePoint subfolder
+outlook-cli files list --site "Tesco"                      # SharePoint libraries
+outlook-cli files list "General" --site "Tesco" --library "Documents"
+outlook-cli files list "General" --site "Tesco" --library "Documents" --links
+outlook-cli files list "General" --site "Tesco" --library "Documents" --json
+
+# Search SharePoint
+outlook-cli files search budget --site "Tesco"
+outlook-cli files search budget --site "Tesco" --library "Documents" --links
+outlook-cli files search budget --site "Tesco" --json
 
 # Upload
 outlook-cli files upload ./report.pdf "Documents/Reports"
-outlook-cli files upload ./deck.pptx "Shared Documents" --site "Tesco"
+outlook-cli files upload ./deck.pptx "General" --site "Tesco" --library "Documents"
 
 # Download
 outlook-cli files download "Documents/Reports/report.pdf"
 outlook-cli files download "Documents/Reports/report.pdf" ./downloads/
-outlook-cli files download "Shared Documents/deck.pptx" ./deck.pptx --site "Tesco"
+outlook-cli files download "General/deck.pptx" ./deck.pptx --site "Tesco" --library "Documents"
 
 # Create folders
 outlook-cli files mkdir "Documents/Reports/Q2"
-outlook-cli files mkdir "Shared Documents/Proposals" --site "Tesco"
+outlook-cli files mkdir "Proposals" --site "Tesco" --library "Documents"
 
 # Rename and move
 outlook-cli files rename "Documents/old.pdf" "new.pdf"
-outlook-cli files rename "Shared Documents/old.pdf" "new.pdf" --site "Tesco"
+outlook-cli files rename "General/old.pdf" "new.pdf" --site "Tesco" --library "Documents"
 outlook-cli files move "Documents/file.pdf" "Archive"
-outlook-cli files move "Shared Documents/file.pdf" "Archive" --site "Tesco"
+outlook-cli files move "General/file.pdf" "Archive" --site "Tesco" --library "Documents"
 ```
 
-`--site` matches case-insensitively and accepts partial names — `--site nestle` will find "MAP Nestle" without needing the full name. If the match is ambiguous it tells you which names matched. Without `--site`, all operations target your personal OneDrive.
+`--site` and `--library` match case-insensitively and accept partial names. `files list --site <name>` shows document libraries; pass `--library <name>` to browse or mutate a library. `--links` adds browser links to table output. `--json` returns machine-readable items with `path`, `parentPath`, `library`, and `webUrl`. `files download` downloads file bytes to disk; browser links are for opening the file in SharePoint/OneDrive.
 
 Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 

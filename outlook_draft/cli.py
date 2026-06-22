@@ -1521,26 +1521,34 @@ def main() -> None:
 
     # ── Files (OneDrive + SharePoint) ────────────────────────────────
     p_files = sub.add_parser("files", help="Browse and manage OneDrive and SharePoint files")
+    add_output_args(p_files)
     files_sub = p_files.add_subparsers(dest="command", required=True)
 
     cmd_files_sites_p = files_sub.add_parser("sites", help="List SharePoint sites")
+    add_output_args(cmd_files_sites_p)
     cmd_files_sites_p.set_defaults(func=cmd_files_sites)
 
     cmd_files_libraries_p = files_sub.add_parser("libraries", help="List SharePoint document libraries")
+    add_output_args(cmd_files_libraries_p)
     cmd_files_libraries_p.add_argument("--site", metavar="NAME", required=True, help="SharePoint site name")
+    cmd_files_libraries_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_libraries_p.set_defaults(func=cmd_files_libraries)
 
     cmd_files_list_p = files_sub.add_parser("list", help="List files and folders")
+    add_output_args(cmd_files_list_p)
     cmd_files_list_p.add_argument("path", nargs="?", default="", help="Folder path (default: root)")
     cmd_files_list_p.add_argument("--site", metavar="NAME", help="SharePoint site name (partial match)")
     cmd_files_list_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")
+    cmd_files_list_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_list_p.set_defaults(func=cmd_files_list)
 
     cmd_files_search_p = files_sub.add_parser("search", help="Search SharePoint files and folders")
+    add_output_args(cmd_files_search_p)
     cmd_files_search_p.add_argument("query", help="Search text")
     cmd_files_search_p.add_argument("--site", metavar="NAME", required=True, help="SharePoint site name")
     cmd_files_search_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")
     cmd_files_search_p.add_argument("--count", "-n", type=int, default=25, help="Max results")
+    cmd_files_search_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_search_p.set_defaults(func=cmd_files_search)
 
     cmd_files_upload_p = files_sub.add_parser("upload", help="Upload a file")

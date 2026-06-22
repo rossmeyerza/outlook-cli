@@ -7,6 +7,7 @@ import pytest
 from outlook_draft.errors import OutlookAPIError
 from outlook_draft.commands.files import (
     _find_sp_item_by_path,
+    _item_summary,
     _match_library,
     _download_destination,
     _write_download,
@@ -103,3 +104,22 @@ def test_find_sharepoint_path_requires_library_when_ambiguous() -> None:
 
     assert drive["name"] == "Campaign Assets"
     assert item["id"] == "item-2"
+
+
+def test_item_summary_includes_path_and_web_url() -> None:
+    item = {
+        "id": "item-1",
+        "name": "report.pdf",
+        "size": 1234,
+        "lastModifiedDateTime": "2026-06-22T10:00:00Z",
+        "webUrl": "https://contoso.sharepoint.com/report.pdf",
+        "file": {},
+        "parentReference": {"path": "/drives/drive-1/root:/General/Reports"},
+    }
+
+    summary = _item_summary(item, library="Documents")
+
+    assert summary["type"] == "file"
+    assert summary["path"] == "Documents/General/Reports/report.pdf"
+    assert summary["parentPath"] == "Documents/General/Reports"
+    assert summary["webUrl"] == "https://contoso.sharepoint.com/report.pdf"
