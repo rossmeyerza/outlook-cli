@@ -15,7 +15,7 @@ from rich import box
 from rich.table import Table
 
 from .. import config
-from ..errors import OutlookAPIError
+from ..errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from ..progress import spinner
 from ..token_manager import TokenManager
 
@@ -48,7 +48,7 @@ class _GraphClient:
         return self._client
 
     def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._tm.token}"}
+        return {"Authorization": f"Bearer {self._tm.get_token(auto_reauth=True)}"}
 
     def _request(
         self,
@@ -63,10 +63,10 @@ class _GraphClient:
     ) -> httpx.Response:
         import time
         client = self._ensure()
-        headers = {**self._headers(), **(extra_headers or {})}
 
         for attempt in range(max_retries + 1):
             try:
+                headers = {**self._headers(), **(extra_headers or {})}
                 resp = client.request(
                     method, url, params=params, json=json_body,
                     content=data, headers=headers,
@@ -74,9 +74,9 @@ class _GraphClient:
                 if resp.status_code in (200, 201, 202, 204):
                     return resp
                 if resp.status_code == 401:
-                    self._tm.force_reload()
-                    headers = {**self._headers(), **(extra_headers or {})}
-                    continue
+                    if self._tm.run_reauth(headless=True):
+                        continue
+                    raise OutlookAPIError(401, "Authentication failed. Run 'outlook-cli auth' to retry.")
                 if resp.status_code == 429 or resp.status_code >= 500:
                     wait = float(resp.headers.get("Retry-After", str(2 ** attempt)))
                     time.sleep(wait)
@@ -87,6 +87,8 @@ class _GraphClient:
                     time.sleep(2 ** attempt)
                     continue
                 raise OutlookAPIError(0, str(e)) from e
+            except (TokenExpiredError, TokenNotFoundError) as e:
+                raise OutlookAPIError(401, f"{e}. Authentication failed. Run 'outlook-cli auth' to retry.") from e
         raise OutlookAPIError(0, "Max retries exceeded")
 
     def close(self):

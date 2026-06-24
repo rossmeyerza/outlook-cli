@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from outlook_draft.errors import OutlookAPIError
+from outlook_draft.errors import OutlookAPIError, TokenExpiredError
 from outlook_draft.commands.files import (
+    _GraphClient,
     _find_sp_item_by_path,
     _item_summary,
     _match_library,
@@ -175,3 +176,21 @@ def test_item_summary_includes_path_and_web_url() -> None:
     assert summary["path"] == "Documents/General/Reports/report.pdf"
     assert summary["parentPath"] == "Documents/General/Reports"
     assert summary["webUrl"] == "https://contoso.sharepoint.com/report.pdf"
+
+
+def test_graph_client_converts_token_failure_to_api_error() -> None:
+    class ExpiredTokenManager:
+        def get_token(self, *, auto_reauth: bool = False) -> str:
+            raise TokenExpiredError("Graph token has expired")
+
+        def run_reauth(self, *, headless: bool = True) -> bool:
+            return False
+
+    gc = _GraphClient()
+    gc._tm = ExpiredTokenManager()  # type: ignore[assignment]
+
+    with pytest.raises(OutlookAPIError) as excinfo:
+        gc._request("GET", "https://graph.microsoft.com/v1.0/me")
+
+    assert excinfo.value.status == 401
+    assert "outlook-cli auth" in str(excinfo.value)

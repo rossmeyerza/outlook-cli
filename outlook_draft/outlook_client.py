@@ -8,7 +8,7 @@ import httpx
 
 from . import config
 from .calendar_time import outlook_timezone_prefer_header
-from .errors import OutlookAPIError, SendingDisabledError
+from .errors import OutlookAPIError, SendingDisabledError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
 from .token_manager import TokenManager
 
@@ -44,7 +44,7 @@ class OutlookClient:
 
     def _headers(self, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
         headers = {
-            "Authorization": f"Bearer {self._tm.token}",
+            "Authorization": f"Bearer {self._tm.get_token(auto_reauth=True)}",
             "Content-Type": "application/json",
         }
         headers.update(self._default_headers)
@@ -66,10 +66,10 @@ class OutlookClient:
         """Make a request to the API with retry on 401/429/5xx."""
         client = self._ensure_client()
         url = path if path.startswith("https://") else f"{self._base_url}{path}"
-        headers = self._headers(extra_headers)
 
         for attempt in range(max_retries + 1):
             try:
+                headers = self._headers(extra_headers)
                 resp = client.request(
                     method, url, params=params, json=json_body, content=data, headers=headers,
                 )
@@ -78,10 +78,10 @@ class OutlookClient:
                     return resp
 
                 if resp.status_code == 401:
-                    log.warning("401 Unauthorized, reloading token")
-                    self._tm.force_reload()
-                    headers = self._headers(extra_headers)
-                    continue
+                    log.warning("401 Unauthorized, attempting re-authentication")
+                    if self._tm.run_reauth(headless=True):
+                        continue
+                    raise OutlookAPIError(401, "Authentication failed. Run 'outlook-cli auth' to retry.")
 
                 if resp.status_code == 429 or resp.status_code >= 500:
                     retry_after = float(resp.headers.get("Retry-After", str(2 ** attempt)))
@@ -98,6 +98,8 @@ class OutlookClient:
                     time.sleep(wait)
                     continue
                 raise OutlookAPIError(0, str(e)) from e
+            except (TokenExpiredError, TokenNotFoundError) as e:
+                raise OutlookAPIError(401, f"{e}. Authentication failed. Run 'outlook-cli auth' to retry.") from e
 
         raise OutlookAPIError(0, "Max retries exceeded")
 

@@ -93,12 +93,10 @@ def _get_client(
     """Build a client, handling auth errors."""
     tm = TokenManager(token_domain=token_domain, token_label=token_label)
     try:
-        _ = tm.token
+        _ = tm.get_token(auto_reauth=True)
     except (TokenNotFoundError, TokenExpiredError):
-        console.print(f"[yellow]{token_label} token missing or expired, running auth...[/]")
-        if not tm.run_reauth():
-            console.print("[red]Authentication failed. Run 'outlook-cli auth' to retry.[/]")
-            sys.exit(1)
+        console.print(f"[red]{token_label} authentication failed. Run 'outlook-cli auth' to retry.[/]")
+        sys.exit(1)
     return OutlookClient(tm, base_url=base_url)
 
 

@@ -44,10 +44,18 @@ class TokenManager:
     @property
     def token(self) -> str:
         """Get the current valid API token, reloading if file changed."""
+        return self.get_token(auto_reauth=False)
+
+    def get_token(self, *, auto_reauth: bool = False, headless: bool = True) -> str:
+        """Get a valid API token, optionally running local re-authentication."""
         self._maybe_reload()
         if self._token is None:
+            if auto_reauth and self.run_reauth(headless=headless):
+                return self.get_token(auto_reauth=False)
             raise TokenNotFoundError(f"No {self._token_label} token available")
         if time.time() >= self._expiry:
+            if auto_reauth and self.run_reauth(headless=headless):
+                return self.get_token(auto_reauth=False)
             raise TokenExpiredError(f"{self._token_label} token has expired")
         return self._token
 

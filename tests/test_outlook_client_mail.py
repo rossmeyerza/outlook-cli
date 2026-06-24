@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 
-from outlook_draft.errors import SendingDisabledError
+from outlook_draft.errors import OutlookAPIError, SendingDisabledError, TokenExpiredError
 from outlook_draft.outlook_client import OutlookClient
 
 
@@ -111,3 +111,20 @@ def test_attachment_methods() -> None:
 
     assert client.calls[0]["path"] == "/me/messages/message-1/attachments"
     assert client.calls[1]["path"] == "/me/messages/message-1/attachments/attachment-1"
+
+
+def test_outlook_client_converts_token_failure_to_api_error() -> None:
+    class ExpiredTokenManager:
+        def get_token(self, *, auto_reauth: bool = False) -> str:
+            raise TokenExpiredError("Outlook token has expired")
+
+        def run_reauth(self, *, headless: bool = True) -> bool:
+            return False
+
+    client = OutlookClient(ExpiredTokenManager())  # type: ignore[arg-type]
+
+    with pytest.raises(OutlookAPIError) as excinfo:
+        client._request("GET", "/me")
+
+    assert excinfo.value.status == 401
+    assert "outlook-cli auth" in str(excinfo.value)
