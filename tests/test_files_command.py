@@ -15,8 +15,16 @@ from outlook_draft.commands.files import (
 
 
 class FakeGraphClient:
-    def __init__(self, items_by_drive: dict[str, dict[str, dict]]):
+    def __init__(
+        self,
+        items_by_drive: dict[str, dict[str, dict]],
+        *,
+        search_by_drive: dict[str, list[dict]] | None = None,
+        items_by_id: dict[str, dict[str, dict]] | None = None,
+    ):
         self.items_by_drive = items_by_drive
+        self.search_by_drive = search_by_drive or {}
+        self.items_by_id = items_by_id or {}
 
     def sp_list_sites(self) -> list[dict]:
         return [{"id": "group-1", "displayName": "MAP PaidMedia", "groupTypes": ["Unified"]}]
@@ -35,6 +43,18 @@ class FakeGraphClient:
             return self.items_by_drive[drive_id][path]
         except KeyError as exc:
             raise OutlookAPIError(404, "not found") from exc
+
+    def sp_item_by_id(self, drive_id: str, item_id: str) -> dict:
+        try:
+            return self.items_by_id[drive_id][item_id]
+        except KeyError as exc:
+            raise OutlookAPIError(404, "not found") from exc
+
+    def sp_search(self, drive_id: str, query: str, top: int) -> list[dict]:
+        return [
+            item for item in self.search_by_drive.get(drive_id, [])
+            if query.casefold() in item.get("name", "").casefold()
+        ][:top]
 
 
 def test_download_destination_defaults_to_current_directory() -> None:
@@ -104,6 +124,38 @@ def test_find_sharepoint_path_requires_library_when_ambiguous() -> None:
 
     assert drive["name"] == "Campaign Assets"
     assert item["id"] == "item-2"
+
+
+def test_find_sharepoint_root_file_falls_back_to_exact_search() -> None:
+    root_file = {
+        "id": "01AGUTGK2IEY4QAP4T2FAZYPYA7R5YGM2X",
+        "name": "Root File.pptx",
+        "file": {},
+        "parentReference": {"path": "/drives/drive-1/root:"},
+    }
+    gc = FakeGraphClient(
+        {"drive-1": {}, "drive-2": {}},
+        search_by_drive={"drive-1": [root_file]},
+    )
+
+    drive, item = _find_sp_item_by_path(gc, "paidmedia", "Root File.pptx", "Documents")
+
+    assert drive["name"] == "Documents"
+    assert item["id"] == "01AGUTGK2IEY4QAP4T2FAZYPYA7R5YGM2X"
+
+
+def test_find_sharepoint_item_accepts_drive_item_id() -> None:
+    item_id = "01AGUTGK2IEY4QAP4T2FAZYPYA7R5YGM2X"
+    root_file = {"id": item_id, "name": "Root File.pptx", "file": {}}
+    gc = FakeGraphClient(
+        {"drive-1": {}, "drive-2": {}},
+        items_by_id={"drive-1": {item_id: root_file}},
+    )
+
+    drive, item = _find_sp_item_by_path(gc, "paidmedia", item_id, "Documents")
+
+    assert drive["name"] == "Documents"
+    assert item["name"] == "Root File.pptx"
 
 
 def test_item_summary_includes_path_and_web_url() -> None:

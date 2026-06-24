@@ -215,6 +215,11 @@ class _GraphClient:
                                  params={"$select": ITEM_SELECT})
         return resp.json()
 
+    def sp_item_by_id(self, drive_id: str, item_id: str) -> dict:
+        resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}",
+                             params={"$select": ITEM_SELECT})
+        return resp.json()
+
     def sp_list_children(self, drive_id: str, item_id: str) -> list[dict]:
         url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/children"
         params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
@@ -359,6 +364,19 @@ def _match_library(drives: list[dict], library_hint: str) -> dict:
     return matches[0]
 
 
+def _item_path_without_library(item: dict, library: str) -> str:
+    full_path = _item_path(item, library).strip("/")
+    prefix = f"{library.strip('/')}/"
+    if library and full_path.casefold().startswith(prefix.casefold()):
+        return full_path[len(prefix):]
+    return full_path
+
+
+def _looks_like_drive_item_id(value: str) -> bool:
+    value = value.strip()
+    return bool(value) and "/" not in value and len(value) >= 20 and value.upper() == value
+
+
 def _resolve_site(gc: _GraphClient, site_hint: str, library_hint: str | None = None) -> tuple[str, str, str]:
     """Resolve a site hint to (group_id, site_id, drive_id)."""
     group, site_id, drives = _resolve_site_drives(gc, site_hint)
@@ -386,10 +404,22 @@ def _find_sp_item_by_path(
     errors = []
     matches = []
     for drive in candidate_drives:
+        if _looks_like_drive_item_id(path):
+            try:
+                item = gc.sp_item_by_id(drive["id"], path)
+                matches.append((drive, item))
+                continue
+            except OutlookAPIError as e:
+                errors.append(e)
+
         try:
             item = gc.sp_item_by_path(drive["id"], path)
         except OutlookAPIError as e:
             errors.append(e)
+            item = _find_sp_item_by_exact_search(gc, drive, path)
+            if item is None:
+                continue
+            matches.append((drive, item))
             continue
         matches.append((drive, item))
 
@@ -404,6 +434,21 @@ def _find_sp_item_by_path(
     if errors:
         raise errors[0]
     raise ValueError(f"Path not found: {path or '/'}")
+
+
+def _find_sp_item_by_exact_search(gc: _GraphClient, drive: dict, path: str) -> dict | None:
+    normalized_path = path.strip("/")
+    if not normalized_path:
+        return None
+    basename = normalized_path.rsplit("/", 1)[-1]
+    try:
+        candidates = gc.sp_search(drive["id"], basename, 100)
+    except OutlookAPIError:
+        return None
+    for item in candidates:
+        if _item_path_without_library(item, drive.get("name", "")).casefold() == normalized_path.casefold():
+            return item
+    return None
 
 
 # ── Formatting helpers ────────────────────────────────────────────

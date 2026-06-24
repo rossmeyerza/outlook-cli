@@ -280,6 +280,7 @@ Download/upload/mutate only when requested:
 ```bash
 outlook-cli files download "Documents/report.pdf" ./downloads/
 outlook-cli files download "General/report.pdf" ./downloads/ --site "Client" --library "Documents" --overwrite
+outlook-cli files download <drive-item-id> ./downloads/ --site "Client" --library "Documents"
 outlook-cli files upload ./deck.pptx "General" --site "Client" --library "Documents"
 outlook-cli files mkdir "Documents/Reports"
 outlook-cli files mkdir "Reports" --site "Client" --library "Documents"
@@ -289,7 +290,7 @@ outlook-cli files move "Documents/file.pdf" "Archive"
 
 Use `files sites` to discover SharePoint site names before using `--site`. Use `files libraries --site <name>` before SharePoint browsing if the document library is unclear. Site and library matching are partial by name. `files list --site <name>` lists the available document libraries; pass `--library <name>` to browse a library root. When `--library` is omitted for a non-root SharePoint path, the CLI checks all document libraries and asks for `--library` if the path is ambiguous.
 
-Use `--json` for agent-readable file output; list and search results include `path`, `parentPath`, `library`, and `webUrl`. Use `--links` when a human-readable table should include SharePoint/OneDrive browser links. Browser links open the item in Microsoft 365; `files download` downloads file bytes to local disk.
+Use `--json` for agent-readable file output; list and search results include `id`, `path`, `parentPath`, `library`, and `webUrl`. Use `--links` when a human-readable table should include SharePoint/OneDrive browser links. Browser links open the item in Microsoft 365; `files download` downloads file bytes to local disk and accepts either a relative path or a drive item ID from search/list JSON.
 
 ## Shell Completion
 

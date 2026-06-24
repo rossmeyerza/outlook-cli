@@ -254,6 +254,7 @@ outlook-cli files upload ./deck.pptx "General" --site "Tesco" --library "Documen
 outlook-cli files download "Documents/Reports/report.pdf"
 outlook-cli files download "Documents/Reports/report.pdf" ./downloads/
 outlook-cli files download "General/deck.pptx" ./deck.pptx --site "Tesco" --library "Documents"
+outlook-cli files download <drive-item-id> ./downloads/ --site "Tesco" --library "Documents"
 
 # Create folders
 outlook-cli files mkdir "Documents/Reports/Q2"
@@ -266,7 +267,7 @@ outlook-cli files move "Documents/file.pdf" "Archive"
 outlook-cli files move "General/file.pdf" "Archive" --site "Tesco" --library "Documents"
 ```
 
-`--site` and `--library` match case-insensitively and accept partial names. `files list --site <name>` shows document libraries; pass `--library <name>` to browse or mutate a library. `--links` adds browser links to table output. `--json` returns machine-readable items with `path`, `parentPath`, `library`, and `webUrl`. `files download` downloads file bytes to disk; browser links are for opening the file in SharePoint/OneDrive.
+`--site` and `--library` match case-insensitively and accept partial names. `files list --site <name>` shows document libraries; pass `--library <name>` to browse or mutate a library. `--links` adds browser links to table output. `--json` returns machine-readable items with `id`, `path`, `parentPath`, `library`, and `webUrl`. `files download` downloads file bytes to disk and accepts either a relative path or a drive item ID from search/list JSON; browser links are for opening the file in SharePoint/OneDrive.
 
 Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 
