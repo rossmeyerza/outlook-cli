@@ -304,11 +304,6 @@ outlook-cli completion nushell
 
 Bash/zsh/fish/PowerShell completions use `argcomplete` against the live parser. Nushell emits static `extern` definitions; regenerate after upgrading to pick up new commands and flags.
 
-## OneNote
-
-There is no supported `outlook-cli notes` command. Do not use OneNote through this CLI. Auth may display Notes-capable tokens for diagnostics, but the current tenant/browser flow uses the private OneNote web/WOPI protocol rather than a usable public Graph OneNote API token.
-
-
 ## Mailbox And Signatures
 
 Mailbox settings:

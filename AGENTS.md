@@ -142,7 +142,6 @@ outlook-cli config check                   # validate local config without print
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
-- **OneNote**: There is intentionally no `notes` command. The tenant/browser flow currently uses the private OneNote web/WOPI protocol, not a usable public Graph OneNote token. Do not tell agents to use OneNote through this CLI.
 - **Reply drafts**: `draft reply` creates a draft tied to an existing message. Use a cached mail index from `mail unread` / `mail search`, a cached ID suffix, or a full message ID.
 - **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).

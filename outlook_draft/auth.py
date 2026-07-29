@@ -32,14 +32,10 @@ config.ensure_dirs()
 
 # Microsoft API domains we look for when intercepting requests.
 KNOWN_DOMAINS = [
-    "www.onenote.com",
-    "onenote.com",
     "graph.microsoft.com",
     "outlook.office365.com",
     "outlook.office.com",
-    "substrate.office.com",
 ]
-PREFERRED_GRAPH_SCOPES = {"Notes.Read", "Notes.ReadWrite"}
 
 
 def _token_scopes(token: str) -> set[str]:
@@ -97,24 +93,14 @@ def _make_request_interceptor(captured: dict[str, str]):
         for domain in KNOWN_DOMAINS:
             if domain in url:
                 new_token = auth.removeprefix("Bearer ")
-                token_domain = "www.onenote.com" if domain == "onenote.com" else domain
+                token_domain = domain
                 if token_domain not in captured:
                     captured[token_domain] = new_token
                     console.print(f"[dim]  Captured token for {token_domain}[/]")
                 else:
                     new_scopes = _token_scopes(new_token)
                     old_scopes = _token_scopes(captured[token_domain])
-                    has_preferred_graph_scope = (
-                        token_domain == "graph.microsoft.com"
-                        and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
-                        and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
-                    )
-                    has_preferred_onenote_scope = (
-                        token_domain in {"www.onenote.com", "substrate.office.com"}
-                        and bool(new_scopes & PREFERRED_GRAPH_SCOPES)
-                        and not bool(old_scopes & PREFERRED_GRAPH_SCOPES)
-                    )
-                    if len(new_scopes) > len(old_scopes) or has_preferred_graph_scope or has_preferred_onenote_scope:
+                    if len(new_scopes) > len(old_scopes):
                         captured[token_domain] = new_token
                         console.print(f"[dim]  Updated token for {token_domain} (broader scopes)[/]")
                 break
@@ -298,8 +284,7 @@ def _extract_storage_tokens(page, captured: dict[str, str]) -> None:
                 secret = t.get("secret", "")
                 for domain in KNOWN_DOMAINS:
                     if domain in target:
-                        token_domain = "www.onenote.com" if domain == "onenote.com" else domain
-                        captured[token_domain] = secret
+                        captured[domain] = secret
                         break
                 else:
                     if secret and "graph.microsoft.com" not in captured:
@@ -373,18 +358,6 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         # Fallback: extract MSAL tokens from browser storage
         if not captured:
             _extract_storage_tokens(page, captured)
-
-        # OneNote uses Graph Notes scopes that Outlook Web may not request on a
-        # normal mail/calendar visit. Navigate once so the request interceptor
-        # can capture a Notes-capable Graph token when the tenant grants it.
-        try:
-            console.print("[dim]Navigating to OneNote to capture Notes scopes...[/]")
-            page.goto("https://www.onenote.com/notebooks", wait_until="domcontentloaded")
-            page.wait_for_timeout(8000)
-            page.goto("https://www.office.com/launch/onenote", wait_until="domcontentloaded")
-            page.wait_for_timeout(12000)
-        except Exception:
-            pass
 
         # Save browser session state so Playwright can reuse it without MFA
         storage_path = config.SESSION_DIR / "browser_state.json"

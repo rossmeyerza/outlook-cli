@@ -583,7 +583,6 @@ def _token_status(domain: str, label: str) -> dict[str, object]:
         "expiresInSeconds": expires_in,
         "audience": audience,
         "scopes": scopes,
-        "notesReadWrite": "Notes.ReadWrite" in scopes,
     }
 
 
@@ -741,16 +740,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
         statuses = [
             _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
             _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
-            _token_status("substrate.office.com", "Substrate"),
         ]
-        notes_scope_present = any(
-            bool(item.get("notesReadWrite")) and bool(item.get("present")) and not bool(item.get("expired"))
-            for item in statuses
-        )
-        capabilities = {
-            "notesReadWriteAnyToken": notes_scope_present,
-            "notesTokenCaptured": notes_scope_present,
-        }
         if args.json:
             print(json.dumps({
                 "account": {
@@ -759,7 +749,6 @@ def cmd_auth(args: argparse.Namespace) -> None:
                     "sessionDir": str(config.SESSION_DIR),
                 },
                 "tokens": statuses,
-                "capabilities": capabilities,
             }, indent=2))
             return
         title = "Auth status"
@@ -770,7 +759,6 @@ def cmd_auth(args: argparse.Namespace) -> None:
         table.add_column("Domain")
         table.add_column("Status")
         table.add_column("Expires")
-        table.add_column("Notes")
         for item in statuses:
             if not item["present"]:
                 status = "[red]missing[/]"
@@ -781,10 +769,8 @@ def cmd_auth(args: argparse.Namespace) -> None:
             else:
                 status = "[green]valid[/]"
                 expires = f"{int(item['expiresInSeconds']) // 60} min"
-            notes = "[green]yes[/]" if item.get("notesReadWrite") else ""
-            table.add_row(str(item["label"]), str(item["domain"]), status, expires, notes)
+            table.add_row(str(item["label"]), str(item["domain"]), status, expires)
         console.print(table)
-        console.print(f"OneNote scope present: {'yes' if notes_scope_present else 'no'}")
         return
     if command == "clear":
         if config.TOKENS_FILE.exists():

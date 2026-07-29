@@ -271,8 +271,6 @@ outlook-cli files move "General/file.pdf" "Archive" --site "Tesco" --library "Do
 
 Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 
-OneNote note operations are not implemented. Auth may capture Notes-capable tokens and show them in `auth status` for diagnostics, but there is intentionally no `notes` command because the current tenant/browser flow uses the private OneNote web/WOPI protocol rather than a usable public Graph OneNote API token.
-
 ### Auth and config
 
 ```bash
