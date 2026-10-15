@@ -11,7 +11,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from .. import config
-from ..commands.files import _GraphClient
 from ..errors import OutlookDraftError, TokenExpiredError, TokenNotFoundError
 from ..outlook_client import OutlookClient
 from ..token_manager import TokenManager
@@ -64,9 +63,15 @@ def graph_client() -> Iterator[OutlookClient]:
 
 
 @contextmanager
-def files_client() -> Iterator[_GraphClient]:
+def files_client() -> Iterator[OutlookClient]:
     """Graph client for OneDrive and SharePoint files."""
-    client = _GraphClient(_token_manager(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"))
+    client = OutlookClient(
+        _token_manager(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
+        base_url=config.GRAPH_BASE_URL,
+        timeout=60.0,
+        json_content_type=False,
+        log_retries=False,
+    )
     try:
         yield client
     finally:

@@ -21,6 +21,7 @@ from .. import config
 from ..errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from ..progress import spinner
 from ..token_manager import TokenManager
+from ..outlook_client import OutlookClient
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -32,290 +33,26 @@ ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentRefere
 
 # ── Graph client (sync, reuses existing token infrastructure) ─────
 
-class _GraphClient:
-    """Thin sync Graph client using the captured Graph bearer token."""
+class _GraphClient(OutlookClient):
+    """Compatibility constructor for file operations on Microsoft Graph."""
 
     def __init__(self, token_manager: TokenManager | None = None):
-        self._tm = token_manager or TokenManager(
-            token_domain=config.GRAPH_TOKEN_DOMAIN,
-            token_label="Microsoft Graph",
+        super().__init__(
+            token_manager or TokenManager(
+                token_domain=config.GRAPH_TOKEN_DOMAIN,
+                token_label="Microsoft Graph",
+            ),
+            base_url=config.GRAPH_BASE_URL,
+            timeout=60.0,
+            json_content_type=False,
+            log_retries=False,
         )
-        self._client: httpx.Client | None = None
+        self._upload_progress = lambda current, total: console.print(
+            f"[dim]  chunk {current}/{total} uploaded[/]"
+        )
 
     def _ensure(self) -> httpx.Client:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(
-                timeout=httpx.Timeout(60.0, connect=10.0),
-                follow_redirects=True,
-            )
-        return self._client
-
-    def _headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._tm.get_token(auto_reauth=True)}"}
-
-    def _request(
-        self,
-        method: str,
-        url: str,
-        *,
-        params: dict | None = None,
-        json_body: dict | None = None,
-        data: bytes | None = None,
-        extra_headers: dict | None = None,
-        max_retries: int = 2,
-    ) -> httpx.Response:
-        import time
-        client = self._ensure()
-
-        for attempt in range(max_retries + 1):
-            try:
-                headers = {**self._headers(), **(extra_headers or {})}
-                resp = client.request(
-                    method, url, params=params, json=json_body,
-                    content=data, headers=headers,
-                )
-                if resp.status_code in (200, 201, 202, 204):
-                    return resp
-                if resp.status_code == 401:
-                    if self._tm.run_reauth(headless=True):
-                        continue
-                    raise OutlookAPIError(401, "Authentication failed. Run 'outlook-cli auth' to retry.")
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    wait = float(resp.headers.get("Retry-After", str(2 ** attempt)))
-                    time.sleep(wait)
-                    continue
-                raise OutlookAPIError(resp.status_code, resp.text[:500])
-            except httpx.HTTPError as e:
-                if attempt < max_retries:
-                    time.sleep(2 ** attempt)
-                    continue
-                raise OutlookAPIError(0, str(e)) from e
-            except (TokenExpiredError, TokenNotFoundError) as e:
-                raise OutlookAPIError(401, f"{e}. Authentication failed. Run 'outlook-cli auth' to retry.") from e
-        raise OutlookAPIError(0, "Max retries exceeded")
-
-    def close(self):
-        if self._client and not self._client.is_closed:
-            self._client.close()
-
-    # ── OneDrive ──────────────────────────────────────────────────────
-
-    def od_root_id(self) -> str:
-        resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root",
-                             params={"$select": "id"})
-        return resp.json()["id"]
-
-    def od_item_by_path(self, path: str) -> dict[str, Any]:
-        """Resolve a path relative to OneDrive root."""
-        path = path.strip("/")
-        if not path:
-            resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root",
-                                 params={"$select": ITEM_SELECT})
-        else:
-            resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root:/{path}",
-                                 params={"$select": ITEM_SELECT})
-        return resp.json()
-
-    def od_list_children(self, item_id: str) -> list[dict]:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}/children"
-        params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
-        items = []
-        while url:
-            resp = self._request("GET", url, params=params)
-            data = resp.json()
-            items.extend(data.get("value", []))
-            url = data.get("@odata.nextLink")
-            params = None
-        return items
-
-    def od_upload(self, parent_id: str, name: str, local_path: Path) -> dict:
-        data = local_path.read_bytes()
-        size = len(data)
-        if size < 4 * 1024 * 1024:
-            url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{name}:/content"
-            resp = self._request("PUT", url, data=data,
-                                 extra_headers={"Content-Type": "application/octet-stream"})
-            return resp.json()
-        return self._chunked_upload_od(parent_id, name, data)
-
-    def od_download(self, item_id: str) -> bytes:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}/content"
-        resp = self._request("GET", url)
-        return resp.content
-
-    def _chunked_upload_od(self, parent_id: str, name: str, data: bytes) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{name}:/createUploadSession"
-        sess = self._request("POST", url, json_body={
-            "item": {"@microsoft.graph.conflictBehavior": "replace", "name": name}
-        }).json()
-        return self._upload_chunks(sess["uploadUrl"], data)
-
-    def od_mkdir(self, parent_id: str, name: str) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{parent_id}/children"
-        resp = self._request("POST", url, json_body={
-            "name": name, "folder": {},
-            "@microsoft.graph.conflictBehavior": "fail"
-        })
-        return resp.json()
-
-    def od_rename(self, item_id: str, new_name: str) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
-        resp = self._request("PATCH", url, json_body={"name": new_name})
-        return resp.json()
-
-    def od_move(self, item_id: str, new_parent_id: str, new_name: str | None = None) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
-        body: dict = {"parentReference": {"id": new_parent_id}}
-        if new_name:
-            body["name"] = new_name
-        resp = self._request("PATCH", url, json_body=body)
-        return resp.json()
-
-    # ── SharePoint ────────────────────────────────────────────────────
-
-    def sp_list_sites(self) -> list[dict]:
-        """List SharePoint sites via group membership."""
-        url = f"{GRAPH_BASE}/me/memberOf/microsoft.graph.group"
-        params: dict | None = {
-            "$select": "id,displayName,description,mail,groupTypes",
-            "$top": "999",
-        }
-        groups = []
-        while url:
-            resp = self._request("GET", url, params=params)
-            data = resp.json()
-            groups.extend(data.get("value", []))
-            url = data.get("@odata.nextLink")
-            params = None
-        # Only M365 Unified groups (have SharePoint sites)
-        return [
-            g for g in groups
-            if "Unified" in g.get("groupTypes", [])
-        ]
-
-    def sp_get_site(self, group_id: str) -> dict:
-        resp = self._request("GET", f"{GRAPH_BASE}/groups/{group_id}/sites/root",
-                             params={"$select": "id,displayName,webUrl"})
-        return resp.json()
-
-    def sp_list_drives(self, site_id: str) -> list[dict]:
-        url = f"{GRAPH_BASE}/sites/{site_id}/drives"
-        params: dict | None = {"$select": "id,name,driveType,webUrl", "$top": "200"}
-        drives = []
-        while url:
-            resp = self._request("GET", url, params=params)
-            data = resp.json()
-            drives.extend(data.get("value", []))
-            url = data.get("@odata.nextLink")
-            params = None
-        return drives
-
-    def sp_item_by_path(self, drive_id: str, path: str) -> dict:
-        path = path.strip("/")
-        if not path:
-            resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/root",
-                                 params={"$select": ITEM_SELECT})
-        else:
-            resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/root:/{path}",
-                                 params={"$select": ITEM_SELECT})
-        return resp.json()
-
-    def sp_item_by_id(self, drive_id: str, item_id: str) -> dict:
-        resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}",
-                             params={"$select": ITEM_SELECT})
-        return resp.json()
-
-    def sp_list_children(self, drive_id: str, item_id: str) -> list[dict]:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/children"
-        params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
-        items = []
-        while url:
-            resp = self._request("GET", url, params=params)
-            data = resp.json()
-            items.extend(data.get("value", []))
-            url = data.get("@odata.nextLink")
-            params = None
-        return items
-
-    def sp_search(self, drive_id: str, query: str, top: int) -> list[dict]:
-        encoded_query = quote(query.replace("'", "''"), safe="")
-        url = f"{GRAPH_BASE}/drives/{drive_id}/root/search(q='{encoded_query}')"
-        params: dict | None = {"$select": ITEM_SELECT, "$top": str(top)}
-        items = []
-        while url and len(items) < top:
-            resp = self._request("GET", url, params=params)
-            data = resp.json()
-            items.extend(data.get("value", []))
-            url = data.get("@odata.nextLink")
-            params = None
-        return items[:top]
-
-    def sp_upload(self, drive_id: str, parent_id: str, name: str, local_path: Path) -> dict:
-        data = local_path.read_bytes()
-        size = len(data)
-        if size < 4 * 1024 * 1024:
-            url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{name}:/content"
-            resp = self._request("PUT", url, data=data,
-                                 extra_headers={"Content-Type": "application/octet-stream"})
-            return resp.json()
-        return self._chunked_upload_sp(drive_id, parent_id, name, data)
-
-    def sp_download(self, drive_id: str, item_id: str) -> bytes:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
-        resp = self._request("GET", url)
-        return resp.content
-
-    def _chunked_upload_sp(self, drive_id: str, parent_id: str, name: str, data: bytes) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{name}:/createUploadSession"
-        sess = self._request("POST", url, json_body={
-            "item": {"@microsoft.graph.conflictBehavior": "replace", "name": name}
-        }).json()
-        return self._upload_chunks(sess["uploadUrl"], data)
-
-    def sp_mkdir(self, drive_id: str, parent_id: str, name: str) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}/children"
-        resp = self._request("POST", url, json_body={
-            "name": name, "folder": {},
-            "@microsoft.graph.conflictBehavior": "fail"
-        })
-        return resp.json()
-
-    def sp_rename(self, drive_id: str, item_id: str, new_name: str) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}"
-        resp = self._request("PATCH", url, json_body={"name": new_name})
-        return resp.json()
-
-    def sp_move(self, drive_id: str, item_id: str, new_parent_id: str,
-                new_name: str | None = None) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}"
-        body: dict = {"parentReference": {"driveId": drive_id, "id": new_parent_id}}
-        if new_name:
-            body["name"] = new_name
-        resp = self._request("PATCH", url, json_body=body)
-        return resp.json()
-
-    # ── Shared helpers ────────────────────────────────────────────────
-
-    def _upload_chunks(self, upload_url: str, data: bytes) -> dict:
-        """Upload data in chunks to a pre-created upload session URL."""
-        total = len(data)
-        chunks = math.ceil(total / UPLOAD_CHUNK_SIZE)
-        result = {}
-        for i in range(chunks):
-            offset = i * UPLOAD_CHUNK_SIZE
-            chunk = data[offset: offset + UPLOAD_CHUNK_SIZE]
-            end = offset + len(chunk) - 1
-            headers = {
-                "Content-Length": str(len(chunk)),
-                "Content-Range": f"bytes {offset}-{end}/{total}",
-            }
-            resp = self._ensure().put(upload_url, content=chunk, headers=headers)
-            if resp.status_code in (200, 201, 202):
-                result = resp.json()
-            else:
-                raise OutlookAPIError(resp.status_code, resp.text[:300])
-            console.print(f"[dim]  chunk {i+1}/{chunks} uploaded[/]")
-        return result
+        return self._ensure_client()
 
 
 # ── Site resolution helper ────────────────────────────────────────

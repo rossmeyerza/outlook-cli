@@ -19,7 +19,6 @@ dependencies = [
     "rich>=13.0",
     "python-dateutil>=2.9.0",
     "playwright>=1.40",
-    "requests>=2.31",
     "mcp>=1.10,<2",
 ]
 

@@ -111,18 +111,19 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
     # We need to look up which name is assigned to new vs reply
     # Those mappings come from the roaming_signature_list call, but we can also
     # fetch them directly via the token
-    import requests
+    import httpx
     try:
         tokens_file = cfg.TOKENS_FILE
         token_data = json.loads(tokens_file.read_text())
         token = token_data["tokens"].get("outlook.office.com", "")
         headers = {"Authorization": f"Bearer {token}"}
 
-        meta_resp = requests.get(
+        meta_resp = httpx.get(
             "https://outlook.office.com/ows/v1/OutlookCloudSettings/settings/",
             params={"settingname": "roaming_signature_list,roaming_new_signature,roaming_reply_signature"},
             headers=headers,
             timeout=15,
+            follow_redirects=True,
         )
         meta = meta_resp.json() if meta_resp.status_code == 200 else []
     except Exception:

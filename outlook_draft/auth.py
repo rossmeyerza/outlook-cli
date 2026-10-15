@@ -20,7 +20,7 @@ import base64
 import json
 from datetime import datetime
 
-import requests
+import httpx
 from playwright.sync_api import sync_playwright
 from rich.console import Console
 
@@ -73,10 +73,11 @@ def _load_tokens() -> dict[str, str]:
 def _test_token(token: str, url: str) -> bool:
     """Quick check if a token works against a URL."""
     try:
-        resp = requests.get(
+        resp = httpx.get(
             url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=10,
+            follow_redirects=True,
         )
         return resp.status_code == 200
     except Exception:
