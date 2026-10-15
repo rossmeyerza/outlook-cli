@@ -15,6 +15,7 @@ from ..commands.teams import (
     _teams_sender,
 )
 from ..errors import OutlookAPIError
+from ..concurrency import ordered_map
 from ..formatting import html_to_text
 from .clients import clamp, graph_client
 from .shaping import JsonDict, require_absolute_dir
@@ -47,7 +48,8 @@ def teams_list(count: int = 20) -> list[JsonDict]:
     with graph_client() as client:
         chats = client.list_teams_chats(top=clamp(count, high=50))
         chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
-        return [_chat_summary(c, _members(client, c, MEMBER_LIMIT)) for c in chats]
+        with ordered_map(lambda chat: _members(client, chat, MEMBER_LIMIT), chats) as memberships:
+            return [_chat_summary(chat, members) for chat, members in zip(chats, memberships)]
 
 
 def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]:
@@ -58,15 +60,16 @@ def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]
     with graph_client() as client:
         chats = client.list_teams_chats(top=clamp(scan, high=500))
         chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
-        for chat in chats:
-            members: list[JsonDict] = []
-            if not _matches_query([chat.get("topic") or ""], query):
-                members = _members(client, chat, 100) or []
-            reasons = _chat_match_reasons(chat, members, query)
-            if reasons:
-                results.append({**_chat_summary(chat, members), "match": "; ".join(reasons)})
-                if len(results) >= clamp(count, high=50):
-                    break
+        with ordered_map(
+            lambda chat: [] if _matches_query([chat.get("topic") or ""], query)
+            else _members(client, chat, 100) or [], chats,
+        ) as memberships:
+            for chat, members in zip(chats, memberships):
+                reasons = _chat_match_reasons(chat, members, query)
+                if reasons:
+                    results.append({**_chat_summary(chat, members), "match": "; ".join(reasons)})
+                    if len(results) >= clamp(count, high=50):
+                        break
     return results
 
 

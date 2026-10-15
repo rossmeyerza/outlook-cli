@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import math
+from threading import RLock
 from pathlib import Path
 from urllib.parse import quote
 from typing import Any
@@ -43,23 +44,26 @@ class OutlookClient:
         self._log_retries = log_retries
         self._upload_progress = None
         self._client: httpx.Client | None = None
+        self._client_lock = RLock()
+        self._auth_lock = RLock()
 
     def _ensure_client(self) -> httpx.Client:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(
-                timeout=httpx.Timeout(self._timeout, connect=10.0),
-                follow_redirects=True,
-            )
-        return self._client
+        with self._client_lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.Client(
+                    timeout=httpx.Timeout(self._timeout, connect=10.0),
+                    follow_redirects=True,
+                )
+            return self._client
 
     def close(self) -> None:
         if self._client and not self._client.is_closed:
             self._client.close()
 
     def _headers(self, extra_headers: dict[str, str] | None = None) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self._tm.get_token(auto_reauth=True)}",
-        }
+        with self._auth_lock:
+            token = self._tm.get_token(auto_reauth=True)
+        headers = {"Authorization": f"Bearer {token}"}
         if self._json_content_type:
             headers["Content-Type"] = "application/json"
         headers.update(self._default_headers)
@@ -95,7 +99,11 @@ class OutlookClient:
                 if resp.status_code == 401:
                     if self._log_retries:
                         log.warning("401 Unauthorized, attempting re-authentication")
-                    if self._tm.run_reauth(headless=True):
+                    with self._auth_lock:
+                        # A concurrent request may already have refreshed the token.
+                        token_changed = self._headers()["Authorization"] != headers["Authorization"]
+                        authenticated = token_changed or self._tm.run_reauth(headless=True)
+                    if authenticated:
                         continue
                     raise OutlookAPIError(401, "Authentication failed. Run 'outlook-cli auth' to retry.")
 

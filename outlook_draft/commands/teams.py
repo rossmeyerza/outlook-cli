@@ -18,6 +18,7 @@ from ..cache import TEAMS_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 from ..links import extract_links_from_html, looks_like_share_url
 from ..progress import spinner
+from ..concurrency import ordered_map
 from .. import runtime
 from ..formatting import html_to_text, format_datetime
 from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
@@ -270,6 +271,24 @@ def _teams_body(args: argparse.Namespace, message: JsonDict) -> str:
     return "[empty message]"
 
 
+def _list_members(client: Any, chat: JsonDict) -> list[JsonDict]:
+    if chat.get("topic"):
+        return []
+    try:
+        return client.list_teams_chat_members(chat["id"], top=10)
+    except OutlookAPIError:
+        return []
+
+
+def _search_members(client: Any, chat: JsonDict, query: str, top: int) -> tuple[list[JsonDict], bool]:
+    if _matches_query([chat.get("topic") or ""], query):
+        return [], False
+    try:
+        return client.list_teams_chat_members(chat["id"], top=top), False
+    except OutlookAPIError:
+        return [], True
+
+
 def cmd_teams_list(args: argparse.Namespace) -> None:
     console = runtime.console
     client = runtime.get_graph_client()
@@ -283,10 +302,11 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                     self_user_id = current_user.get("id", "")
                 except OutlookAPIError:
                     self_user_id = ""
-                for chat in chats:
-                    chat["_lastReceivedMessageDateTime"] = _latest_received_message_time(
-                        client, chat, self_user_id,
-                    )
+                with ordered_map(
+                    lambda chat: _latest_received_message_time(client, chat, self_user_id), chats,
+                ) as timestamps:
+                    for chat, timestamp in zip(chats, timestamps):
+                        chat["_lastReceivedMessageDateTime"] = timestamp
                 chats.sort(
                     key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
                     reverse=True,
@@ -317,20 +337,15 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
     client = runtime.get_graph_client()
     try:
         with spinner(args, "Resolving Teams chat participants..."):
-            for i, chat in enumerate(chats, 1):
-                members = []
-                if not chat.get("topic"):
-                    try:
-                        members = client.list_teams_chat_members(chat["id"], top=10)
-                    except OutlookAPIError:
-                        members = []
-                table.add_row(
-                    str(i),
-                    format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
-                    chat.get("chatType", ""),
-                    _chat_title(chat, members),
-                    chat.get("id", "")[-16:],
-                )
+            with ordered_map(lambda chat: _list_members(client, chat), chats) as memberships:
+                for i, (chat, members) in enumerate(zip(chats, memberships), 1):
+                    table.add_row(
+                        str(i),
+                        format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
+                        chat.get("chatType", ""),
+                        _chat_title(chat, members),
+                        chat.get("id", "")[-16:],
+                    )
     finally:
         client.close()
 
@@ -360,22 +375,17 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
                 reverse=True,
             )
 
-            for chat in chats:
-                scanned += 1
-                members: list[JsonDict] = []
-                topic = chat.get("topic") or ""
-                topic_matches = _matches_query([topic], query)
-                if not topic_matches:
-                    try:
-                        members = client.list_teams_chat_members(chat["id"], top=member_count)
-                    except OutlookAPIError:
-                        member_errors += 1
-                        members = []
-                reasons = _chat_match_reasons(chat, members, query)
-                if reasons:
-                    results.append((chat, members, reasons))
-                    if len(results) >= result_count:
-                        break
+            with ordered_map(
+                lambda chat: _search_members(client, chat, query, member_count), chats,
+            ) as memberships:
+                for chat, (members, failed) in zip(chats, memberships):
+                    scanned += 1
+                    member_errors += int(failed)
+                    reasons = _chat_match_reasons(chat, members, query)
+                    if reasons:
+                        results.append((chat, members, reasons))
+                        if len(results) >= result_count:
+                            break
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to search Teams chats: {e}[/]")
     finally:

@@ -130,3 +130,33 @@ def test_api_error_renders_red(monkeypatch, capsys, isolated_cli):
     result = run_command(monkeypatch, capsys, ["mail", "unread"])
     assert result["exit"] == 1
     assert "\x1b[31m" in result["stdout"]
+
+
+@pytest.mark.parametrize("argv", [
+    ["teams", "list", "-n", "12"],
+    ["teams", "list", "-n", "12", "--sort-received"],
+    ["teams", "search", "Match", "--scan", "12", "-n", "3"],
+])
+def test_cli_parallel_teams_matches_sequential(monkeypatch, capsys, isolated_cli, argv):
+    from contextlib import contextmanager
+
+    isolated_cli.list_teams_chats.side_effect = lambda **kwargs: [
+        {"id": str(index), "chatType": "group", "lastUpdatedDateTime": str(index)}
+        for index in range(12)
+    ]
+    isolated_cli.get_current_user.return_value = {"id": "self"}
+    isolated_cli.list_teams_message_metadata.return_value = []
+
+    def members(chat_id, **kwargs):
+        if chat_id == "8":
+            raise OutlookAPIError(403, "Denied")
+        return [{"displayName": "Match " + chat_id, "email": "other@example.test"}]
+
+    @contextmanager
+    def sequential(function, items):
+        yield map(function, items)
+
+    isolated_cli.list_teams_chat_members.side_effect = members
+    actual = run_command(monkeypatch, capsys, argv)
+    monkeypatch.setattr(teams, "ordered_map", sequential)
+    assert actual == run_command(monkeypatch, capsys, argv)
