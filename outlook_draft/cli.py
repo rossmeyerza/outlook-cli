@@ -26,7 +26,6 @@ import sys
 import time
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from html import escape
 from pathlib import Path
 
 from rich.console import Console
@@ -57,6 +56,13 @@ from .commands.files import (
     cmd_files_move,
 )
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
+from .formatting import (
+    compose_email_html as _compose_email_html,
+    format_datetime as _format_datetime,
+    html_to_text as _html_to_text,
+    parse_recipients as _parse_recipients,
+    text_to_html as _text_to_html,
+)
 from .outlook_client import OutlookClient
 from .progress import spinner
 from .signatures import load_signature
@@ -144,39 +150,6 @@ def _load_signature(path: Path) -> str:
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/]")
         sys.exit(1)
-
-
-def _text_to_html(text: str) -> str:
-    """Convert plain text to simple HTML paragraphs."""
-    text = text.replace("\r\n", "\n").strip()
-    if not text:
-        return "<p></p>"
-
-    parts = []
-    for block in text.split("\n\n"):
-        block = block.strip()
-        if not block:
-            continue
-        block_html = escape(block).replace("\n", "<br>\n")
-        parts.append(f"<p>{block_html}</p>")
-    return "".join(parts) or "<p></p>"
-
-
-def _compose_email_html(
-    body: str,
-    *,
-    is_html: bool,
-    signature_html: str,
-    quoted_html: str = "",
-) -> str:
-    """Build the final HTML body with Aptos styling and signature."""
-    content_html = body if is_html else _text_to_html(body)
-    style = (
-        f"font-family: {config.EMAIL_FONT_FAMILY}; "
-        f"font-size: {config.EMAIL_FONT_SIZE}; "
-        "color: rgb(0, 0, 0);"
-    )
-    return f'<div style="{style}">{content_html}</div>{signature_html}{quoted_html}'
 
 
 def cmd_create(args: argparse.Namespace) -> None:
@@ -408,12 +381,6 @@ def cmd_send_draft(args: argparse.Namespace) -> None:
     console.print("[green]Draft sent.[/]")
 
 
-def _parse_recipients(values: list[str] | None) -> list[str]:
-    if not values:
-        return []
-    return [email.strip() for value in values for email in value.split(",") if email.strip()]
-
-
 def cmd_send_mail(args: argparse.Namespace) -> None:
     """Send a new email immediately."""
     body = _load_body(args)
@@ -456,26 +423,6 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
 # ── Object cache (persisted to disk for cross-invocation read) ────────────
 
 
-def _html_to_text(html: str) -> str:
-    """Simple HTML to plain text conversion."""
-    import re
-    # Remove style and script blocks
-    text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # Convert <br> and block elements to newlines
-    text = re.sub(r"<br\s*/?>\s*", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</(p|div|tr|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<(p|div|tr|li|h[1-6])[^>]*>", "", text, flags=re.IGNORECASE)
-    # Strip remaining tags
-    text = re.sub(r"<[^>]+>", "", text)
-    # Decode common HTML entities
-    text = text.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
-    # Collapse whitespace
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
 def _resolve_message_id(client: OutlookClient, ref: str) -> str:
     """Resolve a message reference to a full ID.
 
@@ -502,17 +449,6 @@ def _resolve_message_id(client: OutlookClient, ref: str) -> str:
             sys.exit(1)
 
     return ref
-
-
-def _format_datetime(value: str) -> str:
-    """Format an ISO timestamp for terminal output."""
-    if not value:
-        return ""
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed.strftime("%b %d %H:%M")
-    except Exception:
-        return value[:16]
 
 
 # ── Tasks ─────────────────────────────────────────────────────────────────
