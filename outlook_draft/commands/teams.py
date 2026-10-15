@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from .. import config, runtime
 from ..cache import TEAMS_CACHE, load_cache, save_cache
@@ -16,6 +17,7 @@ from ..formatting import format_datetime, html_to_text
 from ..links import extract_links_from_html, looks_like_share_url
 from ..parser import _add_yes_arg
 from ..progress import spinner
+from ..teams_activity import activity_fields, activity_time, is_system_event
 
 JsonDict = dict[str, Any]
 SELF_CHAT_ID = "48:notes"
@@ -195,7 +197,7 @@ def _teams_sender(message: JsonDict) -> str:
         label = entity.get("displayName") or entity.get("id")
         if label:
             return label
-    return "Unknown"
+    return "System" if is_system_event(message) else "Unknown"
 
 
 def _message_user_id(message: JsonDict) -> str:
@@ -248,23 +250,25 @@ def _latest_received_message_time(
 def _teams_body(args: argparse.Namespace, message: JsonDict) -> str:
     if message.get("deletedDateTime"):
         return "[deleted message]"
-    if message.get("messageType") == "systemEventMessage":
+    if is_system_event(message):
         return "[system event]"
 
-    body = message.get("body", {})
-    content = body.get("content", "")
+    body = message.get("body") or {}
+    content = body.get("content") or ""
     if body.get("contentType") == "html":
         content = html_to_text(content)
     content = content.strip()
 
     if content:
         return content
-    if message.get("attachments") or message.get("hostedContents"):
+    if message.get("attachments") or message.get("hostedContents") or "<img" in (body.get("content") or "") or "<attachment" in (body.get("content") or ""):
         return "[attachment or rich content]"
     return "[empty message]"
 
 
 def _list_members(client: Any, chat: JsonDict) -> list[JsonDict]:
+    if "members" in chat and not chat.get("members@odata.nextLink"):
+        return chat["members"]
     if chat.get("topic"):
         return []
     try:
@@ -276,6 +280,8 @@ def _list_members(client: Any, chat: JsonDict) -> list[JsonDict]:
 def _search_members(client: Any, chat: JsonDict, query: str, top: int) -> tuple[list[JsonDict], bool]:
     if _matches_query([chat.get("topic") or ""], query):
         return [], False
+    if "members" in chat and not chat.get("members@odata.nextLink"):
+        return chat["members"], False
     try:
         return client.list_teams_chat_members(chat["id"], top=top), False
     except OutlookAPIError:
@@ -304,11 +310,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                     reverse=True,
                 )
             else:
-                # Fast path: sort by lastUpdatedDateTime (already in response)
-                chats.sort(
-                    key=lambda chat: chat.get("lastUpdatedDateTime") or "",
-                    reverse=True,
-                )
+                chats.sort(key=activity_time, reverse=True)
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to list Teams chats: {e}[/]") from e
@@ -326,10 +328,10 @@ def _render_chat_list(args: argparse.Namespace, chats: list[JsonDict]) -> None:
 
     table = Table(title=f"Teams chats ({len(chats)})")
     table.add_column("#", style="dim", width=3)
-    table.add_column("Last received", style="dim", width=12)
-    table.add_column("Type", width=12)
-    table.add_column("Chat", ratio=1)
-    table.add_column("ID", style="dim", width=16, no_wrap=True)
+    table.add_column("Last message", style="dim", width=12)
+    table.add_column("Chat", ratio=1, min_width=14)
+    table.add_column("Sender", width=14)
+    table.add_column("Preview", width=30, min_width=12, no_wrap=True, overflow="ellipsis")
 
     client = runtime.get_graph_client()
     try:
@@ -340,16 +342,17 @@ def _render_chat_list(args: argparse.Namespace, chats: list[JsonDict]) -> None:
             for i, (chat, members) in enumerate(zip(chats, memberships, strict=False), 1):
                 table.add_row(
                     str(i),
-                    format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
-                    chat.get("chatType", ""),
-                    _chat_title(chat, members),
-                    chat.get("id", "")[-16:],
+                    format_datetime(chat.get("_lastReceivedMessageDateTime") or activity_time(chat)),
+                    Text(_chat_title(chat, members) + "\n" + chat.get("chatType", "")),
+                    Text(activity_fields(chat)["lastSender"]),
+                    Text(activity_fields(chat)["preview"]),
                 )
     finally:
         client.close()
 
     console.print(table)
-    console.print("[dim]Use 'outlook-cli teams show <n>' or 'outlook-cli teams messages <n>' to inspect a chat.[/]")
+    _render_stable_ids(chats)
+    console.print("[dim]Use 'outlook-cli teams messages <ID>' for a stable chat reference.[/]")
 
 
 def cmd_teams_search(args: argparse.Namespace) -> None:
@@ -368,10 +371,10 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
     try:
         with spinner(args, f"Scanning up to {scan_count} Teams chats by topic and participants..."):
             chats = client.list_teams_chats(top=scan_count)
-            chats.sort(
-                key=lambda chat: chat.get("lastUpdatedDateTime") or "",
-                reverse=True,
-            )
+            chats.sort(key=activity_time, reverse=True)
+            scan_limited = len(chats) >= scan_count
+            if getattr(args, "one_on_one", False):
+                chats = [chat for chat in chats if chat.get("chatType") == "oneOnOne"]
 
             with ordered_map(
                 lambda chat: _search_members(client, chat, query, member_count), chats,
@@ -393,6 +396,11 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
     save_cache(TEAMS_CACHE, matched_chats, id_key="id")
 
     _render_search_results(query, results, scanned, member_errors)
+    if scan_limited or len(results) >= result_count:
+        runtime.console.print("[yellow]Results may be truncated. Increase --scan or --count.[/]")
+    if getattr(args, "command", "") == "with" and len(results) == 1:
+        args.chat_id = results[0][0]["id"]
+        cmd_teams_messages(args)
 
 
 def _render_search_results(query: str, results: list, scanned: int, member_errors: int) -> None:
@@ -404,29 +412,33 @@ def _render_search_results(query: str, results: list, scanned: int, member_error
 
     table = Table(title=f"Teams chats matching '{query}' ({len(results)})")
     table.add_column("#", style="dim", width=3)
-    table.add_column("Updated", style="dim", width=12)
-    table.add_column("Type", width=12)
-    table.add_column("Match", ratio=1, min_width=18)
-    table.add_column("Chat", ratio=2, min_width=24)
-    table.add_column("ID", style="dim", width=16, no_wrap=True)
+    table.add_column("Last message", style="dim", width=12)
+    table.add_column("Chat / match", ratio=1, min_width=14)
+    table.add_column("Sender", width=14)
+    table.add_column("Preview", width=30, min_width=12, no_wrap=True, overflow="ellipsis")
 
     for i, (chat, members, reasons) in enumerate(results, 1):
         table.add_row(
             str(i),
-            format_datetime(chat.get("lastUpdatedDateTime", "")),
-            chat.get("chatType", ""),
-            "; ".join(reasons),
-            _chat_title(chat, members),
-            chat.get("id", "")[-16:],
+            format_datetime(activity_time(chat)),
+            Text(_chat_title(chat, members) + "\n" + chat.get("chatType", "") + ": " + "; ".join(reasons)),
+            Text(activity_fields(chat)["lastSender"]),
+            Text(activity_fields(chat)["preview"]),
         )
 
     console.print(table)
+    _render_stable_ids([chat for chat, _, _ in results])
     console.print(
         f"[dim]Scanned {scanned} chats. Use 'outlook-cli teams show <n>' or "
         "'outlook-cli teams messages <n>' to inspect a result.[/]"
     )
     if member_errors:
         console.print(f"[dim]Could not read members for {member_errors} chats.[/]")
+
+
+def _render_stable_ids(chats: list[JsonDict]) -> None:
+    for index, chat in enumerate(chats, 1):
+        runtime.console.print(f"{index}: {chat.get('id', '')}", markup=False, highlight=False, overflow="fold")
 
 
 def cmd_teams_show(args: argparse.Namespace) -> None:
@@ -682,8 +694,8 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
     for message in messages:
         table.add_row(
             format_datetime(message.get("createdDateTime", "")),
-            _teams_sender(message),
-            _teams_body(args, message),
+            Text(_teams_sender(message)),
+            Text(_teams_body(args, message)),
         )
 
     console.print(table)
@@ -696,6 +708,7 @@ def register(sub) -> None:
 
     _register_cmd_teams_list_cmd(teams_sub)
     _register_cmd_teams_search_cmd(teams_sub)
+    _register_cmd_teams_with_cmd(teams_sub)
     _register_cmd_teams_show_cmd(teams_sub)
     _register_cmd_teams_self_cmd(teams_sub)
     _register_cmd_teams_messages_cmd(teams_sub)
@@ -717,8 +730,17 @@ def _register_cmd_teams_search_cmd(teams_sub) -> None:
     cmd_teams_search_cmd.add_argument("query", nargs="+", help="Name, email, or chat topic to search for")
     cmd_teams_search_cmd.add_argument("--count", "-n", type=int, default=20, help="Max matching chats")
     cmd_teams_search_cmd.add_argument("--scan", type=int, default=200, help="Max chats to scan")
+    cmd_teams_search_cmd.add_argument("--one-on-one", action="store_true", help="Only person-to-person chats")
     cmd_teams_search_cmd.add_argument("--member-count", type=int, default=100, help="Max members to inspect per chat")
     cmd_teams_search_cmd.set_defaults(func=cmd_teams_search)
+
+
+def _register_cmd_teams_with_cmd(teams_sub) -> None:
+    command = teams_sub.add_parser("with", help="Find a person's 1:1 chat; read messages if unique")
+    command.add_argument("query", nargs="+", help="Participant name or email")
+    command.add_argument("--scan", type=int, default=200, help="Max chats to scan")
+    command.add_argument("--count", "-n", type=int, default=20, help="Max matches and messages")
+    command.set_defaults(func=cmd_teams_search, one_on_one=True, member_count=100)
 
 
 def _register_cmd_teams_show_cmd(teams_sub) -> None:

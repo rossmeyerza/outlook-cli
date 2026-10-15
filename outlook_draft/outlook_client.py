@@ -13,8 +13,10 @@ import httpx
 
 from . import config
 from .calendar_time import outlook_timezone_prefer_header
+from .concurrency import ordered_map
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
+from .teams_activity import activity_time
 from .token_manager import TokenManager
 
 log = logging.getLogger(__name__)
@@ -803,7 +805,8 @@ class OutlookClient:
         path = "/me/chats"
         params: dict[str, str] | None = {
             "$top": str(page_size),
-            "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,lastMessagePreview,webUrl",
+            "$select": "id,topic,chatType,createdDateTime,lastUpdatedDateTime,webUrl",
+            "$expand": "lastMessagePreview,members",
             "$orderby": "lastMessagePreview/createdDateTime desc",
         }
 
@@ -817,7 +820,22 @@ class OutlookClient:
             path = next_link
             params = None
 
-        return chats[:top]
+        chats = chats[:top]
+        missing = [chat for chat in chats if not chat.get("lastMessagePreview")]
+        with ordered_map(self._teams_activity_preview, missing) as previews:
+            for chat, preview in zip(missing, previews, strict=False):
+                chat["lastMessagePreview"] = preview
+        chats.sort(key=activity_time, reverse=True)
+        return chats
+
+    def _teams_activity_preview(self, chat: dict[str, Any]) -> dict[str, Any]:
+        """Read one message only when Graph did not return a preview."""
+        try:
+            messages = self.list_teams_messages(chat["id"], top=1)
+        except OutlookAPIError as exc:
+            log.warning("Cannot read Teams activity for %s: %s", chat["id"], exc)
+            return {}
+        return max(messages, key=lambda message: message.get("createdDateTime") or "", default={})
 
     def get_teams_chat(self, chat_id: str) -> dict[str, Any]:
         """Get a Teams chat by ID."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ..commands.mail import _safe_filename, _unique_path
@@ -10,13 +11,14 @@ from ..commands.teams import (
     _chat_match_reasons,
     _chat_title,
     _collect_message_links_and_attachments,
-    _matches_query,
     _resolve_chat_attachment_index,
+    _search_members,
     _teams_sender,
 )
 from ..concurrency import ordered_map
 from ..errors import OutlookAPIError
 from ..formatting import html_to_text
+from ..teams_activity import activity_fields, activity_time, is_system_event
 from .clients import clamp, graph_client
 from .shaping import JsonDict, require_absolute_dir
 
@@ -25,6 +27,8 @@ MEMBER_LIMIT = 10
 
 def _members(client: Any, chat: JsonDict, limit: int) -> list[JsonDict]:
     """Fetch chat members when the chat has no topic. Failures yield no members."""
+    if "members" in chat and not chat.get("members@odata.nextLink"):
+        return chat["members"]
     if chat.get("topic"):
         return []
     try:
@@ -39,6 +43,7 @@ def _chat_summary(chat: JsonDict, members: list[JsonDict]) -> JsonDict:
         "title": _chat_title(chat, members),
         "chatType": chat.get("chatType", ""),
         "lastUpdated": chat.get("lastUpdatedDateTime", ""),
+        **activity_fields(chat),
         "webUrl": chat.get("webUrl", ""),
     }
 
@@ -47,22 +52,27 @@ def teams_list(count: int = 20) -> list[JsonDict]:
     """List recent Teams chats, newest activity first. Read-only."""
     with graph_client() as client:
         chats = client.list_teams_chats(top=clamp(count, high=50))
-        chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
+        chats.sort(key=activity_time, reverse=True)
         with ordered_map(lambda chat: _members(client, chat, MEMBER_LIMIT), chats) as memberships:
             return [_chat_summary(chat, members) for chat, members in zip(chats, memberships, strict=False)]
 
 
-def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]:
-    """Search Teams chats by topic and participant name or email among the most recent chats. Read-only."""
+def teams_search(
+    query: str, scan: int = 200, count: int = 10,
+    one_on_one: bool = False, include_messages: bool = False,
+) -> list[JsonDict]:
+    """Search recent chats by topic or participant. Use one_on_one to find a person's chat. Use include_messages to read recent messages. Read-only. Increase scan/count if searchIncomplete is true."""
     if not query.strip():
         raise ValueError("query must not be empty")
     results: list[JsonDict] = []
     with graph_client() as client:
         chats = client.list_teams_chats(top=clamp(scan, high=500))
-        chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
+        chats.sort(key=activity_time, reverse=True)
+        scan_limited = len(chats) >= clamp(scan, high=500)
+        if one_on_one:
+            chats = [chat for chat in chats if chat.get("chatType") == "oneOnOne"]
         with ordered_map(
-            lambda chat: [] if _matches_query([chat.get("topic") or ""], query)
-            else _members(client, chat, 100) or [], chats,
+            lambda chat: _search_members(client, chat, query, 100)[0], chats,
         ) as memberships:
             for chat, members in zip(chats, memberships, strict=False):
                 reasons = _chat_match_reasons(chat, members, query)
@@ -70,13 +80,20 @@ def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]
                     results.append({**_chat_summary(chat, members), "match": "; ".join(reasons)})
                     if len(results) >= clamp(count, high=50):
                         break
+    incomplete = scan_limited or len(results) >= clamp(count, high=50)
+    if incomplete:
+        logging.getLogger(__name__).warning("Teams search may be truncated. Increase scan/count.")
+    for result in results:
+        result["searchIncomplete"] = incomplete
+        if include_messages:
+            result["messages"] = teams_messages(result["id"])["messages"]
     return results
 
 
 def _message_text(message: JsonDict) -> str:
     if message.get("deletedDateTime"):
         return "[deleted message]"
-    if message.get("messageType") == "systemEventMessage":
+    if is_system_event(message):
         return "[system event]"
     body = message.get("body") or {}
     content = body.get("content") or ""
@@ -85,7 +102,7 @@ def _message_text(message: JsonDict) -> str:
     content = content.strip()
     if content:
         return content
-    if message.get("attachments") or message.get("hostedContents"):
+    if message.get("attachments") or message.get("hostedContents") or "<img" in (body.get("content") or "") or "<attachment" in (body.get("content") or ""):
         return "[attachment or rich content]"
     return "[empty message]"
 

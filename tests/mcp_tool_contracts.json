@@ -1093,7 +1093,7 @@
   },
   {
     "annotations": null,
-    "description": "Search Teams chats by topic and participant name or email among the most recent chats. Read-only.",
+    "description": "Search recent chats by topic or participant. Use one_on_one to find a person's chat. Use include_messages to read recent messages. Read-only. Increase scan/count if searchIncomplete is true.",
     "execution": null,
     "icons": null,
     "inputSchema": {
@@ -1102,6 +1102,16 @@
           "default": 10,
           "title": "Count",
           "type": "integer"
+        },
+        "include_messages": {
+          "default": false,
+          "title": "Include Messages",
+          "type": "boolean"
+        },
+        "one_on_one": {
+          "default": false,
+          "title": "One On One",
+          "type": "boolean"
         },
         "query": {
           "title": "Query",

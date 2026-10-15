@@ -8,7 +8,7 @@ from mcp_fakes import FakeClient, use_client
 from outlook_draft.errors import OutlookAPIError
 from outlook_draft.mcp import files, teams
 
-CHAT = {"id": "19:abc@thread.v2", "topic": "Project X", "chatType": "group", "lastUpdatedDateTime": "2026-10-15T10:00:00Z"}
+CHAT = {"id": "19:abc@thread.v2", "topic": "Project X", "chatType": "group", "lastUpdatedDateTime": "2026-10-15T10:00:00Z", "lastMessagePreview": {"createdDateTime": "2026-10-15T10:00:00Z"}}
 ONE_ON_ONE = {"id": "19:def@unq.gbl.spaces", "chatType": "oneOnOne", "lastUpdatedDateTime": "2026-10-14T10:00:00Z"}
 MEMBERS = [{"displayName": "Dana Smith", "email": "dana@example.com", "userId": "u1"}]
 
@@ -40,7 +40,7 @@ def test_teams_search_matches_topic_and_member(monkeypatch):
     use_client(monkeypatch, teams, "graph_client", fake)
 
     assert [c["id"] for c in teams.teams_search("project")] == [CHAT["id"]]
-    assert [c["match"] for c in teams.teams_search("dana")] == ["member: Dana Smith"]
+    assert [c["match"] for c in teams.teams_search("dana")] == ["member: Dana Smith", "member: Dana Smith"]
     with pytest.raises(ValueError):
         teams.teams_search("  ")
 
