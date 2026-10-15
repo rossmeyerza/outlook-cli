@@ -8,18 +8,16 @@ when agent_end fires.
 
 from __future__ import annotations
 
-import logging
-
 import json
+import logging
 import os
-import shutil
 import queue
+import shutil
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
 
 log = logging.getLogger(__name__)
 
@@ -183,7 +181,7 @@ class PiSession:
                 event = self._events.get(timeout=min(remaining, 5.0))
             except queue.Empty:
                 if not self.is_alive():
-                    raise PiSessionError("pi process died")
+                    raise PiSessionError("pi process died") from None
                 continue
 
             etype = event.get("type")

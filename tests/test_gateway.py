@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from outlook_draft.commands.gateway import (
     EXPORT_MANIFEST,
     _chunk_response,
     _gateway_command_help,
-    _heartbeat_is_stale,
     _handle_gateway_command,
+    _heartbeat_is_stale,
     _list_pi_models,
     _model_help,
     _parse_graph_time,
@@ -68,12 +68,12 @@ def test_export_manifest_reads_relative_files(tmp_path, monkeypatch) -> None:
 def test_graph_time_parser_normalizes_zulu_timestamps() -> None:
     parsed = _parse_graph_time("2026-06-01T12:34:56Z")
 
-    assert parsed.tzinfo == timezone.utc
+    assert parsed.tzinfo == UTC
     assert parsed.isoformat() == "2026-06-01T12:34:56+00:00"
 
 
 def test_heartbeat_stale_only_when_running_and_old() -> None:
-    old = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    old = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
 
     assert _heartbeat_is_stale({"last_poll_at": old, "poll_interval": 30}, running=True)
     assert not _heartbeat_is_stale({"last_poll_at": old, "poll_interval": 30}, running=False)

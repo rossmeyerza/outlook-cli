@@ -12,10 +12,10 @@ Both are exposed through ``outlook-cli completion <shell>``.
 
 from __future__ import annotations
 
-from .errors import CliError
-
 import argparse
 import sys
+
+from .errors import CliError
 
 SHELLS = ("bash", "zsh", "fish", "powershell", "nushell")
 
@@ -125,10 +125,7 @@ def _nushell_module(parser: argparse.ArgumentParser, prog: str) -> str:
                     argparse._CountAction,
                 ),
             )
-            if takes_value:
-                decl = f"  {name}: {_nu_type(action)}{completer_ref}"
-            else:
-                decl = f"  {name}"
+            decl = f"  {name}: {_nu_type(action)}{completer_ref}" if takes_value else f"  {name}"
             flags.append(decl + _nu_comment(action))
 
         body = positionals + flags
@@ -173,6 +170,6 @@ def print_completion(shell: str, parser: argparse.ArgumentParser, prog: str = "o
             "argcomplete is required for bash/zsh/fish/powershell completions.\n"
             "Install it with:  pip install argcomplete\n"
         )
-        raise CliError("")
+        raise CliError("") from None
 
     sys.stdout.write(argcomplete.shellcode([prog], shell=shell))

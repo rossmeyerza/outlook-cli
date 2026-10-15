@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-import time
 import math
-from threading import RLock
+import time
+from datetime import UTC
 from pathlib import Path
-from urllib.parse import quote
+from threading import RLock
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -451,8 +452,8 @@ class OutlookClient:
 
     def get_agenda(self, days: int = 7, top: int = 20) -> list[dict[str, Any]]:
         """Get upcoming calendar events."""
-        from datetime import datetime, timezone, timedelta
-        now = datetime.now(timezone.utc)
+        from datetime import datetime, timedelta
+        now = datetime.now(UTC)
         start = now.isoformat()
         end = (now + timedelta(days=days)).isoformat()
 

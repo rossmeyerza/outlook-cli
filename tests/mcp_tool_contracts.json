@@ -1,0 +1,1551 @@
+[
+  {
+    "annotations": null,
+    "description": "Search mail by keyword. Read-only. Returns message summaries with full IDs.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "mail_searchArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_search",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_searchOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List unread Inbox messages, newest first. Read-only. Returns message summaries.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "title": "mail_unreadArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_unread",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_unreadOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Read one message by full ID: headers, recipients, body text, attachments and links. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "include_html": {
+          "default": false,
+          "title": "Include Html",
+          "type": "boolean"
+        },
+        "max_chars": {
+          "default": 20000,
+          "title": "Max Chars",
+          "type": "integer"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_readArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_read",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_readDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List attachments on a message (id, name, contentType, size, isInline). Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_attachmentsArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_attachments",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_attachmentsOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Download file attachments to an absolute directory on this machine. Skips inline images unless named in attachment_ids. Writes files.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "attachment_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachment Ids"
+        },
+        "dest_dir": {
+          "title": "Dest Dir",
+          "type": "string"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_id",
+        "dest_dir"
+      ],
+      "title": "mail_download_attachmentsArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_download_attachments",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_download_attachmentsOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List links in a message body. By default only SharePoint/OneDrive share links. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "share_only": {
+          "default": true,
+          "title": "Share Only",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_linksArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_links",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_linksOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List top-level mail folders with unread and total counts. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {},
+      "title": "mail_foldersArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_folders",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_foldersOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Mark a message read or unread. Changes mailbox state.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "is_read": {
+          "default": true,
+          "title": "Is Read",
+          "type": "boolean"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_mark_readArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_mark_read",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_mark_readDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Move a message to a folder given by name (e.g. 'inbox', 'archive', a display name) or ID. Changes mailbox state.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "folder": {
+          "title": "Folder",
+          "type": "string"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id",
+        "folder"
+      ],
+      "title": "mail_moveArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_move",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_moveDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Move a message to the Archive folder. Changes mailbox state.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_archiveArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "mail_archive",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_archiveDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "bcc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bcc"
+        },
+        "body": {
+          "title": "Body",
+          "type": "string"
+        },
+        "cc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cc"
+        },
+        "html": {
+          "default": false,
+          "title": "Html",
+          "type": "boolean"
+        },
+        "importance": {
+          "default": "Normal",
+          "title": "Importance",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "To",
+          "type": "array"
+        }
+      },
+      "required": [
+        "to",
+        "subject",
+        "body"
+      ],
+      "title": "draft_createArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "draft_create",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_createDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Create a reply draft to an existing message with the reply signature and quoted original. Does not send.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "title": "Body",
+          "type": "string"
+        },
+        "html": {
+          "default": false,
+          "title": "Html",
+          "type": "boolean"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "reply_all": {
+          "default": false,
+          "title": "Reply All",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_id",
+        "body"
+      ],
+      "title": "draft_replyArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "draft_reply",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_replyDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List drafts in the Drafts folder, newest first. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "title": "draft_listArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "draft_list",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "draft_listOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Get one draft by full ID, including recipients and body text. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "draft_id": {
+          "title": "Draft Id",
+          "type": "string"
+        },
+        "include_html": {
+          "default": false,
+          "title": "Include Html",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "draft_id"
+      ],
+      "title": "draft_getArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "draft_get",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_getDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Delete a draft by full ID. Refuses to delete anything that is not a draft.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "draft_id": {
+          "title": "Draft Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "draft_id"
+      ],
+      "title": "draft_deleteArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "draft_delete",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_deleteDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List upcoming calendar events for the next N days. Read-only. Returns event summaries with full IDs.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 50,
+          "title": "Count",
+          "type": "integer"
+        },
+        "days": {
+          "default": 7,
+          "title": "Days",
+          "type": "integer"
+        }
+      },
+      "title": "cal_agendaArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_agenda",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "cal_agendaOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Get one calendar event by full ID, including attendees, body text and recurrence. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "title": "cal_getArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_get",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_getDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Get free/busy for people or rooms between two local times. Read-only. Times are in the configured local timezone.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "attendees": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Attendees",
+          "type": "array"
+        },
+        "end": {
+          "title": "End",
+          "type": "string"
+        },
+        "interval_minutes": {
+          "default": 30,
+          "title": "Interval Minutes",
+          "type": "integer"
+        },
+        "start": {
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attendees",
+        "start",
+        "end"
+      ],
+      "title": "cal_availabilityArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_availability",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "cal_availabilityOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Ask Outlook to suggest meeting times for attendees within a window. Read-only. Does not create anything.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "attendees": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Attendees",
+          "type": "array"
+        },
+        "count": {
+          "default": 10,
+          "title": "Count",
+          "type": "integer"
+        },
+        "duration_minutes": {
+          "default": 30,
+          "title": "Duration Minutes",
+          "type": "integer"
+        },
+        "end": {
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attendees",
+        "start",
+        "end"
+      ],
+      "title": "cal_find_timeArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_find_time",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "cal_find_timeOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Create a calendar event. WARNING: if attendees are given, Outlook emails invitations to them immediately. Omit attendees for a private event.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "attendees": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attendees"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "end": {
+          "title": "End",
+          "type": "string"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "online_meeting": {
+          "default": false,
+          "title": "Online Meeting",
+          "type": "boolean"
+        },
+        "start": {
+          "title": "Start",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "start",
+        "end"
+      ],
+      "title": "cal_createArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_create",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_createDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Accept, tentatively accept or decline an invitation. WARNING: when send_response is true, the organizer is emailed your response.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "response": {
+          "enum": [
+            "accept",
+            "tentative",
+            "decline"
+          ],
+          "title": "Response",
+          "type": "string"
+        },
+        "send_response": {
+          "default": true,
+          "title": "Send Response",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "event_id",
+        "response"
+      ],
+      "title": "cal_respondArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "cal_respond",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_respondDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Search the org directory and recent contacts by name or email. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 10,
+          "title": "Count",
+          "type": "integer"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "contact_searchArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "contact_search",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "contact_searchOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List incomplete tasks. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 50,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "title": "task_listArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "task_list",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "task_listOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Create a task in Outlook Tasks. Changes mailbox data.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject"
+      ],
+      "title": "task_createArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "task_create",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "task_createDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Mark a task as completed. Changes mailbox data.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "title": "task_completeArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "task_complete",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "task_completeDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List recent Teams chats, newest activity first. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "title": "teams_listArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "teams_list",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "teams_listOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Search Teams chats by topic and participant name or email among the most recent chats. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 10,
+          "title": "Count",
+          "type": "integer"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "scan": {
+          "default": 200,
+          "title": "Scan",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "teams_searchArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "teams_search",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "teams_searchOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Read recent messages in a Teams chat by full chat ID, oldest first. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chat_id"
+      ],
+      "title": "teams_messagesArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "teams_messages",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "teams_messagesDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List file attachments and SharePoint/OneDrive links in the latest messages of a chat. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "count": {
+          "default": 50,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chat_id"
+      ],
+      "title": "teams_attachmentsArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "teams_attachments",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "teams_attachmentsOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Download Teams attachments or share links from a chat to an absolute directory. `attachment` is a 1-based index from teams_attachments, a URL, or a name fragment; omit for all. Writes files.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "attachment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachment"
+        },
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "count": {
+          "default": 50,
+          "title": "Count",
+          "type": "integer"
+        },
+        "dest_dir": {
+          "title": "Dest Dir",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chat_id",
+        "dest_dir"
+      ],
+      "title": "teams_download_attachmentsArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "teams_download_attachments",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "teams_download_attachmentsOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List SharePoint sites (Microsoft 365 groups) you are a member of. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {},
+      "title": "files_sitesArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "files_sites",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "files_sitesOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List document libraries in a SharePoint site (partial, case-insensitive site name). Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "site": {
+          "title": "Site",
+          "type": "string"
+        }
+      },
+      "required": [
+        "site"
+      ],
+      "title": "files_librariesArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "files_libraries",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "files_librariesOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "List a folder in OneDrive, or in a SharePoint site when `site` is given. With a site and no path or library, lists the site's libraries. Read-only.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "path": {
+          "default": "",
+          "title": "Path",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        }
+      },
+      "title": "files_listArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "files_list",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_listDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Search document libraries of a SharePoint site (site is required). Read-only. Returns items with webUrl.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "files_searchArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "files_search",
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "files_searchOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Download a file to an absolute local path (file or directory). `item` is a path, or for SharePoint also a drive item ID. OneDrive is used when `site` is omitted. Writes a file.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "dest": {
+          "title": "Dest",
+          "type": "string"
+        },
+        "item": {
+          "title": "Item",
+          "type": "string"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        }
+      },
+      "required": [
+        "item",
+        "dest"
+      ],
+      "title": "files_downloadArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "files_download",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_downloadDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Report whether the Outlook and Graph tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {},
+      "title": "auth_statusArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "auth_status",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "auth_statusDictOutput",
+      "type": "object"
+    },
+    "title": null
+  }
+]

@@ -3,8 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import re
-from typing import Iterable
-
+from collections.abc import Iterable
 
 SHAREPOINT_HOSTS = (
     "sharepoint.com",

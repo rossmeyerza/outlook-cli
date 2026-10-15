@@ -2,26 +2,22 @@
 
 from __future__ import annotations
 
-from ..parser import add_output_args, _add_yes_arg
-
-
-import logging
-import math
 import json
+import logging
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import httpx
-from rich.console import Console
 from rich import box
+from rich.console import Console
 from rich.table import Table
 
 from .. import config
-from ..errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
+from ..errors import OutlookAPIError
+from ..outlook_client import OutlookClient
+from ..parser import add_output_args
 from ..progress import spinner
 from ..token_manager import TokenManager
-from ..outlook_client import OutlookClient
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -648,16 +644,32 @@ def register(sub) -> None:
     add_output_args(p_files)
     files_sub = p_files.add_subparsers(dest="command", required=True)
 
+    _register_cmd_files_sites_p(files_sub)
+    _register_cmd_files_libraries_p(files_sub)
+    _register_cmd_files_list_p(files_sub)
+    _register_cmd_files_search_p(files_sub)
+    _register_cmd_files_upload_p(files_sub)
+    _register_cmd_files_download_p(files_sub)
+    _register_cmd_files_mkdir_p(files_sub)
+    _register_cmd_files_rename_p(files_sub)
+    _register_cmd_files_move_p(files_sub)
+
+
+def _register_cmd_files_sites_p(files_sub) -> None:
     cmd_files_sites_p = files_sub.add_parser("sites", help="List SharePoint sites")
     add_output_args(cmd_files_sites_p)
     cmd_files_sites_p.set_defaults(func=cmd_files_sites)
 
+
+def _register_cmd_files_libraries_p(files_sub) -> None:
     cmd_files_libraries_p = files_sub.add_parser("libraries", help="List SharePoint document libraries")
     add_output_args(cmd_files_libraries_p)
     cmd_files_libraries_p.add_argument("--site", metavar="NAME", required=True, help="SharePoint site name")
     cmd_files_libraries_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_libraries_p.set_defaults(func=cmd_files_libraries)
 
+
+def _register_cmd_files_list_p(files_sub) -> None:
     cmd_files_list_p = files_sub.add_parser("list", help="List files and folders")
     add_output_args(cmd_files_list_p)
     cmd_files_list_p.add_argument("path", nargs="?", default="", help="Folder path (default: root)")
@@ -666,6 +678,8 @@ def register(sub) -> None:
     cmd_files_list_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_list_p.set_defaults(func=cmd_files_list)
 
+
+def _register_cmd_files_search_p(files_sub) -> None:
     cmd_files_search_p = files_sub.add_parser("search", help="Search SharePoint files and folders")
     add_output_args(cmd_files_search_p)
     cmd_files_search_p.add_argument("query", help="Search text")
@@ -675,6 +689,8 @@ def register(sub) -> None:
     cmd_files_search_p.add_argument("--links", action="store_true", help="Show browser links in table output")
     cmd_files_search_p.set_defaults(func=cmd_files_search)
 
+
+def _register_cmd_files_upload_p(files_sub) -> None:
     cmd_files_upload_p = files_sub.add_parser("upload", help="Upload a file")
     cmd_files_upload_p.add_argument("file", help="Local file path")
     cmd_files_upload_p.add_argument("dest", nargs="?", default="", help="Remote folder path (default: root)")
@@ -682,6 +698,8 @@ def register(sub) -> None:
     cmd_files_upload_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")
     cmd_files_upload_p.set_defaults(func=cmd_files_upload)
 
+
+def _register_cmd_files_download_p(files_sub) -> None:
     cmd_files_download_p = files_sub.add_parser("download", help="Download a file")
     cmd_files_download_p.add_argument("path", help="Remote file path")
     cmd_files_download_p.add_argument("dest", nargs="?", default=".", help="Local output file or directory")
@@ -690,12 +708,16 @@ def register(sub) -> None:
     cmd_files_download_p.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
     cmd_files_download_p.set_defaults(func=cmd_files_download)
 
+
+def _register_cmd_files_mkdir_p(files_sub) -> None:
     cmd_files_mkdir_p = files_sub.add_parser("mkdir", help="Create a folder")
     cmd_files_mkdir_p.add_argument("path", help="Folder path to create")
     cmd_files_mkdir_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
     cmd_files_mkdir_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")
     cmd_files_mkdir_p.set_defaults(func=cmd_files_mkdir)
 
+
+def _register_cmd_files_rename_p(files_sub) -> None:
     cmd_files_rename_p = files_sub.add_parser("rename", help="Rename a file or folder")
     cmd_files_rename_p.add_argument("path", help="Current path")
     cmd_files_rename_p.add_argument("name", help="New name")
@@ -703,6 +725,8 @@ def register(sub) -> None:
     cmd_files_rename_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")
     cmd_files_rename_p.set_defaults(func=cmd_files_rename)
 
+
+def _register_cmd_files_move_p(files_sub) -> None:
     cmd_files_move_p = files_sub.add_parser("move", help="Move a file or folder")
     cmd_files_move_p.add_argument("path", help="Source path")
     cmd_files_move_p.add_argument("dest", help="Destination folder path")

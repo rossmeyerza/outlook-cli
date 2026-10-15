@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 
 from .. import completion
+
+
 def cmd_completion(args: argparse.Namespace) -> None:
     completion.print_completion(args.shell, args._parser)
 

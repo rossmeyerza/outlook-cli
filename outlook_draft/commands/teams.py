@@ -1,28 +1,21 @@
 from __future__ import annotations
 
-from ..errors import CliError
-
-from ..parser import add_output_args, _add_yes_arg
-
-
 import argparse
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from rich.panel import Panel
 from rich.table import Table
 
-from .. import config
+from .. import config, runtime
 from ..cache import TEAMS_CACHE, load_cache, save_cache
-from ..errors import OutlookAPIError
-from ..links import extract_links_from_html, looks_like_share_url
-from ..progress import spinner
 from ..concurrency import ordered_map
-from .. import runtime
-from ..formatting import html_to_text, format_datetime
-from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
-
+from ..errors import CliError, OutlookAPIError
+from ..formatting import format_datetime, html_to_text
+from ..links import extract_links_from_html, looks_like_share_url
+from ..parser import _add_yes_arg
+from ..progress import spinner
 
 JsonDict = dict[str, Any]
 SELF_CHAT_ID = "48:notes"
@@ -290,7 +283,6 @@ def _search_members(client: Any, chat: JsonDict, query: str, top: int) -> tuple[
 
 
 def cmd_teams_list(args: argparse.Namespace) -> None:
-    console = runtime.console
     client = runtime.get_graph_client()
     try:
         with spinner(args, "Loading Teams chats..."):
@@ -305,7 +297,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                 with ordered_map(
                     lambda chat: _latest_received_message_time(client, chat, self_user_id), chats,
                 ) as timestamps:
-                    for chat, timestamp in zip(chats, timestamps):
+                    for chat, timestamp in zip(chats, timestamps, strict=False):
                         chat["_lastReceivedMessageDateTime"] = timestamp
                 chats.sort(
                     key=lambda chat: chat.get("_lastReceivedMessageDateTime") or "",
@@ -319,10 +311,15 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                 )
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list Teams chats: {e}[/]")
+        raise CliError(f"[red]Failed to list Teams chats: {e}[/]") from e
     finally:
         client.close()
 
+    _render_chat_list(args, chats)
+
+
+def _render_chat_list(args: argparse.Namespace, chats: list[JsonDict]) -> None:
+    console = runtime.console
     if not chats:
         console.print("[dim]No Teams chats found.[/]")
         return
@@ -336,16 +333,18 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
 
     client = runtime.get_graph_client()
     try:
-        with spinner(args, "Resolving Teams chat participants..."):
-            with ordered_map(lambda chat: _list_members(client, chat), chats) as memberships:
-                for i, (chat, members) in enumerate(zip(chats, memberships), 1):
-                    table.add_row(
-                        str(i),
-                        format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
-                        chat.get("chatType", ""),
-                        _chat_title(chat, members),
-                        chat.get("id", "")[-16:],
-                    )
+        with (
+            spinner(args, "Resolving Teams chat participants..."),
+            ordered_map(lambda chat: _list_members(client, chat), chats) as memberships,
+        ):
+            for i, (chat, members) in enumerate(zip(chats, memberships, strict=False), 1):
+                table.add_row(
+                    str(i),
+                    format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
+                    chat.get("chatType", ""),
+                    _chat_title(chat, members),
+                    chat.get("id", "")[-16:],
+                )
     finally:
         client.close()
 
@@ -354,7 +353,6 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_search(args: argparse.Namespace) -> None:
-    console = runtime.console
     client = runtime.get_graph_client()
     query = " ".join(args.query).strip() if isinstance(args.query, list) else args.query.strip()
     if not query:
@@ -378,7 +376,7 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
             with ordered_map(
                 lambda chat: _search_members(client, chat, query, member_count), chats,
             ) as memberships:
-                for chat, (members, failed) in zip(chats, memberships):
+                for chat, (members, failed) in zip(chats, memberships, strict=False):
                     scanned += 1
                     member_errors += int(failed)
                     reasons = _chat_match_reasons(chat, members, query)
@@ -387,13 +385,18 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
                         if len(results) >= result_count:
                             break
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to search Teams chats: {e}[/]")
+        raise CliError(f"[red]Failed to search Teams chats: {e}[/]") from e
     finally:
         client.close()
 
     matched_chats = [chat for chat, _, _ in results]
     save_cache(TEAMS_CACHE, matched_chats, id_key="id")
 
+    _render_search_results(query, results, scanned, member_errors)
+
+
+def _render_search_results(query: str, results: list, scanned: int, member_errors: int) -> None:
+    console = runtime.console
     if not results:
         console.print(f"[dim]No Teams chats matched '{query}' in {scanned} scanned chats.[/]")
         console.print("[dim]Increase --scan to search more chats.[/]")
@@ -440,7 +443,7 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
             chat = client.get_teams_chat(chat_id)
             members = client.list_teams_chat_members(chat_id, top=50)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch Teams chat: {e}[/]")
+        raise CliError(f"[red]Failed to fetch Teams chat: {e}[/]") from e
     finally:
         client.close()
 
@@ -465,7 +468,7 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
     try:
         found = find_self_chat(client)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to read Teams self-chat: {e}[/]")
+        raise CliError(f"[red]Failed to read Teams self-chat: {e}[/]") from e
     finally:
         client.close()
 
@@ -503,7 +506,7 @@ def cmd_teams_send(args: argparse.Namespace) -> None:
         )
         console.print("[green]Teams message sent.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to send Teams message: {e}[/]")
+        raise CliError(f"[red]Failed to send Teams message: {e}[/]") from e
     finally:
         client.close()
 
@@ -568,7 +571,7 @@ def cmd_teams_attachments(args: argparse.Namespace) -> None:
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]") from e
     finally:
         client.close()
 
@@ -604,7 +607,7 @@ def cmd_teams_download_attachments(args: argparse.Namespace) -> None:
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]") from e
     finally:
         client.close()
 
@@ -662,7 +665,7 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
             members = client.list_teams_chat_members(chat_id, top=20)
         messages = client.list_teams_messages(chat_id, top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]") from e
     finally:
         client.close()
 
@@ -691,12 +694,25 @@ def register(sub) -> None:
     teams_sub = p_teams.add_subparsers(dest="command", required=True)
 
 
+    _register_cmd_teams_list_cmd(teams_sub)
+    _register_cmd_teams_search_cmd(teams_sub)
+    _register_cmd_teams_show_cmd(teams_sub)
+    _register_cmd_teams_self_cmd(teams_sub)
+    _register_cmd_teams_messages_cmd(teams_sub)
+    _register_cmd_teams_attachments_cmd(teams_sub)
+    _register_cmd_teams_download_attachments_cmd(teams_sub)
+    _register_cmd_teams_send_cmd(teams_sub)
+
+
+def _register_cmd_teams_list_cmd(teams_sub) -> None:
     cmd_teams_list_cmd = teams_sub.add_parser("list", help="List Teams chats")
     cmd_teams_list_cmd.add_argument("--count", "-n", type=int, default=20, help="Max chats")
     cmd_teams_list_cmd.add_argument("--sort-received", action="store_true",
         help="Sort by last received message (slower — makes one API call per chat)")
     cmd_teams_list_cmd.set_defaults(func=cmd_teams_list)
 
+
+def _register_cmd_teams_search_cmd(teams_sub) -> None:
     cmd_teams_search_cmd = teams_sub.add_parser("search", help="Search Teams chats by topic or participant")
     cmd_teams_search_cmd.add_argument("query", nargs="+", help="Name, email, or chat topic to search for")
     cmd_teams_search_cmd.add_argument("--count", "-n", type=int, default=20, help="Max matching chats")
@@ -704,18 +720,26 @@ def register(sub) -> None:
     cmd_teams_search_cmd.add_argument("--member-count", type=int, default=100, help="Max members to inspect per chat")
     cmd_teams_search_cmd.set_defaults(func=cmd_teams_search)
 
+
+def _register_cmd_teams_show_cmd(teams_sub) -> None:
     cmd_teams_show_cmd = teams_sub.add_parser("show", help="Show Teams chat details")
     cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_show_cmd.set_defaults(func=cmd_teams_show)
 
+
+def _register_cmd_teams_self_cmd(teams_sub) -> None:
     cmd_teams_self_cmd = teams_sub.add_parser("self", help="Show your Teams self-chat")
     cmd_teams_self_cmd.set_defaults(func=cmd_teams_self)
 
+
+def _register_cmd_teams_messages_cmd(teams_sub) -> None:
     cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
     cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
     cmd_teams_messages_cmd.set_defaults(func=cmd_teams_messages)
 
+
+def _register_cmd_teams_attachments_cmd(teams_sub) -> None:
     cmd_teams_attachments_cmd = teams_sub.add_parser(
         "attachments",
         help="List Teams attachments and SharePoint/OneDrive links in a chat",
@@ -731,6 +755,8 @@ def register(sub) -> None:
         func=cmd_teams_attachments,
     )
 
+
+def _register_cmd_teams_download_attachments_cmd(teams_sub) -> None:
     cmd_teams_download_attachments_cmd = teams_sub.add_parser(
         "download-attachments",
         help="Download Teams attachments/share links via Graph",
@@ -753,6 +779,8 @@ def register(sub) -> None:
         func=cmd_teams_download_attachments,
     )
 
+
+def _register_cmd_teams_send_cmd(teams_sub) -> None:
     cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message (requires --yes)")
     cmd_teams_send_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")

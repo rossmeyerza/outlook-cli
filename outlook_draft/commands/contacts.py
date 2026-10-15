@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-from ..errors import CliError
-
-from ..parser import add_output_args, _add_yes_arg
-
-
 import argparse
-import sys
-from typing import Any, Callable
+import json
+from typing import Any
 
 from rich.table import Table
 
-import json
-
-from ..cache import CONTACT_CACHE
-from ..errors import OutlookAPIError
-from ..progress import spinner
 from .. import runtime
-from ..formatting import html_to_text, format_datetime
-from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
+from ..cache import CONTACT_CACHE
+from ..errors import CliError, OutlookAPIError
+from ..parser import add_output_args
+from ..progress import spinner
+from ..references import _resolve_contact_id
 
 
 def _type_label(person: dict[str, Any]) -> str:
@@ -41,7 +34,7 @@ def cmd_contacts(args: argparse.Namespace) -> None:
         with spinner(args, f"Searching contacts for '{args.query}'..."):
             people = client.search_people(args.query, top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to search contacts: {e}[/]")
+        raise CliError(f"[red]Failed to search contacts: {e}[/]") from e
     finally:
         client.close()
 
@@ -107,7 +100,7 @@ def cmd_contact_create(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Created contact:[/] {contact.get('DisplayName', args.name)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to create contact: {e}[/]")
+        raise CliError(f"[red]Failed to create contact: {e}[/]") from e
     finally:
         client.close()
 
@@ -130,7 +123,7 @@ def cmd_contact_update(args: argparse.Namespace) -> None:
             )
         runtime.console.print("[green]Contact updated.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to update contact: {e}[/]")
+        raise CliError(f"[red]Failed to update contact: {e}[/]") from e
     finally:
         client.close()
 

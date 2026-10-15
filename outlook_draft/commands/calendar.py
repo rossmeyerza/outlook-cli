@@ -1,29 +1,21 @@
 from __future__ import annotations
 
-import logging
-
-from ..errors import CliError
-
-from ..parser import add_output_args, _add_yes_arg
-
-
 import argparse
-import json
-import sys
+import logging
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from rich.panel import Panel
 from rich.table import Table
 
-from ..calendar_time import outlook_datetime, parse_local_datetime
-from ..cache import CAL_CACHE, save_cache
-from ..errors import OutlookAPIError
-from ..progress import spinner
 from .. import runtime
-from ..formatting import html_to_text, format_datetime
-from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
-
+from ..cache import CAL_CACHE, save_cache
+from ..calendar_time import outlook_datetime, parse_local_datetime
+from ..errors import CliError, OutlookAPIError
+from ..formatting import html_to_text
+from ..parser import add_output_args
+from ..progress import spinner
+from ..references import _resolve_cal_id
 
 JsonDict = dict[str, Any]
 
@@ -123,7 +115,7 @@ def cmd_cal_agenda(args: argparse.Namespace) -> None:
         with spinner(args, "Loading calendar agenda..."):
             events = client.get_agenda(days=args.days, top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch calendar: {e}[/]")
+        raise CliError(f"[red]Failed to fetch calendar: {e}[/]") from e
     finally:
         client.close()
 
@@ -175,7 +167,7 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading calendar event..."):
             event = client.get_event(event_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to fetch event: {e}[/]")
+        raise CliError(f"[red]Failed to fetch event: {e}[/]") from e
     finally:
         client.close()
 
@@ -238,7 +230,7 @@ def _parse_event_datetimes(args: argparse.Namespace) -> tuple[str, str]:
     except Exception as e:
         log.debug("Best-effort operation failed", exc_info=True)
         runtime.console.print(f"[red]Failed to parse dates: {e}[/]")
-        raise CliError("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
+        raise CliError("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'") from e
     return outlook_datetime(start_dt), outlook_datetime(end_dt)
 
 
@@ -260,7 +252,7 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Created event:[/] {args.subject}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to create event: {e}[/]")
+        raise CliError(f"[red]Failed to create event: {e}[/]") from e
     finally:
         client.close()
 
@@ -287,7 +279,7 @@ def cmd_cal_rooms(args: argparse.Namespace) -> None:
             )
         else:
             runtime.console.print(f"[red]Failed to find rooms: {e}[/]")
-        raise CliError("")
+        raise CliError("") from e
     finally:
         client.close()
     if args.json:
@@ -314,7 +306,7 @@ def cmd_cal_availability(args: argparse.Namespace) -> None:
                 interval_minutes=args.interval,
             )
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to get availability: {e}[/]")
+        raise CliError(f"[red]Failed to get availability: {e}[/]") from e
     finally:
         client.close()
     if args.json:
@@ -337,7 +329,7 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
                 max_candidates=args.count,
             )
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to find meeting times: {e}[/]")
+        raise CliError(f"[red]Failed to find meeting times: {e}[/]") from e
     finally:
         client.close()
     if args.json:
@@ -361,10 +353,7 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
 
 def cmd_cal_update(args: argparse.Namespace) -> None:
     """Update a calendar event."""
-    if args.teams is None:
-        teams_change = False
-    else:
-        teams_change = True
+    teams_change = args.teams is not None
     if not any([
         args.subject,
         args.start,
@@ -397,7 +386,7 @@ def cmd_cal_update(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Updated event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to update event: {e}[/]")
+        raise CliError(f"[red]Failed to update event: {e}[/]") from e
     finally:
         client.close()
 
@@ -412,7 +401,7 @@ def cmd_cal_delete(args: argparse.Namespace) -> None:
             client.delete_event(event_id)
         runtime.console.print(f"[green]Deleted event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to delete event: {e}[/]")
+        raise CliError(f"[red]Failed to delete event: {e}[/]") from e
     finally:
         client.close()
 
@@ -431,7 +420,7 @@ def _respond_to_event(args: argparse.Namespace, response: str, label: str) -> No
             )
         runtime.console.print(f"[green]{label} event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to {label.lower()} event: {e}[/]")
+        raise CliError(f"[red]Failed to {label.lower()} event: {e}[/]") from e
     finally:
         client.close()
 
@@ -461,7 +450,7 @@ def cmd_cal_cancel(args: argparse.Namespace) -> None:
             client.cancel_event(event_id, comment=args.comment or "")
         runtime.console.print(f"[green]Cancelled event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to cancel event: {e}[/]")
+        raise CliError(f"[red]Failed to cancel event: {e}[/]") from e
     finally:
         client.close()
 
@@ -471,6 +460,21 @@ def register(sub) -> None:
     add_output_args(p_cal)
     cal_sub = p_cal.add_subparsers(dest="command", required=True)
 
+    _register_cmd_cal_agenda_parser(cal_sub)
+    _register_cmd_cal_show_parser(cal_sub)
+    _register_cmd_cal_create_cmd(cal_sub)
+    _register_cmd_cal_rooms_cmd(cal_sub)
+    _register_cmd_cal_availability_cmd(cal_sub)
+    _register_cmd_cal_find_time_cmd(cal_sub)
+    _register_cmd_cal_update_cmd(cal_sub)
+    _register_cmd_cal_delete_cmd(cal_sub)
+    _register_cmd_cal_accept_cmd(cal_sub)
+    _register_cmd_cal_decline_cmd(cal_sub)
+    _register_cmd_cal_tentative_cmd(cal_sub)
+    _register_cmd_cal_cancel_cmd(cal_sub)
+
+
+def _register_cmd_cal_agenda_parser(cal_sub) -> None:
     cmd_cal_agenda_parser = cal_sub.add_parser("agenda", help="List upcoming calendar events")
     add_output_args(cmd_cal_agenda_parser)
     cmd_cal_agenda_parser.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
@@ -478,11 +482,15 @@ def register(sub) -> None:
     cmd_cal_agenda_parser.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
     cmd_cal_agenda_parser.set_defaults(func=cmd_cal_agenda)
 
+
+def _register_cmd_cal_show_parser(cal_sub) -> None:
     cmd_cal_show_parser = cal_sub.add_parser("show", help="Show event details")
     add_output_args(cmd_cal_show_parser)
     cmd_cal_show_parser.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_show_parser.set_defaults(func=cmd_cal_show)
 
+
+def _register_cmd_cal_create_cmd(cal_sub) -> None:
     cmd_cal_create_cmd = cal_sub.add_parser("create", help="Create an event")
     cmd_cal_create_cmd.add_argument("subject", help="Event subject")
     cmd_cal_create_cmd.add_argument("start", help="Start time (e.g. '2026-04-10 14:00')")
@@ -497,11 +505,15 @@ def register(sub) -> None:
     )
     cmd_cal_create_cmd.set_defaults(func=cmd_cal_create)
 
+
+def _register_cmd_cal_rooms_cmd(cal_sub) -> None:
     cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
     add_output_args(cmd_cal_rooms_cmd)
     cmd_cal_rooms_cmd.add_argument("--room-list", help="Optional room list email/address")
     cmd_cal_rooms_cmd.set_defaults(func=cmd_cal_rooms)
 
+
+def _register_cmd_cal_availability_cmd(cal_sub) -> None:
     cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
     add_output_args(cmd_cal_availability_cmd)
     cmd_cal_availability_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
@@ -510,6 +522,8 @@ def register(sub) -> None:
     cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
     cmd_cal_availability_cmd.set_defaults(func=cmd_cal_availability)
 
+
+def _register_cmd_cal_find_time_cmd(cal_sub) -> None:
     cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
     add_output_args(cmd_cal_find_time_cmd)
     cmd_cal_find_time_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
@@ -519,6 +533,8 @@ def register(sub) -> None:
     cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
     cmd_cal_find_time_cmd.set_defaults(func=cmd_cal_find_time)
 
+
+def _register_cmd_cal_update_cmd(cal_sub) -> None:
     cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
     cmd_cal_update_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_update_cmd.add_argument("--subject", help="New event subject")
@@ -542,10 +558,14 @@ def register(sub) -> None:
     )
     cmd_cal_update_cmd.set_defaults(func=cmd_cal_update)
 
+
+def _register_cmd_cal_delete_cmd(cal_sub) -> None:
     cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")
     cmd_cal_delete_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_delete_cmd.set_defaults(func=cmd_cal_delete)
 
+
+def _register_cmd_cal_accept_cmd(cal_sub) -> None:
     cmd_cal_accept_cmd = cal_sub.add_parser("accept", help="Accept an event invitation")
     cmd_cal_accept_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_accept_cmd.add_argument("--comment", "-m", help="Optional response comment")
@@ -560,6 +580,8 @@ def register(sub) -> None:
         send_response=True,
     )
 
+
+def _register_cmd_cal_decline_cmd(cal_sub) -> None:
     cmd_cal_decline_cmd = cal_sub.add_parser("decline", help="Decline an event invitation")
     cmd_cal_decline_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_decline_cmd.add_argument("--comment", "-m", help="Optional response comment")
@@ -574,6 +596,8 @@ def register(sub) -> None:
         send_response=True,
     )
 
+
+def _register_cmd_cal_tentative_cmd(cal_sub) -> None:
     cmd_cal_tentative_cmd = cal_sub.add_parser("tentative", help="Tentatively accept an event invitation")
     cmd_cal_tentative_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_tentative_cmd.add_argument("--comment", "-m", help="Optional response comment")
@@ -588,6 +612,8 @@ def register(sub) -> None:
         send_response=True,
     )
 
+
+def _register_cmd_cal_cancel_cmd(cal_sub) -> None:
     cmd_cal_cancel_cmd = cal_sub.add_parser("cancel", help="Cancel an event you organize")
     cmd_cal_cancel_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_cancel_cmd.add_argument("--comment", "-m", help="Optional cancellation comment")

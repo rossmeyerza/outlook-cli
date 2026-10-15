@@ -14,8 +14,8 @@ from ..commands.teams import (
     _resolve_chat_attachment_index,
     _teams_sender,
 )
-from ..errors import OutlookAPIError
 from ..concurrency import ordered_map
+from ..errors import OutlookAPIError
 from ..formatting import html_to_text
 from .clients import clamp, graph_client
 from .shaping import JsonDict, require_absolute_dir
@@ -49,7 +49,7 @@ def teams_list(count: int = 20) -> list[JsonDict]:
         chats = client.list_teams_chats(top=clamp(count, high=50))
         chats.sort(key=lambda c: c.get("lastUpdatedDateTime") or "", reverse=True)
         with ordered_map(lambda chat: _members(client, chat, MEMBER_LIMIT), chats) as memberships:
-            return [_chat_summary(chat, members) for chat, members in zip(chats, memberships)]
+            return [_chat_summary(chat, members) for chat, members in zip(chats, memberships, strict=False)]
 
 
 def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]:
@@ -64,7 +64,7 @@ def teams_search(query: str, scan: int = 200, count: int = 10) -> list[JsonDict]
             lambda chat: [] if _matches_query([chat.get("topic") or ""], query)
             else _members(client, chat, 100) or [], chats,
         ) as memberships:
-            for chat, members in zip(chats, memberships):
+            for chat, members in zip(chats, memberships, strict=False):
                 reasons = _chat_match_reasons(chat, members, query)
                 if reasons:
                     results.append({**_chat_summary(chat, members), "match": "; ".join(reasons)})

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from threading import Barrier, Event, Lock
+from threading import Barrier, Event
 from unittest.mock import Mock
 
 from outlook_draft.concurrency import ordered_map

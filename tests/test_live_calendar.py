@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 import pytest
@@ -10,7 +11,6 @@ from outlook_draft.calendar_time import local_timezone, outlook_datetime
 from outlook_draft.errors import OutlookAPIError
 from outlook_draft.outlook_client import OutlookClient
 from outlook_draft.token_manager import TokenManager
-
 
 pytestmark = pytest.mark.live
 
@@ -62,8 +62,6 @@ def test_live_calendar_create_get_delete_roundtrip() -> None:
             client.get_event(created.get("Id") or created.get("id"))
     finally:
         if event_id:
-            try:
+            with suppress(OutlookAPIError):
                 client.delete_event(event_id)
-            except OutlookAPIError:
-                pass
         client.close()

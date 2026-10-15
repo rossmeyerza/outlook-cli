@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-import pytest
 
 from outlook_draft import config
 from outlook_draft.outlook_client import OutlookClient

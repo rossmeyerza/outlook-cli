@@ -6,12 +6,8 @@ We intercept those responses with Playwright instead of scraping the DOM.
 
 from __future__ import annotations
 
-import logging
-
-from ..parser import add_output_args, _add_yes_arg
-
-
 import json
+import logging
 from urllib.parse import parse_qs, urlparse
 
 from rich.console import Console
@@ -33,6 +29,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
     Returns a dict with keys 'new' and/or 'reply', values being HTML strings.
     """
     from playwright.sync_api import sync_playwright
+
     from .. import config as cfg
     from ..auth import _enter_email, _enter_password, _wait_for_mfa
 

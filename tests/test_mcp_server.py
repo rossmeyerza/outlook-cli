@@ -32,6 +32,12 @@ def _tool_names() -> set[str]:
     return {tool.__name__ for module in MODULES for tool in module.TOOLS}
 
 
+def test_full_tool_contract_matches_pre_refactor_snapshot():
+    tools = asyncio.run(build_server().list_tools())
+    expected = json.loads(Path(__file__).with_name("mcp_tool_contracts.json").read_text())
+    assert [tool.model_dump(mode="json") for tool in tools] == expected
+
+
 def test_registers_exactly_the_phase_one_tools():
     assert _tool_names() == EXPECTED_TOOLS
 

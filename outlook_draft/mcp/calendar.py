@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-
 from typing import Literal
 
 from ..calendar_time import outlook_datetime, parse_local_datetime

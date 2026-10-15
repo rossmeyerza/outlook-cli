@@ -1,33 +1,25 @@
 from __future__ import annotations
 
-import logging
-
-from ..errors import CliError
-
 import argparse
-import base64
-import json
-import shutil
+import logging
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from rich import box
 from rich.panel import Panel
 from rich.table import Table
 
 from .. import config, runtime
-from ..errors import OutlookAPIError
-from ..formatting import compose_email_html as _compose_email_html, text_to_html as _text_to_html, parse_recipients as _parse_recipients
+from ..errors import CliError, OutlookAPIError
+from ..formatting import compose_email_html as _compose_email_html
+from ..formatting import parse_recipients as _parse_recipients
+from ..formatting import text_to_html as _text_to_html
 from ..outlook_client import OutlookClient
+from ..parser import _add_yes_arg
 from ..progress import spinner
 from ..references import _resolve_message_id
 from ..runtime import console
 from ..signatures import load_signature
-from ..token_manager import TokenManager
-from ..parser import add_output_args, _add_yes_arg
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +40,7 @@ def _load_signature(path: Path) -> str:
     try:
         return load_signature(path)
     except FileNotFoundError as e:
-        raise CliError(f"[red]{e}[/]")
+        raise CliError(f"[red]{e}[/]") from e
 
 def cmd_create(args: argparse.Namespace) -> None:
     """Create a new email draft."""
@@ -76,7 +68,7 @@ def cmd_create(args: argparse.Namespace) -> None:
                 importance=importance,
             )
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to create draft: {e}[/]")
+        raise CliError(f"[red]Failed to create draft: {e}[/]") from e
     finally:
         client.close()
 
@@ -123,7 +115,7 @@ def cmd_reply(args: argparse.Namespace) -> None:
                 importance=importance,
             )
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to create reply draft: {e}[/]")
+        raise CliError(f"[red]Failed to create reply draft: {e}[/]") from e
     finally:
         client.close()
 
@@ -145,7 +137,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         with spinner(args, "Loading drafts..."):
             drafts = client.list_drafts(top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list drafts: {e}[/]")
+        raise CliError(f"[red]Failed to list drafts: {e}[/]") from e
     finally:
         client.close()
 
@@ -196,7 +188,7 @@ def cmd_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading draft..."):
             draft = client.get_draft(draft_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to get draft: {e}[/]")
+        raise CliError(f"[red]Failed to get draft: {e}[/]") from e
     finally:
         client.close()
 
@@ -234,7 +226,7 @@ def cmd_delete(args: argparse.Namespace) -> None:
         with spinner(args, "Deleting draft..."):
             client.delete_draft(draft_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to delete draft: {e}[/]")
+        raise CliError(f"[red]Failed to delete draft: {e}[/]") from e
     finally:
         client.close()
 
@@ -256,7 +248,7 @@ def cmd_send_draft(args: argparse.Namespace) -> None:
     try:
         client.send_message(draft_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to send draft: {e}[/]")
+        raise CliError(f"[red]Failed to send draft: {e}[/]") from e
     finally:
         client.close()
 
@@ -293,7 +285,7 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
             importance=args.importance,
         )
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to send email: {e}[/]")
+        raise CliError(f"[red]Failed to send email: {e}[/]") from e
     finally:
         client.close()
 

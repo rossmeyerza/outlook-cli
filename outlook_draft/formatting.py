@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-
 import re
 from datetime import datetime
 from html import escape
 
 from . import config
-
 
 log = logging.getLogger(__name__)
 

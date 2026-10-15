@@ -4,15 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from outlook_draft.errors import OutlookAPIError, TokenExpiredError
 from outlook_draft.commands.files import (
-    _GraphClient,
+    _download_destination,
     _find_sp_item_by_path,
+    _GraphClient,
     _item_summary,
     _match_library,
-    _download_destination,
     _write_download,
 )
+from outlook_draft.errors import OutlookAPIError, TokenExpiredError
 
 
 class FakeGraphClient:

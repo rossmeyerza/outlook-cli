@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 
+
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Run the MCP server on stdio. The active account comes from --account."""
     from ..mcp.server import run  # lazy: the mcp SDK is only needed for this command

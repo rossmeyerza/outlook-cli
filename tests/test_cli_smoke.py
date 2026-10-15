@@ -160,3 +160,22 @@ def test_cli_parallel_teams_matches_sequential(monkeypatch, capsys, isolated_cli
     actual = run_command(monkeypatch, capsys, argv)
     monkeypatch.setattr(teams, "ordered_map", sequential)
     assert actual == run_command(monkeypatch, capsys, argv)
+
+
+@pytest.mark.parametrize("argv", COMMANDS[-3:])
+def test_send_guard_does_not_build_a_client(monkeypatch, capsys, isolated_cli, argv):
+    fail = Mock(side_effect=AssertionError("Send guard must not authenticate"))
+    monkeypatch.setattr(runtime, "get_client", fail)
+    monkeypatch.setattr(runtime, "get_graph_client", fail)
+    assert run_command(monkeypatch, capsys, argv)["exit"] == 2
+    fail.assert_not_called()
+
+
+@pytest.mark.parametrize("argv, method", [
+    (["draft", "send", "x" * 50, "--yes"], "send_message"),
+    (["mail", "send", "--to", "sample@example.test", "-s", "Sample", "-b", "Body", "--yes"], "send_mail"),
+    (["teams", "send", "x" * 50, "Body", "--yes"], "send_teams_message"),
+])
+def test_confirmed_send_calls_only_the_fake_client(monkeypatch, capsys, isolated_cli, argv, method):
+    assert run_command(monkeypatch, capsys, argv)["exit"] == 0
+    getattr(isolated_cli, method).assert_called_once()

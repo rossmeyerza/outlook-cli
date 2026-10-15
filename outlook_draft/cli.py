@@ -5,11 +5,24 @@ import argparse
 import sys
 
 from . import config
-from .commands import account, drafts, mail, tasks, calendar, contacts, teams, files
-from .commands import signature, gateway_parser, mcp, completion
+from .commands import (
+    account,
+    calendar,
+    completion,
+    contacts,
+    drafts,
+    files,
+    gateway_parser,
+    mail,
+    mcp,
+    signature,
+    tasks,
+    teams,
+)
+from .errors import CliError, OutlookDraftError
 from .parser import add_output_args
 from .runtime import console
-from .errors import CliError, OutlookDraftError
+
 
 def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
     """Allow --account to appear before or after the top-level command."""
@@ -34,8 +47,7 @@ def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
         idx += 1
     return cleaned, account
 
-def main() -> None:
-    argv, account_override = _extract_account_arg(sys.argv[1:])
+def build_parser(account_override: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="outlook-cli",
         description="Manage Outlook mail, drafts, calendar, contacts, and Teams chats",
@@ -71,6 +83,13 @@ def main() -> None:
     mcp.register(sub)
     completion.register(sub)
 
+    return parser
+
+
+def main() -> None:
+    argv, account_override = _extract_account_arg(sys.argv[1:])
+    parser = build_parser(account_override)
+
     # Let argcomplete service tab-completion requests for bash/zsh/fish.
     try:
         import argcomplete
@@ -85,7 +104,7 @@ def main() -> None:
         _dispatch(args, parser)
     except (CliError, OutlookDraftError) as error:
         if str(error):
-            console.print(f"[red]{error}[/]")
+            console.print(str(error) if isinstance(error, CliError) else f"[red]{error}[/]")
         raise SystemExit(getattr(error, "exit_code", 1)) from error
 
 

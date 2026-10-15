@@ -1,33 +1,23 @@
 from __future__ import annotations
 
-import logging
-
-from ..errors import CliError
-
 import argparse
 import base64
 import json
+import logging
 import shutil
-import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from rich import box
-from rich.panel import Panel
 from rich.table import Table
 
 from .. import config, runtime
-from ..errors import OutlookAPIError
-from ..formatting import compose_email_html as _compose_email_html, text_to_html as _text_to_html, parse_recipients as _parse_recipients
-from ..outlook_client import OutlookClient
+from ..errors import CliError, OutlookAPIError
+from ..parser import add_output_args
 from ..progress import spinner
-from ..references import _resolve_message_id
 from ..runtime import console
-from ..signatures import load_signature
 from ..token_manager import TokenManager
-from ..parser import add_output_args, _add_yes_arg
 
 log = logging.getLogger(__name__)
 
@@ -199,7 +189,7 @@ def cmd_account_switch(args: argparse.Namespace) -> None:
     try:
         config.set_active_account(args.name)
     except FileNotFoundError as e:
-        raise CliError(f"[red]{e}[/]")
+        raise CliError(f"[red]{e}[/]") from e
     refresh_account_paths()
     console.print(f"[green]Active account:[/] {args.name}")
 
@@ -210,83 +200,92 @@ def cmd_account_remove(args: argparse.Namespace) -> None:
     path.unlink()
     if args.purge_data:
         shutil.rmtree(config.ACCOUNTS_DATA_DIR / args.name, ignore_errors=True)
-    if config.ACTIVE_ACCOUNT == args.name:
+    if args.name == config.ACTIVE_ACCOUNT:
         config.clear_active_account()
         refresh_account_paths()
     console.print(f"[green]Removed account profile:[/] {args.name}")
 
 def cmd_auth(args: argparse.Namespace) -> None:
     """Manage authentication."""
-    command = args.auth_command or "login"
-    if command == "status":
-        statuses = [
-            _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
-            _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
-        ]
-        if args.json:
-            print(json.dumps({
-                "account": {
-                    "active": config.ACTIVE_ACCOUNT,
-                    "email": config.MS_EMAIL,
-                    "sessionDir": str(config.SESSION_DIR),
-                },
-                "tokens": statuses,
-            }, indent=2))
-            return
-        title = "Auth status"
-        if config.ACTIVE_ACCOUNT:
-            title += f" ({config.ACTIVE_ACCOUNT})"
-        table = Table(title=title, box=box.SIMPLE)
-        table.add_column("Token")
-        table.add_column("Domain")
-        table.add_column("Status")
-        table.add_column("Expires")
-        for item in statuses:
-            if not item["present"]:
-                status = "[red]missing[/]"
-                expires = ""
-            elif item["expired"]:
-                status = "[red]expired[/]"
-                expires = "expired"
-            else:
-                status = "[green]valid[/]"
-                expires = f"{int(item['expiresInSeconds']) // 60} min"
-            table.add_row(str(item["label"]), str(item["domain"]), status, expires)
-        console.print(table)
-        return
-    if command == "clear":
-        if config.TOKENS_FILE.exists():
-            config.TOKENS_FILE.unlink()
-            console.print(f"[green]Deleted token cache:[/] {config.TOKENS_FILE}")
-        else:
-            console.print("[dim]No token cache found.[/]")
-        return
-    if command == "scopes":
-        if not config.TOKENS_FILE.exists():
-            raise CliError("[red]No token cache found. Run 'outlook-cli auth' first.[/]")
-        data = json.loads(config.TOKENS_FILE.read_text())
-        output = []
-        for domain, token in data.get("tokens", {}).items():
-            claims = _decode_token_claims(token)
-            scopes = str(claims.get("scp", "")).split()
-            output.append({
-                "domain": domain,
-                "audience": claims.get("aud", ""),
-                "tenant": claims.get("tid", ""),
-                "appId": claims.get("appid", ""),
-                "expiresInSeconds": int(float(claims.get("exp", 0)) - time.time()),
-                "scopes": scopes,
-                "roles": claims.get("roles", []),
-            })
-        if args.json:
-            print(json.dumps(output, indent=2))
-            return
-        for item in output:
-            console.print(f"[bold]{item['domain']}[/] ({item['audience']})")
-            for scope in item["scopes"]:
-                console.print(f"  - {scope}")
-        return
+    handlers = {"status": _auth_status, "clear": _auth_clear, "scopes": _auth_scopes}
+    handlers.get(args.auth_command or "login", _auth_login)(args)
 
+
+def _auth_status(args: argparse.Namespace) -> None:
+    statuses = [
+        _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
+        _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
+    ]
+    if args.json:
+        print(json.dumps({
+            "account": {
+                "active": config.ACTIVE_ACCOUNT,
+                "email": config.MS_EMAIL,
+                "sessionDir": str(config.SESSION_DIR),
+            },
+            "tokens": statuses,
+        }, indent=2))
+        return
+    title = "Auth status"
+    if config.ACTIVE_ACCOUNT:
+        title += f" ({config.ACTIVE_ACCOUNT})"
+    table = Table(title=title, box=box.SIMPLE)
+    table.add_column("Token")
+    table.add_column("Domain")
+    table.add_column("Status")
+    table.add_column("Expires")
+    for item in statuses:
+        if not item["present"]:
+            status = "[red]missing[/]"
+            expires = ""
+        elif item["expired"]:
+            status = "[red]expired[/]"
+            expires = "expired"
+        else:
+            status = "[green]valid[/]"
+            expires = f"{int(item['expiresInSeconds']) // 60} min"
+        table.add_row(str(item["label"]), str(item["domain"]), status, expires)
+    console.print(table)
+    return
+
+
+def _auth_clear(args: argparse.Namespace) -> None:
+    if config.TOKENS_FILE.exists():
+        config.TOKENS_FILE.unlink()
+        console.print(f"[green]Deleted token cache:[/] {config.TOKENS_FILE}")
+    else:
+        console.print("[dim]No token cache found.[/]")
+    return
+
+
+def _auth_scopes(args: argparse.Namespace) -> None:
+    if not config.TOKENS_FILE.exists():
+        raise CliError("[red]No token cache found. Run 'outlook-cli auth' first.[/]")
+    data = json.loads(config.TOKENS_FILE.read_text())
+    output = []
+    for domain, token in data.get("tokens", {}).items():
+        claims = _decode_token_claims(token)
+        scopes = str(claims.get("scp", "")).split()
+        output.append({
+            "domain": domain,
+            "audience": claims.get("aud", ""),
+            "tenant": claims.get("tid", ""),
+            "appId": claims.get("appid", ""),
+            "expiresInSeconds": int(float(claims.get("exp", 0)) - time.time()),
+            "scopes": scopes,
+            "roles": claims.get("roles", []),
+        })
+    if args.json:
+        print(json.dumps(output, indent=2))
+        return
+    for item in output:
+        console.print(f"[bold]{item['domain']}[/] ({item['audience']})")
+        for scope in item["scopes"]:
+            console.print(f"  - {scope}")
+    return
+
+
+def _auth_login(args: argparse.Namespace) -> None:
     tm = TokenManager()
     if tm.run_reauth(headless=not args.headed):
         console.print(f"[green]Authenticated. Token expires in {tm.expires_in / 60:.0f} minutes.[/]")
@@ -357,7 +356,7 @@ def cmd_mailbox_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading mailbox settings..."):
             settings = client.get_mailbox_settings()
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to get mailbox settings: {e}[/]")
+        raise CliError(f"[red]Failed to get mailbox settings: {e}[/]") from e
     finally:
         client.close()
     if args.json:
@@ -395,15 +394,18 @@ def cmd_mailbox_update(args: argparse.Namespace) -> None:
             )
         console.print("[green]Mailbox settings updated.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to update mailbox settings: {e}[/]")
+        raise CliError(f"[red]Failed to update mailbox settings: {e}[/]") from e
     finally:
         client.close()
 
 def refresh_account_paths() -> None:
     """Refresh imported path constants after activating an account."""
     from .. import cache
-    from . import mail as mail_commands, calendar as calendar_commands
-    from . import contacts as contacts_commands, tasks as tasks_commands, teams as teams_commands
+    from . import calendar as calendar_commands
+    from . import contacts as contacts_commands
+    from . import mail as mail_commands
+    from . import tasks as tasks_commands
+    from . import teams as teams_commands
 
     config.ensure_dirs()
     cache.refresh_paths()

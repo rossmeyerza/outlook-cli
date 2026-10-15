@@ -1,9 +1,8 @@
 """CLI registration for gateway_parser."""
 from __future__ import annotations
 
-import argparse
+from .gateway import cmd_gateway_start, cmd_gateway_status, cmd_gateway_stop
 
-from .gateway import cmd_gateway_start, cmd_gateway_stop, cmd_gateway_status
 
 def register(sub) -> None:
     p_gateway = sub.add_parser("gateway", help="Teams-to-pi gateway daemon")

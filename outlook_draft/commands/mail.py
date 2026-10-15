@@ -1,30 +1,23 @@
 from __future__ import annotations
 
-from ..errors import CliError
-
-from ..parser import add_output_args, _add_yes_arg
-from . import drafts
-
-
 import argparse
 import base64
-import json
 import re
-import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from rich.panel import Panel
 from rich.table import Table
 
-from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
-from ..errors import OutlookAPIError
-from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
-from ..progress import spinner
 from .. import runtime
-from ..formatting import html_to_text, format_datetime
-from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
-
+from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
+from ..errors import CliError, OutlookAPIError
+from ..formatting import format_datetime, html_to_text
+from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
+from ..parser import _add_yes_arg, add_output_args
+from ..progress import spinner
+from ..references import _resolve_message_id
+from . import drafts
 
 JsonDict = dict[str, Any]
 
@@ -107,7 +100,7 @@ def cmd_unread(args: argparse.Namespace) -> None:
         with spinner(args, "Loading unread emails..."):
             messages = client.list_unread(top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list unread emails: {e}[/]")
+        raise CliError(f"[red]Failed to list unread emails: {e}[/]") from e
     finally:
         client.close()
 
@@ -132,7 +125,7 @@ def cmd_mail(args: argparse.Namespace) -> None:
         with spinner(args, f"Searching emails for '{args.query}'..."):
             messages = client.search_messages(args.query, top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to search emails: {e}[/]")
+        raise CliError(f"[red]Failed to search emails: {e}[/]") from e
     finally:
         client.close()
 
@@ -158,7 +151,7 @@ def cmd_read(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email..."):
             msg = client.get_message(message_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to read email: {e}[/]")
+        raise CliError(f"[red]Failed to read email: {e}[/]") from e
     finally:
         client.close()
 
@@ -213,7 +206,7 @@ def cmd_mark_read(args: argparse.Namespace) -> None:
         client.update_message_read_state(message_id, is_read=True)
         runtime.console.print("[green]Marked email as read.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to mark email read: {e}[/]")
+        raise CliError(f"[red]Failed to mark email read: {e}[/]") from e
     finally:
         client.close()
 
@@ -225,7 +218,7 @@ def cmd_mark_unread(args: argparse.Namespace) -> None:
         client.update_message_read_state(message_id, is_read=False)
         runtime.console.print("[green]Marked email as unread.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to mark email unread: {e}[/]")
+        raise CliError(f"[red]Failed to mark email unread: {e}[/]") from e
     finally:
         client.close()
 
@@ -237,7 +230,7 @@ def cmd_archive(args: argparse.Namespace) -> None:
         client.archive_message(message_id)
         runtime.console.print("[green]Archived email.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to archive email: {e}[/]")
+        raise CliError(f"[red]Failed to archive email: {e}[/]") from e
     finally:
         client.close()
 
@@ -250,7 +243,7 @@ def cmd_move(args: argparse.Namespace) -> None:
         moved = client.move_message(message_id, folder_id)
         runtime.console.print(f"[green]Moved email:[/] {moved.get('Subject', message_id)}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to move email: {e}[/]")
+        raise CliError(f"[red]Failed to move email: {e}[/]") from e
     finally:
         client.close()
 
@@ -261,7 +254,7 @@ def cmd_folders(args: argparse.Namespace) -> None:
         with spinner(args, "Loading mail folders..."):
             folders = client.list_mail_folders(top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list folders: {e}[/]")
+        raise CliError(f"[red]Failed to list folders: {e}[/]") from e
     finally:
         client.close()
 
@@ -303,7 +296,7 @@ def cmd_attachments(args: argparse.Namespace) -> None:
         with spinner(args, "Loading attachments..."):
             attachments = client.list_message_attachments(message_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list attachments: {e}[/]")
+        raise CliError(f"[red]Failed to list attachments: {e}[/]") from e
     finally:
         client.close()
 
@@ -379,7 +372,7 @@ def cmd_download_attachments(args: argparse.Namespace) -> None:
                 path.write_bytes(base64.b64decode(content))
                 downloaded.append(path)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to download attachments: {e}[/]")
+        raise CliError(f"[red]Failed to download attachments: {e}[/]") from e
     finally:
         client.close()
 
@@ -408,7 +401,7 @@ def cmd_links(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to read email: {e}[/]")
+        raise CliError(f"[red]Failed to read email: {e}[/]") from e
     finally:
         client.close()
 
@@ -445,7 +438,7 @@ def cmd_download_links(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to read email: {e}[/]")
+        raise CliError(f"[red]Failed to read email: {e}[/]") from e
     finally:
         client.close()
 
@@ -491,49 +484,83 @@ def register(sub) -> None:
     add_output_args(p_mail)
     mail_sub = p_mail.add_subparsers(dest="command", required=True)
 
+    _register_cmd_mail_unread(mail_sub)
+    _register_cmd_mail_search(mail_sub)
+    _register_cmd_mail_read(mail_sub)
+    _register_cmd_mail_mark_read(mail_sub)
+    _register_cmd_mail_mark_unread(mail_sub)
+    _register_cmd_mail_archive(mail_sub)
+    _register_cmd_mail_move(mail_sub)
+    _register_cmd_mail_folders(mail_sub)
+    _register_cmd_mail_attachments(mail_sub)
+    _register_cmd_mail_download_attachments(mail_sub)
+    _register_cmd_mail_links(mail_sub)
+    _register_cmd_mail_download_links(mail_sub)
+    _register_cmd_mail_send(mail_sub)
+
+
+def _register_cmd_mail_unread(mail_sub) -> None:
     cmd_mail_unread = mail_sub.add_parser("unread", help="List unread emails from the Inbox")
     add_output_args(cmd_mail_unread)
     cmd_mail_unread.add_argument("--count", "-n", type=int, default=50, help="Max results")
     cmd_mail_unread.set_defaults(func=cmd_unread)
 
+
+def _register_cmd_mail_search(mail_sub) -> None:
     cmd_mail_search = mail_sub.add_parser("search", help="Search emails by keyword")
     add_output_args(cmd_mail_search)
     cmd_mail_search.add_argument("query", help="Search term")
     cmd_mail_search.add_argument("--count", "-n", type=int, default=20, help="Max results")
     cmd_mail_search.set_defaults(func=cmd_mail)
 
+
+def _register_cmd_mail_read(mail_sub) -> None:
     cmd_mail_read = mail_sub.add_parser("read", help="Read an email by index or ID")
     add_output_args(cmd_mail_read)
     cmd_mail_read.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_read.set_defaults(func=cmd_read)
 
+
+def _register_cmd_mail_mark_read(mail_sub) -> None:
     cmd_mail_mark_read = mail_sub.add_parser("mark-read", help="Mark an email as read")
     cmd_mail_mark_read.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_mark_read.set_defaults(func=cmd_mark_read)
 
+
+def _register_cmd_mail_mark_unread(mail_sub) -> None:
     cmd_mail_mark_unread = mail_sub.add_parser("mark-unread", help="Mark an email as unread")
     cmd_mail_mark_unread.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_mark_unread.set_defaults(func=cmd_mark_unread)
 
+
+def _register_cmd_mail_archive(mail_sub) -> None:
     cmd_mail_archive = mail_sub.add_parser("archive", help="Archive an email")
     cmd_mail_archive.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_archive.set_defaults(func=cmd_archive)
 
+
+def _register_cmd_mail_move(mail_sub) -> None:
     cmd_mail_move = mail_sub.add_parser("move", help="Move an email to another folder")
     cmd_mail_move.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_move.add_argument("--folder", "-f", required=True, help="Folder index, well-known name, folder name, or folder ID")
     cmd_mail_move.set_defaults(func=cmd_move)
 
+
+def _register_cmd_mail_folders(mail_sub) -> None:
     cmd_mail_folders = mail_sub.add_parser("folders", help="List mail folders")
     add_output_args(cmd_mail_folders)
     cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
     cmd_mail_folders.set_defaults(func=cmd_folders)
 
+
+def _register_cmd_mail_attachments(mail_sub) -> None:
     cmd_mail_attachments = mail_sub.add_parser("attachments", help="List message attachments")
     add_output_args(cmd_mail_attachments)
     cmd_mail_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_attachments.set_defaults(func=cmd_attachments)
 
+
+def _register_cmd_mail_download_attachments(mail_sub) -> None:
     cmd_mail_download_attachments = mail_sub.add_parser("download-attachments", help="Download message attachments")
     cmd_mail_download_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_download_attachments.add_argument("--dir", "-d", default="attachments", help="Output directory")
@@ -545,6 +572,8 @@ def register(sub) -> None:
     )
     cmd_mail_download_attachments.set_defaults(func=cmd_download_attachments)
 
+
+def _register_cmd_mail_links(mail_sub) -> None:
     cmd_mail_links = mail_sub.add_parser("links", help="List links and inline image URLs in an email body")
     add_output_args(cmd_mail_links)
     cmd_mail_links.add_argument("message_id", help="Message index (from last search) or full ID")
@@ -555,6 +584,8 @@ def register(sub) -> None:
     )
     cmd_mail_links.set_defaults(func=cmd_links)
 
+
+def _register_cmd_mail_download_links(mail_sub) -> None:
     cmd_mail_download_links = mail_sub.add_parser(
         "download-links",
         help="Download SharePoint/OneDrive links from an email body via Graph",
@@ -564,6 +595,8 @@ def register(sub) -> None:
     cmd_mail_download_links.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
     cmd_mail_download_links.set_defaults(func=cmd_download_links)
 
+
+def _register_cmd_mail_send(mail_sub) -> None:
     cmd_mail_send = mail_sub.add_parser("send", help="Send a new email immediately (requires --yes)")
     cmd_mail_send.add_argument("--to", required=True, action="append", help="Recipient (repeatable, comma-separated ok)")
     cmd_mail_send.add_argument("--cc", action="append", help="CC recipient")

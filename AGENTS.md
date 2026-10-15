@@ -201,7 +201,10 @@ Implementation notes:
 - Tools build a client per call through `outlook_draft/mcp/clients.py`. `NoReauthTokenManager` never runs `run_reauth`, so a stale token raises `McpAuthError` instead of starting headless auth.
 - Tool code must not print to stdout and must not call `sys.exit`. Raise exceptions; FastMCP returns them as `isError` results.
 - Pure helpers live in `outlook_draft/formatting.py`. CLI factories and output helpers live in `runtime.py`. Cached reference resolution lives in `references.py`.
-- Command modules register their parsers through `register(subparsers)`. `cli.py` handles account selection and dispatch. Gateway parser registration lives in `commands/gateway_parser.py` so the daemon module stays unchanged.
+- Command modules register their parsers through `register(subparsers)`. `cli.py` handles account selection, dispatch and `CliError`/`OutlookDraftError` rendering. Gateway parser registration lives in `commands/gateway_parser.py` so the daemon module stays unchanged.
+- `OutlookClient` owns Outlook, Teams and file HTTP operations. `commands/files.py` keeps a thin `_GraphClient` compatibility constructor with the original file timeout and headers. MCP factories use `OutlookClient` directly and keep `NoReauthTokenManager`.
+- Teams detail reads use `concurrency.ordered_map` with eight workers. Results stay in input order. Searches submit batches of eight, so an early match can leave at most seven extra reads in progress.
+- Ruff uses the rules in `pyproject.toml`. Long literal lines are allowed. The gateway module is excluded because the refactor plan prohibits edits.
 - Do not run `uv run`, `uv sync` or `uv lock` in this repo. They replace `.venv` and break the global `outlook-cli`. Use `uv pip install --python .venv/bin/python <pkg>` and `.venv/bin/python -m pytest -q`.
 
 ## File Layout
@@ -228,6 +231,7 @@ Implementation notes:
     runtime.py                  # CLI console and client factories
     references.py               # Cached CLI reference resolution
     parser.py                   # Shared argparse options
+    concurrency.py              # Bounded, ordered Graph reads
     formatting.py               # Pure text/HTML/datetime/email helpers shared with the MCP server
     signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths

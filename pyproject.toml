@@ -42,3 +42,16 @@ markers = [
 
 [project.scripts]
 outlook-cli = "outlook_draft.cli:main"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "BLE"]
+# Preserve help strings, API payloads and existing table/layout literals.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The refactor plan explicitly prohibits changes to the gateway implementation.
+"outlook_draft/commands/gateway.py" = ["ALL"]

@@ -1,13 +1,11 @@
 """Resolve CLI references using the active account caches."""
 from __future__ import annotations
 
-from .errors import CliError
-
-import sys
-
 from . import cache
+from .errors import CliError
 from .outlook_client import OutlookClient
 from .runtime import console
+
 
 def _resolve_message_id(client: OutlookClient, ref: str) -> str:
     """Resolve a message reference to a full ID.

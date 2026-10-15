@@ -1,31 +1,20 @@
 from __future__ import annotations
 
-import logging
-
-from ..errors import CliError
-
-from ..parser import add_output_args, _add_yes_arg
-
-
 import argparse
 import json
-import sys
+import logging
 from datetime import datetime
 
 import dateutil.parser
-from typing import Any, Callable
-
-from rich.console import Console
 from rich.table import Table
 
-from ..calendar_time import outlook_datetime
-from ..cache import TASK_CACHE, save_cache
-from ..errors import OutlookAPIError
-from ..progress import spinner
 from .. import runtime
-from ..formatting import html_to_text, format_datetime
-from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
-
+from ..cache import TASK_CACHE, save_cache
+from ..calendar_time import outlook_datetime
+from ..errors import CliError, OutlookAPIError
+from ..parser import add_output_args
+from ..progress import spinner
+from ..references import _resolve_task_id
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +26,7 @@ def cmd_task_list(args: argparse.Namespace) -> None:
         with spinner(args, "Loading tasks..."):
             tasks = client.list_tasks(top=args.count)
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to list tasks: {e}[/]")
+        raise CliError(f"[red]Failed to list tasks: {e}[/]") from e
     finally:
         client.close()
 
@@ -97,7 +86,7 @@ def cmd_task_create(args: argparse.Namespace) -> None:
             client.create_task(args.subject)
         runtime.console.print(f"[green]Created task:[/] {args.subject}")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to create task: {e}[/]")
+        raise CliError(f"[red]Failed to create task: {e}[/]") from e
     finally:
         client.close()
 
@@ -112,7 +101,7 @@ def cmd_task_update(args: argparse.Namespace) -> None:
             due_dt = outlook_datetime(dateutil.parser.parse(args.due))
         except Exception as e:
             log.debug("Best-effort operation failed", exc_info=True)
-            raise CliError(f"[red]Failed to parse due date: {e}[/]")
+            raise CliError(f"[red]Failed to parse due date: {e}[/]") from e
     client = runtime.get_client()
     task_id = _resolve_task_id(client, args.task_id)
     try:
@@ -126,7 +115,7 @@ def cmd_task_update(args: argparse.Namespace) -> None:
             )
         runtime.console.print("[green]Task updated.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to update task: {e}[/]")
+        raise CliError(f"[red]Failed to update task: {e}[/]") from e
     finally:
         client.close()
 
@@ -140,7 +129,7 @@ def cmd_task_complete(args: argparse.Namespace) -> None:
             client.complete_task(task_id)
         runtime.console.print("[green]Task marked as complete.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to complete task: {e}[/]")
+        raise CliError(f"[red]Failed to complete task: {e}[/]") from e
     finally:
         client.close()
 
@@ -154,7 +143,7 @@ def cmd_task_delete(args: argparse.Namespace) -> None:
             client.delete_task(task_id)
         runtime.console.print("[green]Task deleted.[/]")
     except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to delete task: {e}[/]")
+        raise CliError(f"[red]Failed to delete task: {e}[/]") from e
     finally:
         client.close()
 
