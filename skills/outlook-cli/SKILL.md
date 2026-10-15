@@ -14,7 +14,7 @@ Interactive commands may show Rich spinners on stderr while waiting on Microsoft
 ## Operating Rules
 
 - Start read-only. Mutating commands require explicit user intent.
-- In Pi codemode, prefer the `mcp__outlook` tools (`outlook` server, `outlook-cli mcp`) for reading mail, calendar, contacts, tasks, Teams and files, and for creating drafts. They return structured JSON with full IDs. Sending is not exposed there: use the CLI with `--yes`, and only when Ross has explicitly asked. If an MCP tool reports an expired token, run `outlook-cli auth` in a terminal and retry.
+- In Pi codemode, prefer the `mcp__outlook` tools (`outlook` server, `outlook-cli mcp`) for reading mail, calendar, contacts, tasks, Teams and files, and for creating drafts. They return structured JSON with full IDs. MCP send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when Ross explicitly asks to send that message. Never automatically retry an uncertain send result. The Teams gateway must not use these tools to send Teams messages directly. If an MCP tool reports an expired token, run `outlook-cli auth` in a terminal and retry.
 - Sending email and Teams messages is enabled but needs `--yes` (`draft send`, `mail send`, `teams send`). Without it the command only previews. Only pass `--yes` when Ross has explicitly asked to send. Default to drafts.
 - Use cached numeric indexes only after running the matching list/search command, or when cache freshness is acceptable.
 - For ambiguous people, search contacts first, then use the confirmed email address.

@@ -104,7 +104,7 @@ outlook-cli files mkdir "Q2" --site "Tesco" --library "Documents" # create Share
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
 outlook-cli files move "Documents/file.pdf" "Archive"     # move
 
-# MCP server (stdio, no send tools)
+# MCP server (stdio, confirmed sending)
 outlook-cli mcp
 outlook-cli --account wpp mcp
 
@@ -171,7 +171,7 @@ outlook-cli config check                   # validate local config without print
 "outlook": {
   "command": "/home/ross/.local/lib/outlook-draft-cli/.venv/bin/outlook-cli",
   "args": ["mcp"],
-  "description": "Outlook mail, drafts, calendar, contacts, tasks, Teams (read-only) and OneDrive/SharePoint files",
+  "description": "Outlook mail, drafts, calendar, contacts, tasks, Teams and files, with confirmed sending",
   "timeout": 120
 }
 ```
@@ -179,19 +179,20 @@ outlook-cli config check                   # validate local config without print
 Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
 
 - Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_mark_read`, `mail_move`, `mail_archive`
-- Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (drafts are saved for review, never sent; `draft_delete` refuses non-drafts)
+- Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
 - Contacts: `contact_search`
 - Tasks: `task_list`, `task_create`, `task_complete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
 - Auth: `auth_status` (read-only)
+- Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
 
 Side effects to know about: `cal_create` with attendees emails invitations immediately, and `cal_respond` with `send_response` true emails the organizer.
 
 Rules:
 
-- No send tools exist. `draft send`, `mail send` and `teams send` stay CLI-only behind `--yes`.
+- Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
 - Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
 - The server never re-authenticates. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
 - stdout is the protocol channel. Logs go to stderr.

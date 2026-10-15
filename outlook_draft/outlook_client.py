@@ -111,6 +111,8 @@ class OutlookClient:
                     raise OutlookAPIError(401, "Authentication failed. Run 'outlook-cli auth' to retry.")
 
                 if resp.status_code == 429 or resp.status_code >= 500:
+                    if attempt >= max_retries:
+                        raise OutlookAPIError(resp.status_code, resp.text[:500])
                     retry_after = float(resp.headers.get("Retry-After", str(2 ** attempt)))
                     if self._log_retries:
                         log.warning("HTTP %d, retrying in %.1fs", resp.status_code, retry_after)
@@ -698,7 +700,7 @@ class OutlookClient:
 
     def send_message(self, message_id: str) -> None:
         """Send an existing draft message."""
-        self._request("POST", f"/me/messages/{message_id}/send")
+        self._request("POST", f"/me/messages/{message_id}/send", max_retries=0)
 
     def send_mail(
         self,
@@ -730,6 +732,7 @@ class OutlookClient:
             "POST",
             "/me/sendmail",
             json_body={"Message": message, "SaveToSentItems": save_to_sent_items},
+            max_retries=0,
         )
 
     def list_mail_folders(self, top: int = 100) -> list[dict[str, Any]]:
@@ -891,11 +894,12 @@ class OutlookClient:
         return resp.json().get("value", [])
 
     def send_teams_message(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
-        """Send a message to a Teams chat."""
+        """Send a message to a Teams chat without automatic retries."""
         resp = self._request(
             "POST",
             f"/chats/{chat_id}/messages",
             json_body={"body": {"contentType": content_type, "content": content}},
+            max_retries=0,
         )
         return resp.json()
 

@@ -24,7 +24,7 @@ EXPECTED_TOOLS = {
     "contact_search", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
-    "auth_status",
+    "auth_status", "mail_send", "draft_send", "teams_send",
 }
 
 
@@ -35,22 +35,27 @@ def _tool_names() -> set[str]:
 def test_full_tool_contract_matches_pre_refactor_snapshot():
     tools = asyncio.run(build_server().list_tools())
     expected = json.loads(Path(__file__).with_name("mcp_tool_contracts.json").read_text())
-    assert [tool.model_dump(mode="json") for tool in tools] == expected
+    assert [tool.model_dump(mode="json") for tool in tools if tool.name not in {"mail_send", "draft_send", "teams_send"}] == expected
 
 
 def test_registers_exactly_the_phase_one_tools():
     assert _tool_names() == EXPECTED_TOOLS
 
 
-def test_no_send_or_destructive_tools_are_registered():
+def test_only_approved_send_and_destructive_tools_are_registered():
     forbidden = ("send", "delete_event", "cancel", "update", "upload", "mkdir", "rename", "contact_create")
-    for name in _tool_names() - {"draft_delete"}:
+    for name in _tool_names() - {"draft_delete", "mail_send", "draft_send", "teams_send"}:
         assert not any(word in name for word in forbidden), name
-    assert not any(name.endswith("_send") for name in _tool_names())
+    tools = asyncio.run(build_server().list_tools())
+    for tool in tools:
+        if tool.name.endswith("_send"):
+            assert tool.inputSchema["properties"]["confirm"]["default"] is False
+            assert tool.annotations.idempotentHint is False
+            assert tool.annotations.destructiveHint is True
 
 
 def test_instructions_first_line_is_the_description():
-    assert INSTRUCTIONS.splitlines()[0].endswith("Sending is not available here; create drafts.")
+    assert INSTRUCTIONS.splitlines()[0].endswith("Send tools preview unless confirm=true.")
 
 
 def test_in_memory_session_lists_tools_and_calls_one(monkeypatch):
