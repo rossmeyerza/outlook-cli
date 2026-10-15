@@ -164,7 +164,7 @@ outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
 ```
 
-Lists and searches Teams chats, shows chat details, and reads messages. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Teams sending is intentionally disabled for agent safety.
+Lists and searches Teams chats, shows chat details, and reads messages. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` and `teams send <chat> <msg>` print a preview and send nothing unless `--yes` is passed. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
 
 ### Teams Gateway
 

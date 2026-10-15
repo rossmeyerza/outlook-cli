@@ -512,6 +512,10 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
 
 def cmd_teams_send(args: argparse.Namespace) -> None:
     console = _console(args)
+    if not getattr(args, "yes", False):
+        console.print(f"[yellow]Not sent.[/] Would send to chat {args.chat_id}: {args.message}")
+        console.print("[dim]Re-run with --yes to send.[/]")
+        sys.exit(2)
     client = _get_graph_client(args)
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:

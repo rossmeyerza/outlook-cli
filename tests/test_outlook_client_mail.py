@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import pytest
 
-from outlook_draft.errors import OutlookAPIError, SendingDisabledError, TokenExpiredError
+from outlook_draft.errors import OutlookAPIError, TokenExpiredError
 from outlook_draft.outlook_client import OutlookClient
 
 
@@ -54,30 +54,37 @@ def test_update_message_read_state_marks_read() -> None:
     assert client.calls[0]["json_body"] == {"IsRead": True}
 
 
-def test_send_existing_draft_is_disabled_for_agent_safety() -> None:
+def test_send_existing_draft_posts_send_action() -> None:
     client = RecordingClient()
 
-    with pytest.raises(SendingDisabledError):
-        client.send_message("message-1")
+    client.send_message("message-1")
 
-    assert client.calls == []
+    assert client.calls[0]["method"] == "POST"
+    assert client.calls[0]["path"] == "/me/messages/message-1/send"
 
 
-def test_send_mail_is_disabled_for_agent_safety() -> None:
+def test_send_mail_posts_payload() -> None:
     client = RecordingClient()
 
-    with pytest.raises(SendingDisabledError):
-        client.send_mail(
-            subject="Hello",
-            body="Body",
-            to=["a@example.com"],
-            cc=["b@example.com"],
-            content_type="HTML",
-            save_to_sent_items=False,
-            importance="High",
-        )
+    client.send_mail(
+        subject="Hello",
+        body="Body",
+        to=["a@example.com"],
+        cc=["b@example.com"],
+        content_type="HTML",
+        save_to_sent_items=False,
+        importance="High",
+    )
 
-    assert client.calls == []
+    call = client.calls[0]
+    assert call["method"] == "POST"
+    assert call["path"] == "/me/sendmail"
+    assert call["json_body"]["SaveToSentItems"] is False
+    assert call["json_body"]["Message"]["Subject"] == "Hello"
+    assert call["json_body"]["Message"]["ToRecipients"] == [
+        {"EmailAddress": {"Address": "a@example.com"}}
+    ]
+    assert call["json_body"]["Message"]["Importance"] == "High"
 
 
 def test_list_mail_folders_selects_folder_fields() -> None:

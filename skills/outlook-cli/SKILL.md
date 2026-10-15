@@ -14,7 +14,7 @@ Interactive commands may show Rich spinners on stderr while waiting on Microsoft
 ## Operating Rules
 
 - Start read-only. Mutating commands require explicit user intent.
-- Sending real email and Teams messages is intentionally disabled; create drafts instead of sending.
+- Sending email and Teams messages is enabled but needs `--yes` (`draft send`, `mail send`, `teams send`). Without it the command only previews. Only pass `--yes` when Ross has explicitly asked to send. Default to drafts.
 - Use cached numeric indexes only after running the matching list/search command, or when cache freshness is acceptable.
 - For ambiguous people, search contacts first, then use the confirmed email address.
 - For calendar work, use exact local times like `"2026-06-01 14:00"`; the CLI uses configured local/Outlook time zones.
@@ -113,7 +113,7 @@ Typical workflows:
 
 ## Drafts
 
-Drafts are the safe path for outbound email. Do not send.
+Drafts are the safe path for outbound email. To send, use `outlook-cli draft send <n> --yes` or `outlook-cli mail send --to <email> -s "Subject" -b "Body" --yes`, and only when Ross explicitly asks.
 
 ```bash
 outlook-cli draft create --to person@example.com --subject "Subject" --body "Body text"
@@ -236,7 +236,7 @@ Valid task statuses: `NotStarted`, `InProgress`, `Completed`, `WaitingOnOthers`,
 
 ## Teams
 
-Teams support is for browsing and downloading attachments/links. Sending Teams messages is disabled.
+Teams support is for browsing and downloading attachments/links. Send with `outlook-cli teams send <chat-ref> "message" --yes` only when Ross explicitly asks.
 
 ```bash
 outlook-cli teams list --count 20

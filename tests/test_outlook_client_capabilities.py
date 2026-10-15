@@ -6,7 +6,6 @@ import httpx
 import pytest
 
 from outlook_draft import config
-from outlook_draft.errors import SendingDisabledError
 from outlook_draft.outlook_client import OutlookClient
 
 
@@ -166,13 +165,16 @@ def test_update_task_payload(monkeypatch) -> None:
     }
 
 
-def test_send_teams_message_is_disabled_for_agent_safety() -> None:
+def test_send_teams_message_payload() -> None:
     client = RecordingClient()
 
-    with pytest.raises(SendingDisabledError):
-        client.send_teams_message("chat-1", "Hello", content_type="text")
+    client.send_teams_message("chat-1", "Hello", content_type="text")
 
-    assert client.calls == []
+    assert client.calls[0]["method"] == "POST"
+    assert client.calls[0]["path"] == "/chats/chat-1/messages"
+    assert client.calls[0]["json_body"] == {
+        "body": {"contentType": "text", "content": "Hello"}
+    }
 
 
 def test_list_teams_chats_caps_page_size_to_graph_limit() -> None:

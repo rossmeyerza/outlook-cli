@@ -8,7 +8,7 @@ import httpx
 
 from . import config
 from .calendar_time import outlook_timezone_prefer_header
-from .errors import OutlookAPIError, SendingDisabledError, TokenExpiredError, TokenNotFoundError
+from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
 from .token_manager import TokenManager
 
@@ -447,13 +447,8 @@ class OutlookClient:
         self._request("PATCH", f"/me/messages/{message_id}", json_body={"IsRead": is_read})
 
     def send_message(self, message_id: str) -> None:
-        """Send an existing draft message.
-
-        Intentionally disabled for agent safety. Keep the endpoint knowledge here
-        so it can be restored deliberately if the operator ever wants it.
-        Original endpoint: POST /me/messages/{message_id}/send
-        """
-        raise SendingDisabledError("Email sending is intentionally disabled")
+        """Send an existing draft message."""
+        self._request("POST", f"/me/messages/{message_id}/send")
 
     def send_mail(
         self,
@@ -471,11 +466,21 @@ class OutlookClient:
         def _addr(email: str) -> dict:
             return {"EmailAddress": {"Address": email.strip()}}
 
-        # Intentionally disabled for agent safety. Keep the payload shape here
-        # so it can be restored deliberately if the operator ever wants it.
-        # Original endpoint: POST /me/sendmail
-        _ = (subject, body, to, cc, bcc, content_type, save_to_sent_items, importance)
-        raise SendingDisabledError("Email sending is intentionally disabled")
+        message: dict[str, Any] = {
+            "Subject": subject,
+            "Body": {"ContentType": content_type, "Content": body},
+            "ToRecipients": [_addr(a) for a in to],
+            "Importance": importance,
+        }
+        if cc:
+            message["CcRecipients"] = [_addr(a) for a in cc]
+        if bcc:
+            message["BccRecipients"] = [_addr(a) for a in bcc]
+        self._request(
+            "POST",
+            "/me/sendmail",
+            json_body={"Message": message, "SaveToSentItems": save_to_sent_items},
+        )
 
     def list_mail_folders(self, top: int = 100) -> list[dict[str, Any]]:
         """List top-level mail folders."""
@@ -620,13 +625,13 @@ class OutlookClient:
         return resp.json().get("value", [])
 
     def send_teams_message(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
-        """Send a message to a Teams chat.
-
-        Intentionally disabled for agent safety. Teams reading remains enabled.
-        Original endpoint: POST /chats/{chat_id}/messages
-        """
-        _ = (chat_id, content, content_type)
-        raise SendingDisabledError("Teams message sending is intentionally disabled")
+        """Send a message to a Teams chat."""
+        resp = self._request(
+            "POST",
+            f"/chats/{chat_id}/messages",
+            json_body={"body": {"contentType": content_type, "content": content}},
+        )
+        return resp.json()
 
     def _send_teams_message_internal(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
         """Send a Teams message — internal use by gateway only.
