@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 import re
 from datetime import datetime
 from html import escape
 
 from . import config
+
+
+log = logging.getLogger(__name__)
 
 
 def html_to_text(html: str) -> str:
@@ -36,6 +41,7 @@ def format_datetime(value: str) -> str:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return parsed.strftime("%b %d %H:%M")
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return value[:16]
 
 

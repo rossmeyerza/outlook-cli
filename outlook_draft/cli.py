@@ -9,6 +9,7 @@ from .commands import account, drafts, mail, tasks, calendar, contacts, teams, f
 from .commands import signature, gateway_parser, mcp, completion
 from .parser import add_output_args
 from .runtime import console
+from .errors import CliError, OutlookDraftError
 
 def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
     """Allow --account to appear before or after the top-level command."""
@@ -80,10 +81,18 @@ def main() -> None:
 
     args = parser.parse_args(argv)
 
+    try:
+        _dispatch(args, parser)
+    except (CliError, OutlookDraftError) as error:
+        if str(error):
+            console.print(f"[red]{error}[/]")
+        raise SystemExit(getattr(error, "exit_code", 1)) from error
+
+
+def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.account:
         if not config.account_exists(args.account):
-            console.print(f"[red]No account profile named '{args.account}'.[/]")
-            sys.exit(1)
+            raise CliError(f"[red]No account profile named '{args.account}'.[/]")
         config.activate_account(args.account)
     account.refresh_account_paths()
 

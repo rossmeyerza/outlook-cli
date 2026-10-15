@@ -12,6 +12,8 @@ Both are exposed through ``outlook-cli completion <shell>``.
 
 from __future__ import annotations
 
+from .errors import CliError
+
 import argparse
 import sys
 
@@ -171,6 +173,6 @@ def print_completion(shell: str, parser: argparse.ArgumentParser, prog: str = "o
             "argcomplete is required for bash/zsh/fish/powershell completions.\n"
             "Install it with:  pip install argcomplete\n"
         )
-        sys.exit(1)
+        raise CliError("")
 
     sys.stdout.write(argcomplete.shellcode([prog], shell=shell))

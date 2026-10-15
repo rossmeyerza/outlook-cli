@@ -8,6 +8,8 @@ when agent_end fires.
 
 from __future__ import annotations
 
+import logging
+
 import json
 import os
 import shutil
@@ -17,6 +19,9 @@ import threading
 import time
 from pathlib import Path
 from typing import Callable
+
+
+log = logging.getLogger(__name__)
 
 
 class PiSessionError(Exception):
@@ -100,6 +105,7 @@ class PiSession:
             try:
                 self._proc.stdin.close()
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 pass
         if self._proc:
             try:
@@ -162,6 +168,7 @@ class PiSession:
             self._proc.stdin.write(json.dumps(cmd) + "\n")
             self._proc.stdin.flush()
         except Exception as exc:
+            log.debug("Best-effort operation failed", exc_info=True)
             raise PiSessionError(f"Failed to send prompt: {exc}") from exc
 
         # Collect text deltas until agent_end

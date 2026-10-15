@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 import json
 from pathlib import Path
 
 from . import config
+
+
+log = logging.getLogger(__name__)
 
 
 def _cache_path(name: str) -> Path:
@@ -36,4 +41,5 @@ def load_cache(path: Path) -> list[dict]:
     try:
         return json.loads(path.read_text())
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return []

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from ..errors import CliError
+
 from ..parser import add_output_args, _add_yes_arg
 
 
@@ -24,12 +28,16 @@ from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id,
 JsonDict = dict[str, Any]
 
 
+log = logging.getLogger(__name__)
+
+
 def _parse_event_dt(value: str) -> datetime | None:
     if not value:
         return None
     try:
         return datetime.fromisoformat(value[:23])
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return None
 
 
@@ -115,8 +123,7 @@ def cmd_cal_agenda(args: argparse.Namespace) -> None:
         with spinner(args, "Loading calendar agenda..."):
             events = client.get_agenda(days=args.days, top=args.count)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to fetch calendar: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch calendar: {e}[/]")
     finally:
         client.close()
 
@@ -168,8 +175,7 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading calendar event..."):
             event = client.get_event(event_id)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to fetch event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch event: {e}[/]")
     finally:
         client.close()
 
@@ -230,9 +236,9 @@ def _parse_event_datetimes(args: argparse.Namespace) -> tuple[str, str]:
         start_dt = parse_local_datetime(args.start)
         end_dt = parse_local_datetime(args.end)
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         runtime.console.print(f"[red]Failed to parse dates: {e}[/]")
-        runtime.console.print("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
-        sys.exit(1)
+        raise CliError("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'")
     return outlook_datetime(start_dt), outlook_datetime(end_dt)
 
 
@@ -254,8 +260,7 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Created event:[/] {args.subject}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to create event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to create event: {e}[/]")
     finally:
         client.close()
 
@@ -282,7 +287,7 @@ def cmd_cal_rooms(args: argparse.Namespace) -> None:
             )
         else:
             runtime.console.print(f"[red]Failed to find rooms: {e}[/]")
-        sys.exit(1)
+        raise CliError("")
     finally:
         client.close()
     if args.json:
@@ -309,8 +314,7 @@ def cmd_cal_availability(args: argparse.Namespace) -> None:
                 interval_minutes=args.interval,
             )
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to get availability: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to get availability: {e}[/]")
     finally:
         client.close()
     if args.json:
@@ -333,8 +337,7 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
                 max_candidates=args.count,
             )
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to find meeting times: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to find meeting times: {e}[/]")
     finally:
         client.close()
     if args.json:
@@ -370,11 +373,9 @@ def cmd_cal_update(args: argparse.Namespace) -> None:
         args.body is not None,
         teams_change,
     ]):
-        runtime.console.print("[red]Provide at least one field to update.[/]")
-        sys.exit(1)
+        raise CliError("[red]Provide at least one field to update.[/]")
     if bool(args.start) != bool(args.end):
-        runtime.console.print("[red]Provide both --start and --end when changing time.[/]")
-        sys.exit(1)
+        raise CliError("[red]Provide both --start and --end when changing time.[/]")
 
     start_local = end_local = None
     if args.start and args.end:
@@ -396,8 +397,7 @@ def cmd_cal_update(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Updated event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to update event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to update event: {e}[/]")
     finally:
         client.close()
 
@@ -412,8 +412,7 @@ def cmd_cal_delete(args: argparse.Namespace) -> None:
             client.delete_event(event_id)
         runtime.console.print(f"[green]Deleted event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to delete event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to delete event: {e}[/]")
     finally:
         client.close()
 
@@ -432,8 +431,7 @@ def _respond_to_event(args: argparse.Namespace, response: str, label: str) -> No
             )
         runtime.console.print(f"[green]{label} event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to {label.lower()} event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to {label.lower()} event: {e}[/]")
     finally:
         client.close()
 
@@ -463,8 +461,7 @@ def cmd_cal_cancel(args: argparse.Namespace) -> None:
             client.cancel_event(event_id, comment=args.comment or "")
         runtime.console.print(f"[green]Cancelled event:[/] {event.get('Subject', event_id)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to cancel event: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to cancel event: {e}[/]")
     finally:
         client.close()
 

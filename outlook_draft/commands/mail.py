@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..errors import CliError
+
 from ..parser import add_output_args, _add_yes_arg
 from . import drafts
 
@@ -84,14 +86,12 @@ def _resolve_folder_id(args: argparse.Namespace, ref: str) -> str:
         idx = int(ref)
         if cached and 1 <= idx <= len(cached):
             return cached[idx - 1]["Id"]
-        runtime.console.print("[red]No matching cached folder. Run 'outlook-cli mail folders' first.[/]")
-        sys.exit(1)
+        raise CliError("[red]No matching cached folder. Run 'outlook-cli mail folders' first.[/]")
     matches = [item for item in cached if item.get("DisplayName", "").lower() == ref.lower()]
     if len(matches) == 1:
         return matches[0]["Id"]
     if len(matches) > 1:
-        runtime.console.print(f"[red]Ambiguous folder name '{ref}'. Use folder index or ID.[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Ambiguous folder name '{ref}'. Use folder index or ID.[/]")
     return ref
 
 
@@ -107,8 +107,7 @@ def cmd_unread(args: argparse.Namespace) -> None:
         with spinner(args, "Loading unread emails..."):
             messages = client.list_unread(top=args.count)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to list unread emails: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to list unread emails: {e}[/]")
     finally:
         client.close()
 
@@ -133,8 +132,7 @@ def cmd_mail(args: argparse.Namespace) -> None:
         with spinner(args, f"Searching emails for '{args.query}'..."):
             messages = client.search_messages(args.query, top=args.count)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to search emails: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to search emails: {e}[/]")
     finally:
         client.close()
 
@@ -160,8 +158,7 @@ def cmd_read(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email..."):
             msg = client.get_message(message_id)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to read email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to read email: {e}[/]")
     finally:
         client.close()
 
@@ -216,8 +213,7 @@ def cmd_mark_read(args: argparse.Namespace) -> None:
         client.update_message_read_state(message_id, is_read=True)
         runtime.console.print("[green]Marked email as read.[/]")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to mark email read: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to mark email read: {e}[/]")
     finally:
         client.close()
 
@@ -229,8 +225,7 @@ def cmd_mark_unread(args: argparse.Namespace) -> None:
         client.update_message_read_state(message_id, is_read=False)
         runtime.console.print("[green]Marked email as unread.[/]")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to mark email unread: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to mark email unread: {e}[/]")
     finally:
         client.close()
 
@@ -242,8 +237,7 @@ def cmd_archive(args: argparse.Namespace) -> None:
         client.archive_message(message_id)
         runtime.console.print("[green]Archived email.[/]")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to archive email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to archive email: {e}[/]")
     finally:
         client.close()
 
@@ -256,8 +250,7 @@ def cmd_move(args: argparse.Namespace) -> None:
         moved = client.move_message(message_id, folder_id)
         runtime.console.print(f"[green]Moved email:[/] {moved.get('Subject', message_id)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to move email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to move email: {e}[/]")
     finally:
         client.close()
 
@@ -268,8 +261,7 @@ def cmd_folders(args: argparse.Namespace) -> None:
         with spinner(args, "Loading mail folders..."):
             folders = client.list_mail_folders(top=args.count)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to list folders: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to list folders: {e}[/]")
     finally:
         client.close()
 
@@ -311,8 +303,7 @@ def cmd_attachments(args: argparse.Namespace) -> None:
         with spinner(args, "Loading attachments..."):
             attachments = client.list_message_attachments(message_id)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to list attachments: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to list attachments: {e}[/]")
     finally:
         client.close()
 
@@ -388,8 +379,7 @@ def cmd_download_attachments(args: argparse.Namespace) -> None:
                 path.write_bytes(base64.b64decode(content))
                 downloaded.append(path)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to download attachments: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to download attachments: {e}[/]")
     finally:
         client.close()
 
@@ -418,8 +408,7 @@ def cmd_links(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to read email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to read email: {e}[/]")
     finally:
         client.close()
 
@@ -456,8 +445,7 @@ def cmd_download_links(args: argparse.Namespace) -> None:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to read email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to read email: {e}[/]")
     finally:
         client.close()
 

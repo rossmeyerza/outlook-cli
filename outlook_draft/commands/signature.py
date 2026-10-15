@@ -6,6 +6,8 @@ We intercept those responses with Playwright instead of scraping the DOM.
 
 from __future__ import annotations
 
+import logging
+
 from ..parser import add_output_args, _add_yes_arg
 
 
@@ -20,6 +22,9 @@ from ..signatures import sanitize_signature_html
 console = Console()
 
 _SETTINGS_URL = "OutlookCloudSettings/settings/account"
+
+
+log = logging.getLogger(__name__)
 
 
 def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
@@ -53,6 +58,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
             if html_items:
                 captured_by_name[name] = html_items
         except Exception:
+            log.debug("Best-effort operation failed", exc_info=True)
             pass
 
     launch_opts: dict = {"headless": headless}
@@ -98,6 +104,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
                 page.get_by_role("tab", name="Compose and reply").first.click(timeout=5000)
                 page.wait_for_timeout(4000)
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 pass
 
         context.close()
@@ -127,6 +134,7 @@ def _fetch_signatures_via_browser(headless: bool) -> dict[str, str]:
         )
         meta = meta_resp.json() if meta_resp.status_code == 200 else []
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         meta = []
 
     new_name = None

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import json
 import time
 
@@ -15,6 +17,9 @@ TOKENS = (
 )
 
 
+log = logging.getLogger(__name__)
+
+
 def _token_state(tokens: JsonDict, label: str, domain: str) -> JsonDict:
     state: JsonDict = {"label": label, "domain": domain, "present": False, "valid": False}
     token = tokens.get(domain)
@@ -23,6 +28,7 @@ def _token_state(tokens: JsonDict, label: str, domain: str) -> JsonDict:
     try:
         claims = _decode_claims(token)
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         state["present"] = True
         state["error"] = "token could not be decoded"
         return state

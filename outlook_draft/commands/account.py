@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from ..errors import CliError
+
 import argparse
 import base64
 import json
@@ -25,6 +29,9 @@ from ..signatures import load_signature
 from ..token_manager import TokenManager
 from ..parser import add_output_args, _add_yes_arg
 
+log = logging.getLogger(__name__)
+
+
 def _token_available(domain: str) -> bool:
     if not config.TOKENS_FILE.exists():
         return False
@@ -36,6 +43,7 @@ def _token_available(domain: str) -> bool:
         claims = _decode_token_claims(token)
         return int(float(claims.get("exp", 0)) - time.time()) > 0
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return False
 
 def _decode_token_claims(token: str) -> dict[str, object]:
@@ -57,6 +65,7 @@ def _token_status(domain: str, label: str) -> dict[str, object]:
                 audience = str(claims.get("aud", ""))
                 expires_in = int(float(claims.get("exp", 0)) - time.time())
         except Exception:
+            log.debug("Best-effort operation failed", exc_info=True)
             pass
     present = expires_in != -1
     expired = expires_in <= 0
@@ -159,8 +168,7 @@ def cmd_account_current(args: argparse.Namespace) -> None:
 def cmd_account_add(args: argparse.Namespace) -> None:
     path = config.account_env_file(args.name)
     if path.exists() and not args.force:
-        console.print(f"[red]Account '{args.name}' already exists. Use --force to overwrite.[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Account '{args.name}' already exists. Use --force to overwrite.[/]")
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         f"MS_EMAIL={_format_env_value(args.email)}",
@@ -191,16 +199,14 @@ def cmd_account_switch(args: argparse.Namespace) -> None:
     try:
         config.set_active_account(args.name)
     except FileNotFoundError as e:
-        console.print(f"[red]{e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]{e}[/]")
     refresh_account_paths()
     console.print(f"[green]Active account:[/] {args.name}")
 
 def cmd_account_remove(args: argparse.Namespace) -> None:
     path = config.account_env_file(args.name)
     if not path.exists():
-        console.print(f"[red]No account profile named '{args.name}'.[/]")
-        sys.exit(1)
+        raise CliError(f"[red]No account profile named '{args.name}'.[/]")
     path.unlink()
     if args.purge_data:
         shutil.rmtree(config.ACCOUNTS_DATA_DIR / args.name, ignore_errors=True)
@@ -257,8 +263,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
         return
     if command == "scopes":
         if not config.TOKENS_FILE.exists():
-            console.print("[red]No token cache found. Run 'outlook-cli auth' first.[/]")
-            sys.exit(1)
+            raise CliError("[red]No token cache found. Run 'outlook-cli auth' first.[/]")
         data = json.loads(config.TOKENS_FILE.read_text())
         output = []
         for domain, token in data.get("tokens", {}).items():
@@ -286,8 +291,7 @@ def cmd_auth(args: argparse.Namespace) -> None:
     if tm.run_reauth(headless=not args.headed):
         console.print(f"[green]Authenticated. Token expires in {tm.expires_in / 60:.0f} minutes.[/]")
     else:
-        console.print("[red]Authentication failed.[/]")
-        sys.exit(1)
+        raise CliError("[red]Authentication failed.[/]")
 
 def _config_check_items() -> list[dict[str, object]]:
     items: list[dict[str, object]] = []
@@ -317,11 +321,13 @@ def _config_check_items() -> list[dict[str, object]]:
         probe.unlink()
         add("session_state writable", True, str(config.SESSION_DIR))
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         add("session_state writable", False, str(e))
     try:
         import playwright.sync_api  # noqa: F401
         add("playwright", True, "installed")
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         add("playwright", False, str(e))
     return items
 
@@ -343,7 +349,7 @@ def cmd_config_check(args: argparse.Namespace) -> None:
             )
         console.print(table)
     if not all(bool(item["ok"]) for item in items):
-        sys.exit(1)
+        raise CliError("")
 
 def cmd_mailbox_show(args: argparse.Namespace) -> None:
     client = runtime.get_client()
@@ -351,8 +357,7 @@ def cmd_mailbox_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading mailbox settings..."):
             settings = client.get_mailbox_settings()
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to get mailbox settings: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to get mailbox settings: {e}[/]")
     finally:
         client.close()
     if args.json:
@@ -371,8 +376,7 @@ def cmd_mailbox_show(args: argparse.Namespace) -> None:
 
 def cmd_mailbox_update(args: argparse.Namespace) -> None:
     if not any([args.timezone, args.auto_reply_status, args.internal_reply, args.external_reply]):
-        console.print("[red]Provide at least one mailbox setting to update.[/]")
-        sys.exit(1)
+        raise CliError("[red]Provide at least one mailbox setting to update.[/]")
     automatic_replies = None
     if any([args.auto_reply_status, args.internal_reply, args.external_reply]):
         automatic_replies = {}
@@ -391,8 +395,7 @@ def cmd_mailbox_update(args: argparse.Namespace) -> None:
             )
         console.print("[green]Mailbox settings updated.[/]")
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to update mailbox settings: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to update mailbox settings: {e}[/]")
     finally:
         client.close()
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..errors import CliError
+
 from ..parser import add_output_args, _add_yes_arg
 
 
@@ -123,15 +125,14 @@ def _resolve_teams_chat_id(args: argparse.Namespace, ref: str) -> str:
             console.print("[red]No Teams chats cached. Run 'outlook-cli teams list' or 'outlook-cli teams search <query>' first.[/]")
         else:
             console.print(f"[red]Index {idx} out of range. Only {len(cached)} chats cached.[/]")
-        sys.exit(1)
+        raise CliError("")
 
     if len(ref) < 40 and cached:
         matches = [item for item in cached if item["Id"].endswith(ref)]
         if len(matches) == 1:
             return matches[0]["Id"]
         if len(matches) > 1:
-            console.print(f"[red]Ambiguous Teams chat ID suffix '{ref}'. Use a longer ID.[/]")
-            sys.exit(1)
+            raise CliError(f"[red]Ambiguous Teams chat ID suffix '{ref}'. Use a longer ID.[/]")
 
     return ref
 
@@ -298,8 +299,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                 )
         save_cache(TEAMS_CACHE, chats, id_key="id")
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to list Teams chats: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to list Teams chats: {e}[/]")
     finally:
         client.close()
 
@@ -343,8 +343,7 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
     client = runtime.get_graph_client()
     query = " ".join(args.query).strip() if isinstance(args.query, list) else args.query.strip()
     if not query:
-        console.print("[red]Provide a search query.[/]")
-        sys.exit(1)
+        raise CliError("[red]Provide a search query.[/]")
 
     scan_count = max(args.scan, 1)
     result_count = max(args.count, 1)
@@ -378,8 +377,7 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
                     if len(results) >= result_count:
                         break
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to search Teams chats: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to search Teams chats: {e}[/]")
     finally:
         client.close()
 
@@ -432,8 +430,7 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
             chat = client.get_teams_chat(chat_id)
             members = client.list_teams_chat_members(chat_id, top=50)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to fetch Teams chat: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch Teams chat: {e}[/]")
     finally:
         client.close()
 
@@ -458,8 +455,7 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
     try:
         found = find_self_chat(client)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to read Teams self-chat: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to read Teams self-chat: {e}[/]")
     finally:
         client.close()
 
@@ -497,8 +493,7 @@ def cmd_teams_send(args: argparse.Namespace) -> None:
         )
         console.print("[green]Teams message sent.[/]")
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to send Teams message: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to send Teams message: {e}[/]")
     finally:
         client.close()
 
@@ -563,8 +558,7 @@ def cmd_teams_attachments(args: argparse.Namespace) -> None:
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to fetch Teams messages: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
     finally:
         client.close()
 
@@ -600,8 +594,7 @@ def cmd_teams_download_attachments(args: argparse.Namespace) -> None:
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to fetch Teams messages: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
     finally:
         client.close()
 
@@ -659,8 +652,7 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
             members = client.list_teams_chat_members(chat_id, top=20)
         messages = client.list_teams_messages(chat_id, top=args.count)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to fetch Teams messages: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]")
     finally:
         client.close()
 

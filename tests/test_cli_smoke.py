@@ -112,3 +112,21 @@ def test_api_error_matches_recording(monkeypatch, capsys, isolated_cli):
     isolated_cli.list_unread.side_effect = OutlookAPIError(503, "Unavailable")
     actual = run_command(monkeypatch, capsys, ["mail", "unread"])
     assert actual == json.loads(SNAPSHOT.read_text())["error"]
+
+
+@pytest.mark.parametrize("exit_code", [1, 2, 7])
+def test_central_cli_error_exit_code(monkeypatch, capsys, isolated_cli, exit_code):
+    from outlook_draft.errors import CliError
+
+    isolated_cli.list_unread.side_effect = CliError("Expected failure", exit_code)
+    result = run_command(monkeypatch, capsys, ["mail", "unread"])
+    assert result == {"stdout": "Expected failure\n", "stderr": "", "exit": exit_code}
+
+
+def test_api_error_renders_red(monkeypatch, capsys, isolated_cli):
+    console = Console(width=100, force_terminal=True, color_system="standard")
+    monkeypatch.setattr(cli, "console", console)
+    isolated_cli.list_unread.side_effect = OutlookAPIError(503, "Unavailable")
+    result = run_command(monkeypatch, capsys, ["mail", "unread"])
+    assert result["exit"] == 1
+    assert "\x1b[31m" in result["stdout"]

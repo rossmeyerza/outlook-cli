@@ -1,6 +1,8 @@
 """Shared CLI console and authenticated client factories."""
 from __future__ import annotations
 
+from .errors import CliError
+
 import json
 import sys
 from typing import Any
@@ -25,8 +27,7 @@ def get_client(
     try:
         _ = tm.get_token(auto_reauth=True)
     except (TokenNotFoundError, TokenExpiredError):
-        console.print(f"[red]{token_label} authentication failed. Run 'outlook-cli auth' to retry.[/]")
-        sys.exit(1)
+        raise CliError(f"[red]{token_label} authentication failed. Run 'outlook-cli auth' to retry.[/]")
     return OutlookClient(tm, base_url=base_url)
 
 def get_graph_client() -> OutlookClient:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..errors import CliError
+
 from ..parser import add_output_args, _add_yes_arg
 
 
@@ -39,8 +41,7 @@ def cmd_contacts(args: argparse.Namespace) -> None:
         with spinner(args, f"Searching contacts for '{args.query}'..."):
             people = client.search_people(args.query, top=args.count)
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to search contacts: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to search contacts: {e}[/]")
     finally:
         client.close()
 
@@ -106,16 +107,14 @@ def cmd_contact_create(args: argparse.Namespace) -> None:
             )
         runtime.console.print(f"[green]Created contact:[/] {contact.get('DisplayName', args.name)}")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to create contact: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to create contact: {e}[/]")
     finally:
         client.close()
 
 
 def cmd_contact_update(args: argparse.Namespace) -> None:
     if not any([args.name, args.email, args.given_name, args.surname, args.company, args.mobile]):
-        runtime.console.print("[red]Provide at least one field to update.[/]")
-        sys.exit(1)
+        raise CliError("[red]Provide at least one field to update.[/]")
     client = runtime.get_client()
     contact_id = _resolve_contact_id(args.contact_id)
     try:
@@ -131,8 +130,7 @@ def cmd_contact_update(args: argparse.Namespace) -> None:
             )
         runtime.console.print("[green]Contact updated.[/]")
     except OutlookAPIError as e:
-        runtime.console.print(f"[red]Failed to update contact: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to update contact: {e}[/]")
     finally:
         client.close()
 

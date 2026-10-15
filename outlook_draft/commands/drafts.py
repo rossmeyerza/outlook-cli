@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from ..errors import CliError
+
 import argparse
 import base64
 import json
@@ -25,26 +29,26 @@ from ..signatures import load_signature
 from ..token_manager import TokenManager
 from ..parser import add_output_args, _add_yes_arg
 
+log = logging.getLogger(__name__)
+
+
 def _load_body(args: argparse.Namespace) -> str:
     """Load a body from --body or --body-file."""
     if args.body_file:
         body_path = Path(args.body_file)
         if not body_path.exists():
-            console.print(f"[red]File not found: {body_path}[/]")
-            sys.exit(1)
+            raise CliError(f"[red]File not found: {body_path}[/]")
         return body_path.read_text(encoding="utf-8")
     if args.body:
         return args.body
-    console.print("[red]Provide --body or --body-file[/]")
-    sys.exit(1)
+    raise CliError("[red]Provide --body or --body-file[/]")
 
 def _load_signature(path: Path) -> str:
     """Load a saved Outlook signature HTML file."""
     try:
         return load_signature(path)
     except FileNotFoundError as e:
-        console.print(f"[red]{e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]{e}[/]")
 
 def cmd_create(args: argparse.Namespace) -> None:
     """Create a new email draft."""
@@ -72,8 +76,7 @@ def cmd_create(args: argparse.Namespace) -> None:
                 importance=importance,
             )
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to create draft: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to create draft: {e}[/]")
     finally:
         client.close()
 
@@ -120,8 +123,7 @@ def cmd_reply(args: argparse.Namespace) -> None:
                 importance=importance,
             )
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to create reply draft: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to create reply draft: {e}[/]")
     finally:
         client.close()
 
@@ -143,8 +145,7 @@ def cmd_list(args: argparse.Namespace) -> None:
         with spinner(args, "Loading drafts..."):
             drafts = client.list_drafts(top=args.count)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to list drafts: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to list drafts: {e}[/]")
     finally:
         client.close()
 
@@ -166,6 +167,7 @@ def cmd_list(args: argparse.Namespace) -> None:
                 parsed = datetime.fromisoformat(dt.replace("Z", "+00:00"))
                 dt = parsed.strftime("%b %d %H:%M")
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 dt = dt[:16]
 
         recipients = draft.get("ToRecipients", [])
@@ -194,8 +196,7 @@ def cmd_show(args: argparse.Namespace) -> None:
         with spinner(args, "Loading draft..."):
             draft = client.get_draft(draft_id)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to get draft: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to get draft: {e}[/]")
     finally:
         client.close()
 
@@ -233,8 +234,7 @@ def cmd_delete(args: argparse.Namespace) -> None:
         with spinner(args, "Deleting draft..."):
             client.delete_draft(draft_id)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to delete draft: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to delete draft: {e}[/]")
     finally:
         client.close()
 
@@ -256,8 +256,7 @@ def cmd_send_draft(args: argparse.Namespace) -> None:
     try:
         client.send_message(draft_id)
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to send draft: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to send draft: {e}[/]")
     finally:
         client.close()
 
@@ -294,8 +293,7 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
             importance=args.importance,
         )
     except OutlookAPIError as e:
-        console.print(f"[red]Failed to send email: {e}[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Failed to send email: {e}[/]")
     finally:
         client.close()
 
@@ -318,8 +316,7 @@ def _resolve_draft_id(client: OutlookClient, ref: str) -> str:
         drafts = client.list_drafts(top=50)
         if 1 <= idx <= len(drafts):
             return drafts[idx - 1]["Id"]
-        console.print(f"[red]Draft #{idx} not found. Only {len(drafts)} drafts available.[/]")
-        sys.exit(1)
+        raise CliError(f"[red]Draft #{idx} not found. Only {len(drafts)} drafts available.[/]")
 
     # If it's short, try matching as suffix
     if len(ref) < 40:
@@ -328,10 +325,8 @@ def _resolve_draft_id(client: OutlookClient, ref: str) -> str:
         if len(matches) == 1:
             return matches[0]["Id"]
         if len(matches) > 1:
-            console.print(f"[red]Ambiguous ID suffix '{ref}', {len(matches)} matches. Use a longer ID.[/]")
-            sys.exit(1)
-        console.print(f"[red]No draft found matching suffix '{ref}'.[/]")
-        sys.exit(1)
+            raise CliError(f"[red]Ambiguous ID suffix '{ref}', {len(matches)} matches. Use a longer ID.[/]")
+        raise CliError(f"[red]No draft found matching suffix '{ref}'.[/]")
 
     # Otherwise assume it's a full ID
     return ref

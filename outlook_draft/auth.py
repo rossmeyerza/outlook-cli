@@ -38,6 +38,9 @@ KNOWN_DOMAINS = [
 ]
 
 
+log = logging.getLogger(__name__)
+
+
 def _token_scopes(token: str) -> set[str]:
     """Decode JWT scopes without verification."""
     try:
@@ -46,6 +49,7 @@ def _token_scopes(token: str) -> set[str]:
         claims = json.loads(base64.urlsafe_b64decode(payload))
         return set(claims.get("scp", "").split())
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return set()
 
 
@@ -67,6 +71,7 @@ def _load_tokens() -> dict[str, str]:
         data = json.loads(config.TOKENS_FILE.read_text())
         return data.get("tokens", {})
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return {}
 
 
@@ -81,6 +86,7 @@ def _test_token(token: str, url: str) -> bool:
         )
         return resp.status_code == 200
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return False
 
 
@@ -150,6 +156,7 @@ def _enter_email(page, email: str) -> bool:
         page.wait_for_timeout(3000)
         return True
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         console.print(f"[red]Failed to enter email: {e}[/]")
         return False
 
@@ -159,6 +166,7 @@ def _body_text(page) -> str:
         value = page.locator("body").inner_text(timeout=2000)
         return value or ""
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         return ""
 
 
@@ -181,6 +189,7 @@ def _enter_password(page, password: str) -> bool:
                 page.fill(selector, password)
                 break
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 continue
         else:
             console.print("[red]Could not find password field[/]")
@@ -199,6 +208,7 @@ def _enter_password(page, password: str) -> bool:
                     btn.click()
                     break
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 continue
 
         console.print("[dim]  Entered password[/]")
@@ -212,6 +222,7 @@ def _enter_password(page, password: str) -> bool:
     except RuntimeError:
         raise
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         console.print(f"[red]Failed to enter password: {e}[/]")
         return False
 
@@ -237,6 +248,7 @@ def _wait_for_mfa(page) -> None:
             if "outlook.office.com" in url and "login" not in url and "authn" not in url:
                 return
         except Exception:
+            log.debug("Best-effort operation failed", exc_info=True)
             pass
 
     if mfa_number:
@@ -254,6 +266,7 @@ def _wait_for_mfa(page) -> None:
         page.wait_for_url("**/outlook.office.com/**", timeout=180000)
         page.wait_for_timeout(8000)
     except Exception as e:
+        log.debug("Best-effort operation failed", exc_info=True)
         console.print(f"[yellow]Timeout waiting for Outlook: {e}[/]")
 
 
@@ -291,6 +304,7 @@ def _extract_storage_tokens(page, captured: dict[str, str]) -> None:
                     if secret and "graph.microsoft.com" not in captured:
                         captured["graph.microsoft.com"] = secret
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         pass
 
 
@@ -364,6 +378,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
                 )
                 page.wait_for_timeout(8000)
             except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
                 pass
 
         # Fallback: extract MSAL tokens from browser storage
@@ -376,6 +391,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
             context.storage_state(path=str(storage_path))
             console.print(f"[dim]Browser session saved to {storage_path}[/]")
         except Exception as e:
+            log.debug("Best-effort operation failed", exc_info=True)
             console.print(f"[dim]Could not save browser session: {e}[/]")
 
         context.close()

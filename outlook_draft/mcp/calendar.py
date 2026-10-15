@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Literal
 
 from ..calendar_time import outlook_datetime, parse_local_datetime
@@ -10,6 +12,9 @@ from .clients import clamp, outlook_client
 from .shaping import JsonDict, address, body_text, truncate
 
 RESPONSE_ACTIONS = {"accept": "accept", "tentative": "tentativelyAccept", "decline": "decline"}
+
+
+log = logging.getLogger(__name__)
 
 
 def _summary(event: JsonDict) -> JsonDict:
@@ -26,6 +31,7 @@ def _parse_range(start: str, end: str) -> tuple[str, str]:
             outlook_datetime(parse_local_datetime(end)),
         )
     except Exception as exc:
+        log.debug("Best-effort operation failed", exc_info=True)
         raise ValueError(
             f"Could not parse dates ({exc}). Use formats like '2026-04-10 14:00' or 'tomorrow 2pm'."
         ) from exc

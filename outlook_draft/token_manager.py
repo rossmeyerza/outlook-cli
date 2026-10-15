@@ -19,6 +19,7 @@ def _decode_claims(token: str) -> dict:
     try:
         return jwt.decode(token, options={"verify_signature": False}, algorithms=["RS256"])
     except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
         payload = token.split(".")[1]
         payload += "=" * (4 - len(payload) % 4)
         return json.loads(base64.urlsafe_b64decode(payload))
@@ -116,6 +117,7 @@ class TokenManager:
         try:
             captured = capture_tokens_via_browser(headless=headless)
         except Exception:
+            log.debug("Best-effort operation failed", exc_info=True)
             log.exception("Local re-authentication failed")
             return False
         if not captured:
