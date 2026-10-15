@@ -950,6 +950,13 @@ def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
     return cleaned, account
 
 
+def cmd_mcp(args: argparse.Namespace) -> None:
+    """Run the MCP server on stdio. The active account comes from --account."""
+    from .mcp.server import run  # lazy: the mcp SDK is only needed for this command
+
+    run()
+
+
 def cmd_completion(args: argparse.Namespace) -> None:
     completion.print_completion(args.shell, args._parser)
 
@@ -1577,6 +1584,10 @@ def main() -> None:
     cmd_config_check_parser = config_sub.add_parser("check", help="Validate local configuration")
     add_output_args(cmd_config_check_parser)
     cmd_config_check_parser.set_defaults(func=cmd_config_check)
+
+    # ── MCP server ────────────────────────────────────────────────────
+    p_mcp = sub.add_parser("mcp", help="Run the MCP server on stdio (no send tools)")
+    p_mcp.set_defaults(func=cmd_mcp)
 
     # ── Completion ────────────────────────────────────────────────────
     p_completion = sub.add_parser(

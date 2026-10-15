@@ -32,8 +32,8 @@ ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentRefere
 class _GraphClient:
     """Thin sync Graph client using the captured Graph bearer token."""
 
-    def __init__(self):
-        self._tm = TokenManager(
+    def __init__(self, token_manager: TokenManager | None = None):
+        self._tm = token_manager or TokenManager(
             token_domain=config.GRAPH_TOKEN_DOMAIN,
             token_label="Microsoft Graph",
         )
