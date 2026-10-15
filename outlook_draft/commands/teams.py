@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+
+
 import argparse
 import sys
 from pathlib import Path
@@ -679,3 +682,78 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
         )
 
     console.print(table)
+
+
+def register(sub) -> None:
+    p_teams = sub.add_parser("teams", help="Browse Teams chats and messages")
+    teams_sub = p_teams.add_subparsers(dest="command", required=True)
+
+
+    cmd_teams_list_cmd = teams_sub.add_parser("list", help="List Teams chats")
+    cmd_teams_list_cmd.add_argument("--count", "-n", type=int, default=20, help="Max chats")
+    cmd_teams_list_cmd.add_argument("--sort-received", action="store_true",
+        help="Sort by last received message (slower — makes one API call per chat)")
+    cmd_teams_list_cmd.set_defaults(func=cmd_teams_list)
+
+    cmd_teams_search_cmd = teams_sub.add_parser("search", help="Search Teams chats by topic or participant")
+    cmd_teams_search_cmd.add_argument("query", nargs="+", help="Name, email, or chat topic to search for")
+    cmd_teams_search_cmd.add_argument("--count", "-n", type=int, default=20, help="Max matching chats")
+    cmd_teams_search_cmd.add_argument("--scan", type=int, default=200, help="Max chats to scan")
+    cmd_teams_search_cmd.add_argument("--member-count", type=int, default=100, help="Max members to inspect per chat")
+    cmd_teams_search_cmd.set_defaults(func=cmd_teams_search)
+
+    cmd_teams_show_cmd = teams_sub.add_parser("show", help="Show Teams chat details")
+    cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_show_cmd.set_defaults(func=cmd_teams_show)
+
+    cmd_teams_self_cmd = teams_sub.add_parser("self", help="Show your Teams self-chat")
+    cmd_teams_self_cmd.set_defaults(func=cmd_teams_self)
+
+    cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
+    cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
+    cmd_teams_messages_cmd.set_defaults(func=cmd_teams_messages)
+
+    cmd_teams_attachments_cmd = teams_sub.add_parser(
+        "attachments",
+        help="List Teams attachments and SharePoint/OneDrive links in a chat",
+    )
+    cmd_teams_attachments_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_attachments_cmd.add_argument(
+        "--scan",
+        type=int,
+        default=50,
+        help="How many recent messages to scan for attachments and links",
+    )
+    cmd_teams_attachments_cmd.set_defaults(
+        func=cmd_teams_attachments,
+    )
+
+    cmd_teams_download_attachments_cmd = teams_sub.add_parser(
+        "download-attachments",
+        help="Download Teams attachments/share links via Graph",
+    )
+    cmd_teams_download_attachments_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_download_attachments_cmd.add_argument(
+        "--attachment",
+        "-a",
+        help="Attachment index from `teams attachments`, full URL, or substring match",
+    )
+    cmd_teams_download_attachments_cmd.add_argument(
+        "--scan",
+        type=int,
+        default=50,
+        help="How many recent messages to scan for attachments and links",
+    )
+    cmd_teams_download_attachments_cmd.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_teams_download_attachments_cmd.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_teams_download_attachments_cmd.set_defaults(
+        func=cmd_teams_download_attachments,
+    )
+
+    cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message (requires --yes)")
+    cmd_teams_send_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")
+    cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
+    _add_yes_arg(cmd_teams_send_cmd)
+    cmd_teams_send_cmd.set_defaults(func=cmd_teams_send)

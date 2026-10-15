@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+
+
 import argparse
 import sys
 from typing import Any, Callable
@@ -132,3 +135,34 @@ def cmd_contact_update(args: argparse.Namespace) -> None:
         sys.exit(1)
     finally:
         client.close()
+
+
+def register(sub) -> None:
+    p_contact = sub.add_parser("contact", help="Manage contacts")
+    add_output_args(p_contact)
+    contact_sub = p_contact.add_subparsers(dest="command", required=True)
+
+    cmd_contact_search = contact_sub.add_parser("search", help="Search contacts by name or email")
+    add_output_args(cmd_contact_search)
+    cmd_contact_search.add_argument("query", help="Name or email to search for")
+    cmd_contact_search.add_argument("--count", "-n", type=int, default=10, help="Max results")
+    cmd_contact_search.set_defaults(func=cmd_contacts)
+
+    cmd_contact_create_parser = contact_sub.add_parser("create", help="Create a personal contact")
+    cmd_contact_create_parser.add_argument("--name", required=True, help="Display name")
+    cmd_contact_create_parser.add_argument("--email", required=True, help="Email address")
+    cmd_contact_create_parser.add_argument("--given-name", help="Given name")
+    cmd_contact_create_parser.add_argument("--surname", help="Surname")
+    cmd_contact_create_parser.add_argument("--company", help="Company name")
+    cmd_contact_create_parser.add_argument("--mobile", help="Mobile phone")
+    cmd_contact_create_parser.set_defaults(func=cmd_contact_create)
+
+    cmd_contact_update_parser = contact_sub.add_parser("update", help="Update a personal contact")
+    cmd_contact_update_parser.add_argument("contact_id", help="Contact index from search or full ID")
+    cmd_contact_update_parser.add_argument("--name", help="Display name")
+    cmd_contact_update_parser.add_argument("--email", help="Email address")
+    cmd_contact_update_parser.add_argument("--given-name", help="Given name")
+    cmd_contact_update_parser.add_argument("--surname", help="Surname")
+    cmd_contact_update_parser.add_argument("--company", help="Company name")
+    cmd_contact_update_parser.add_argument("--mobile", help="Mobile phone")
+    cmd_contact_update_parser.set_defaults(func=cmd_contact_update)

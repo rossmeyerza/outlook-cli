@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+from . import drafts
+
+
 import argparse
 import base64
 import json
@@ -492,3 +496,96 @@ def cmd_download_links(args: argparse.Namespace) -> None:
         return
     for path in downloaded:
         runtime.console.print(f"[green]Downloaded:[/] {path}")
+
+
+def register(sub) -> None:
+    p_mail = sub.add_parser("mail", help="Read and search emails")
+    add_output_args(p_mail)
+    mail_sub = p_mail.add_subparsers(dest="command", required=True)
+
+    cmd_mail_unread = mail_sub.add_parser("unread", help="List unread emails from the Inbox")
+    add_output_args(cmd_mail_unread)
+    cmd_mail_unread.add_argument("--count", "-n", type=int, default=50, help="Max results")
+    cmd_mail_unread.set_defaults(func=cmd_unread)
+
+    cmd_mail_search = mail_sub.add_parser("search", help="Search emails by keyword")
+    add_output_args(cmd_mail_search)
+    cmd_mail_search.add_argument("query", help="Search term")
+    cmd_mail_search.add_argument("--count", "-n", type=int, default=20, help="Max results")
+    cmd_mail_search.set_defaults(func=cmd_mail)
+
+    cmd_mail_read = mail_sub.add_parser("read", help="Read an email by index or ID")
+    add_output_args(cmd_mail_read)
+    cmd_mail_read.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_read.set_defaults(func=cmd_read)
+
+    cmd_mail_mark_read = mail_sub.add_parser("mark-read", help="Mark an email as read")
+    cmd_mail_mark_read.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_mark_read.set_defaults(func=cmd_mark_read)
+
+    cmd_mail_mark_unread = mail_sub.add_parser("mark-unread", help="Mark an email as unread")
+    cmd_mail_mark_unread.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_mark_unread.set_defaults(func=cmd_mark_unread)
+
+    cmd_mail_archive = mail_sub.add_parser("archive", help="Archive an email")
+    cmd_mail_archive.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_archive.set_defaults(func=cmd_archive)
+
+    cmd_mail_move = mail_sub.add_parser("move", help="Move an email to another folder")
+    cmd_mail_move.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_move.add_argument("--folder", "-f", required=True, help="Folder index, well-known name, folder name, or folder ID")
+    cmd_mail_move.set_defaults(func=cmd_move)
+
+    cmd_mail_folders = mail_sub.add_parser("folders", help="List mail folders")
+    add_output_args(cmd_mail_folders)
+    cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
+    cmd_mail_folders.set_defaults(func=cmd_folders)
+
+    cmd_mail_attachments = mail_sub.add_parser("attachments", help="List message attachments")
+    add_output_args(cmd_mail_attachments)
+    cmd_mail_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_attachments.set_defaults(func=cmd_attachments)
+
+    cmd_mail_download_attachments = mail_sub.add_parser("download-attachments", help="Download message attachments")
+    cmd_mail_download_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_download_attachments.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_mail_download_attachments.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_mail_download_attachments.add_argument(
+        "--include-inline",
+        action="store_true",
+        help="Also download attachments marked as inline (e.g. embedded images)",
+    )
+    cmd_mail_download_attachments.set_defaults(func=cmd_download_attachments)
+
+    cmd_mail_links = mail_sub.add_parser("links", help="List links and inline image URLs in an email body")
+    add_output_args(cmd_mail_links)
+    cmd_mail_links.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_links.add_argument(
+        "--share-only",
+        action="store_true",
+        help="Only show SharePoint/OneDrive style links",
+    )
+    cmd_mail_links.set_defaults(func=cmd_links)
+
+    cmd_mail_download_links = mail_sub.add_parser(
+        "download-links",
+        help="Download SharePoint/OneDrive links from an email body via Graph",
+    )
+    cmd_mail_download_links.add_argument("message_id", help="Message index (from last search) or full ID")
+    cmd_mail_download_links.add_argument("--dir", "-d", default="attachments", help="Output directory")
+    cmd_mail_download_links.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
+    cmd_mail_download_links.set_defaults(func=cmd_download_links)
+
+    cmd_mail_send = mail_sub.add_parser("send", help="Send a new email immediately (requires --yes)")
+    cmd_mail_send.add_argument("--to", required=True, action="append", help="Recipient (repeatable, comma-separated ok)")
+    cmd_mail_send.add_argument("--cc", action="append", help="CC recipient")
+    cmd_mail_send.add_argument("--bcc", action="append", help="BCC recipient")
+    cmd_mail_send.add_argument("--subject", "-s", required=True, help="Subject line")
+    cmd_mail_send.add_argument("--body", "-b", help="Body text (inline)")
+    cmd_mail_send.add_argument("--body-file", "-f", help="Read body from file")
+    cmd_mail_send.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_mail_send.add_argument("--signature", choices=["none", "new", "reply"], default="none", help="Append saved signature")
+    cmd_mail_send.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
+    cmd_mail_send.add_argument("--no-save", action="store_true", help="Do not save to Sent Items")
+    _add_yes_arg(cmd_mail_send)
+    cmd_mail_send.set_defaults(func=drafts.cmd_send_mail)

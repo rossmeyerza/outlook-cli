@@ -6,6 +6,9 @@ We intercept those responses with Playwright instead of scraping the DOM.
 
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+
+
 import json
 from urllib.parse import parse_qs, urlparse
 
@@ -187,3 +190,18 @@ def cmd_signature_fetch(args) -> None:
             "[yellow]Only a new-message signature was found. "
             "If you have a separate reply signature, check OWA settings.[/]"
         )
+
+
+def register(sub) -> None:
+    p_sig = sub.add_parser("signature", help="Manage email signatures")
+    sig_sub = p_sig.add_subparsers(dest="command", required=True)
+    cmd_sig_fetch = sig_sub.add_parser(
+        "fetch",
+        help="Fetch your OWA signature and save to configured files",
+    )
+    cmd_sig_fetch.add_argument(
+        "--headed",
+        action="store_true",
+        help="Run with a visible browser window (useful if headless fails)",
+    )
+    cmd_sig_fetch.set_defaults(func=cmd_signature_fetch)

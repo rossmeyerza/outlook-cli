@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+
+
 import argparse
 import json
 import sys
@@ -464,3 +467,131 @@ def cmd_cal_cancel(args: argparse.Namespace) -> None:
         sys.exit(1)
     finally:
         client.close()
+
+
+def register(sub) -> None:
+    p_cal = sub.add_parser("cal", help="Manage calendar events")
+    add_output_args(p_cal)
+    cal_sub = p_cal.add_subparsers(dest="command", required=True)
+
+    cmd_cal_agenda_parser = cal_sub.add_parser("agenda", help="List upcoming calendar events")
+    add_output_args(cmd_cal_agenda_parser)
+    cmd_cal_agenda_parser.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
+    cmd_cal_agenda_parser.add_argument("--count", "-n", type=int, default=20, help="Max events")
+    cmd_cal_agenda_parser.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
+    cmd_cal_agenda_parser.set_defaults(func=cmd_cal_agenda)
+
+    cmd_cal_show_parser = cal_sub.add_parser("show", help="Show event details")
+    add_output_args(cmd_cal_show_parser)
+    cmd_cal_show_parser.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_show_parser.set_defaults(func=cmd_cal_show)
+
+    cmd_cal_create_cmd = cal_sub.add_parser("create", help="Create an event")
+    cmd_cal_create_cmd.add_argument("subject", help="Event subject")
+    cmd_cal_create_cmd.add_argument("start", help="Start time (e.g. '2026-04-10 14:00')")
+    cmd_cal_create_cmd.add_argument("end", help="End time (e.g. '2026-04-10 15:00')")
+    cmd_cal_create_cmd.add_argument("--location", "-l", help="Location")
+    cmd_cal_create_cmd.add_argument("--body", "-b", help="Event description")
+    cmd_cal_create_cmd.add_argument("--attendee", dest="attendees", action="append", help="Attendee email (repeatable)")
+    cmd_cal_create_cmd.add_argument(
+        "--teams",
+        action="store_true",
+        help="Create as a Teams meeting (adds Teams join link)",
+    )
+    cmd_cal_create_cmd.set_defaults(func=cmd_cal_create)
+
+    cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
+    add_output_args(cmd_cal_rooms_cmd)
+    cmd_cal_rooms_cmd.add_argument("--room-list", help="Optional room list email/address")
+    cmd_cal_rooms_cmd.set_defaults(func=cmd_cal_rooms)
+
+    cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
+    add_output_args(cmd_cal_availability_cmd)
+    cmd_cal_availability_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd_cal_availability_cmd.add_argument("--start", required=True, help="Start time")
+    cmd_cal_availability_cmd.add_argument("--end", required=True, help="End time")
+    cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
+    cmd_cal_availability_cmd.set_defaults(func=cmd_cal_availability)
+
+    cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
+    add_output_args(cmd_cal_find_time_cmd)
+    cmd_cal_find_time_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd_cal_find_time_cmd.add_argument("--start", required=True, help="Window start time")
+    cmd_cal_find_time_cmd.add_argument("--end", required=True, help="Window end time")
+    cmd_cal_find_time_cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
+    cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
+    cmd_cal_find_time_cmd.set_defaults(func=cmd_cal_find_time)
+
+    cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
+    cmd_cal_update_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_update_cmd.add_argument("--subject", help="New event subject")
+    cmd_cal_update_cmd.add_argument("--start", help="New start time")
+    cmd_cal_update_cmd.add_argument("--end", help="New end time")
+    cmd_cal_update_cmd.add_argument("--location", help="New location, use empty string to clear")
+    cmd_cal_update_cmd.add_argument("--body", help="New event body, use empty string to clear")
+    cmd_cal_update_group = cmd_cal_update_cmd.add_mutually_exclusive_group()
+    cmd_cal_update_group.add_argument(
+        "--teams",
+        dest="teams",
+        action="store_true",
+        default=None,
+        help="Make the event a Teams meeting",
+    )
+    cmd_cal_update_group.add_argument(
+        "--no-teams",
+        dest="teams",
+        action="store_false",
+        help="Remove the Teams meeting flag",
+    )
+    cmd_cal_update_cmd.set_defaults(func=cmd_cal_update)
+
+    cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")
+    cmd_cal_delete_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_delete_cmd.set_defaults(func=cmd_cal_delete)
+
+    cmd_cal_accept_cmd = cal_sub.add_parser("accept", help="Accept an event invitation")
+    cmd_cal_accept_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_accept_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_accept_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_accept_cmd.set_defaults(
+        func=cmd_cal_accept,
+        send_response=True,
+    )
+
+    cmd_cal_decline_cmd = cal_sub.add_parser("decline", help="Decline an event invitation")
+    cmd_cal_decline_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_decline_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_decline_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_decline_cmd.set_defaults(
+        func=cmd_cal_decline,
+        send_response=True,
+    )
+
+    cmd_cal_tentative_cmd = cal_sub.add_parser("tentative", help="Tentatively accept an event invitation")
+    cmd_cal_tentative_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_tentative_cmd.add_argument("--comment", "-m", help="Optional response comment")
+    cmd_cal_tentative_cmd.add_argument(
+        "--no-send-response",
+        dest="send_response",
+        action="store_false",
+        help="Do not send a response email to the organizer",
+    )
+    cmd_cal_tentative_cmd.set_defaults(
+        func=cmd_cal_tentative,
+        send_response=True,
+    )
+
+    cmd_cal_cancel_cmd = cal_sub.add_parser("cancel", help="Cancel an event you organize")
+    cmd_cal_cancel_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
+    cmd_cal_cancel_cmd.add_argument("--comment", "-m", help="Optional cancellation comment")
+    cmd_cal_cancel_cmd.set_defaults(func=cmd_cal_cancel)

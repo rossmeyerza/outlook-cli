@@ -200,7 +200,8 @@ Implementation notes:
 
 - Tools build a client per call through `outlook_draft/mcp/clients.py`. `NoReauthTokenManager` never runs `run_reauth`, so a stale token raises `McpAuthError` instead of starting headless auth.
 - Tool code must not print to stdout and must not call `sys.exit`. Raise exceptions; FastMCP returns them as `isError` results.
-- Pure helpers shared with the CLI live in `outlook_draft/formatting.py`. `cli.py` re-imports them under the old private names.
+- Pure helpers live in `outlook_draft/formatting.py`. CLI factories and output helpers live in `runtime.py`. Cached reference resolution lives in `references.py`.
+- Command modules register their parsers through `register(subparsers)`. `cli.py` handles account selection and dispatch. Gateway parser registration lives in `commands/gateway_parser.py` so the daemon module stays unchanged.
 - Do not run `uv run`, `uv sync` or `uv lock` in this repo. They replace `.venv` and break the global `outlook-cli`. Use `uv pip install --python .venv/bin/python <pkg>` and `.venv/bin/python -m pytest -q`.
 
 ## File Layout
@@ -223,7 +224,10 @@ Implementation notes:
   outlook_draft/
     auth.py                     # Playwright auth, token capture, browser session save
     calendar_time.py            # Calendar timezone parsing and Outlook headers
-    cli.py                      # CLI entry point
+    cli.py                      # CLI entry point and dispatch
+    runtime.py                  # CLI console and client factories
+    references.py               # Cached CLI reference resolution
+    parser.py                   # Shared argparse options
     formatting.py               # Pure text/HTML/datetime/email helpers shared with the MCP server
     signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths
@@ -232,6 +236,11 @@ Implementation notes:
     outlook_client.py           # Outlook REST API v2.0 client
     token_manager.py            # Token management + reauth trigger
     commands/
+      account.py                # Account, auth, config and mailbox handlers/parsers
+      drafts.py                 # Draft and mail-send handlers
+      completion.py             # Completion command registration
+      mcp.py                    # MCP command registration
+      gateway_parser.py         # Gateway parser registration only
       calendar.py               # Calendar subcommands
       contacts.py               # Contacts subcommands
       files.py                  # OneDrive and SharePoint file operations via Graph

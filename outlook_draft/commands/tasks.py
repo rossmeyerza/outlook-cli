@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from ..parser import add_output_args, _add_yes_arg
+
+
 import argparse
 import json
 import sys
@@ -152,3 +155,34 @@ def cmd_task_delete(args: argparse.Namespace) -> None:
         sys.exit(1)
     finally:
         client.close()
+
+
+def register(sub) -> None:
+    p_task = sub.add_parser("task", help="Manage tasks")
+    add_output_args(p_task)
+    task_sub = p_task.add_subparsers(dest="command", required=True)
+
+    cmd_task_l = task_sub.add_parser("list", help="List active tasks")
+    add_output_args(cmd_task_l)
+    cmd_task_l.add_argument("--count", "-n", type=int, default=50, help="Max tasks")
+    cmd_task_l.set_defaults(func=cmd_task_list)
+
+    cmd_task_c = task_sub.add_parser("create", help="Create a task")
+    cmd_task_c.add_argument("subject", help="Task description")
+    cmd_task_c.set_defaults(func=cmd_task_create)
+
+    cmd_task_update_cmd = task_sub.add_parser("update", help="Update a task")
+    cmd_task_update_cmd.add_argument("task_id", help="Task index or full ID")
+    cmd_task_update_cmd.add_argument("--subject", help="New task subject")
+    cmd_task_update_cmd.add_argument("--due", help="Due date/time")
+    cmd_task_update_cmd.add_argument("--importance", choices=["Low", "Normal", "High"], help="Task importance")
+    cmd_task_update_cmd.add_argument("--status", choices=["NotStarted", "InProgress", "Completed", "WaitingOnOthers", "Deferred"], help="Task status")
+    cmd_task_update_cmd.set_defaults(func=cmd_task_update)
+
+    cmd_task_complete_cmd = task_sub.add_parser("complete", help="Mark task complete")
+    cmd_task_complete_cmd.add_argument("task_id", help="Task index or full ID")
+    cmd_task_complete_cmd.set_defaults(func=cmd_task_complete)
+
+    cmd_task_delete_cmd = task_sub.add_parser("delete", help="Delete a task")
+    cmd_task_delete_cmd.add_argument("task_id", help="Task index or full ID")
+    cmd_task_delete_cmd.set_defaults(func=cmd_task_delete)

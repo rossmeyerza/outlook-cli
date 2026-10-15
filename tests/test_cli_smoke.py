@@ -11,7 +11,7 @@ import pytest
 from rich.console import Console
 
 from outlook_draft import cli, runtime
-from outlook_draft.commands import files
+from outlook_draft.commands import account, calendar, drafts, files, tasks, teams
 from outlook_draft.errors import OutlookAPIError
 
 SNAPSHOT = Path(__file__).with_name("cli_smoke_outputs.json")
@@ -44,6 +44,8 @@ def capture_parser(monkeypatch):
 
 def help_outputs(parser, prefix=()):
     outputs = {" ".join(prefix): parser.format_help()}
+    handler = parser.get_default("func")
+    assert handler is None or callable(handler)
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
             for name, child in action.choices.items():
@@ -65,12 +67,11 @@ def isolated_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(runtime, "console", console)
     monkeypatch.setattr(runtime, "get_client", lambda **kwargs: client)
     monkeypatch.setattr(runtime, "get_graph_client", lambda: client)
-    monkeypatch.setattr(cli, "_get_client", lambda **kwargs: client)
-    monkeypatch.setattr(cli, "_get_graph_client", lambda: client)
+    monkeypatch.setattr(drafts, "console", console)
     monkeypatch.setattr(files, "_GraphClient", lambda: client)
-    monkeypatch.setattr(cli, "_refresh_account_paths", lambda: None)
+    monkeypatch.setattr(account, "refresh_account_paths", lambda: None)
     monkeypatch.setattr(files, "console", console)
-    for module in (cli.calendar_commands, cli.tasks_commands, cli.teams_commands):
+    for module in (calendar, tasks, teams):
         for name in ("CAL_CACHE", "TASK_CACHE", "TEAMS_CACHE"):
             if hasattr(module, name):
                 monkeypatch.setattr(module, name, tmp_path / name)
