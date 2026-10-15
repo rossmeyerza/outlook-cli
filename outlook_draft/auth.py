@@ -293,6 +293,23 @@ def _extract_storage_tokens(page, captured: dict[str, str]) -> None:
         pass
 
 
+def _wait_for_login_or_tokens(page, captured: dict[str, str], timeout_ms: int = 20000) -> bool:
+    """Wait until the SSO redirect settles. Return True if we land on a login page.
+
+    A fixed short wait raced the redirect: if it was slow, the login steps were
+    skipped and no tokens were captured.
+    """
+    waited = 0
+    while waited < timeout_ms:
+        if "login.microsoft" in page.url:
+            return True
+        if captured:
+            return False
+        page.wait_for_timeout(500)
+        waited += 500
+    return "login.microsoft" in page.url
+
+
 def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
     """Open Outlook Web in Playwright and intercept all bearer tokens.
 
@@ -325,14 +342,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
 
         # Navigate to Outlook calendar (triggers SSO + lots of API calls)
         page.goto("https://outlook.office.com/calendar", wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-
-        # Check if we hit the login page
-        current_url = page.url
-        on_login_page = (
-            "login.microsoftonline.com" in current_url
-            or "login.microsoft" in current_url
-        )
+        on_login_page = _wait_for_login_or_tokens(page, captured)
 
         if on_login_page and config.MS_EMAIL:
             _enter_email(page, config.MS_EMAIL)
