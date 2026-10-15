@@ -16,7 +16,7 @@ from .calendar_time import outlook_timezone_prefer_header
 from .concurrency import ordered_map
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
-from .teams_activity import activity_time
+from .teams_activity import TeamsChatList, activity_time
 from .token_manager import TokenManager
 
 log = logging.getLogger(__name__)
@@ -801,8 +801,8 @@ class OutlookClient:
         )
         return resp.json()
 
-    def list_teams_chats(self, top: int = 20) -> list[dict[str, Any]]:
-        """List Teams chats for the current user, following Graph paging."""
+    def list_teams_chats(self, top: int = 20) -> TeamsChatList:
+        """List Teams chats with has_more paging metadata; remains list-compatible."""
         chats: list[dict[str, Any]] = []
         page_size = min(max(top, 1), 50)
         path = "/me/chats"
@@ -813,6 +813,7 @@ class OutlookClient:
             "$orderby": "lastMessagePreview/createdDateTime desc",
         }
 
+        next_link = None
         while len(chats) < top and path:
             resp = self._request("GET", path, params=params)
             data = resp.json()
@@ -823,7 +824,7 @@ class OutlookClient:
             path = next_link
             params = None
 
-        chats = chats[:top]
+        chats = TeamsChatList(chats[:top], has_more=len(chats) > top or bool(next_link))
         missing = [chat for chat in chats if not chat.get("lastMessagePreview")]
         with ordered_map(self._teams_activity_preview, missing) as previews:
             for chat, preview in zip(missing, previews, strict=False):

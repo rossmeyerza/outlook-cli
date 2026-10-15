@@ -68,7 +68,7 @@ def teams_search(
     with graph_client() as client:
         chats = client.list_teams_chats(top=clamp(scan, high=500))
         chats.sort(key=activity_time, reverse=True)
-        scan_limited = len(chats) >= clamp(scan, high=500)
+        scan_limited = getattr(chats, "has_more", False)
         if one_on_one:
             chats = [chat for chat in chats if chat.get("chatType") == "oneOnOne"]
         with ordered_map(
@@ -78,11 +78,14 @@ def teams_search(
                 reasons = _chat_match_reasons(chat, members, query)
                 if reasons:
                     results.append({**_chat_summary(chat, members), "match": "; ".join(reasons)})
-                    if len(results) >= clamp(count, high=50):
+                    if len(results) > clamp(count, high=50):
                         break
-    incomplete = scan_limited or len(results) >= clamp(count, high=50)
-    if incomplete:
-        logging.getLogger(__name__).warning("Teams search may be truncated. Increase scan/count.")
+    incomplete = scan_limited or len(results) > clamp(count, high=50)
+    if scan_limited:
+        logging.getLogger(__name__).warning("Teams search may be truncated: Graph has more chats beyond scan=%d.", clamp(scan, high=500))
+    if len(results) > clamp(count, high=50):
+        logging.getLogger(__name__).warning("Teams matching results truncated at count=%d.", clamp(count, high=50))
+    results = results[:clamp(count, high=50)]
     for result in results:
         result["searchIncomplete"] = incomplete
         if include_messages:

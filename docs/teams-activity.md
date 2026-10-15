@@ -29,7 +29,9 @@ Existing `teams_list` and `teams_search` return types remain unchanged. Each cha
 
 `lastUpdated` retains its original meaning for compatibility.
 
-`teams_search` accepts optional `one_on_one` and `include_messages` booleans. Both default to false. Set both to true to find a person's 1:1 chat and read recent messages. Each returned result includes `searchIncomplete`. A true value means the scan or result count reached its limit. The server also logs a warning, including when no results are returned.
+`teams_search` accepts optional `one_on_one` and `include_messages` booleans. Both default to false. Set both to true to find a person's 1:1 chat and read recent messages. Each returned result includes `searchIncomplete`. A true value means Graph has chats beyond the scan limit, or at least one matching result was omitted by the result limit. An exact count alone does not trigger a warning. The server also logs a warning, including when no results are returned.
+
+The client preserves Graph continuation metadata in a list-compatible chat collection. Search checks up to one extra match within the scan to detect omitted results.
 
 Searches remain bounded. Increase `--scan`/`scan` or `--count`/`count` when a limit warning appears. MCP scan and result limits remain 500 and 50. Member expansion is reused only when it has no continuation link. Otherwise the existing paged member lookup is used.
 

@@ -14,7 +14,7 @@ from outlook_draft.commands import teams as cli_teams
 from outlook_draft.errors import OutlookAPIError
 from outlook_draft.mcp import teams
 from outlook_draft.outlook_client import OutlookClient
-from outlook_draft.teams_activity import activity_fields, activity_time
+from outlook_draft.teams_activity import TeamsChatList, activity_fields, activity_time
 
 
 def chat(chat_id="person", timestamp="2026-10-15T14:53:00Z", updated="2026-08-13T12:22:25Z"):
@@ -45,12 +45,43 @@ def test_mcp_defaults_use_message_time_not_chat_update(monkeypatch):
     assert len(results) == 1 and results[0]["messages"] == []
 
 
-def test_scan_and_count_limits_are_visible(monkeypatch, caplog):
-    use_client(monkeypatch, teams, "graph_client", FakeClient(list_teams_chats=[chat()]))
-    assert teams.teams_search("Vagelis", scan=1)[0]["searchIncomplete"] is True
-    assert teams.teams_search("Vagelis", count=1)[0]["searchIncomplete"] is True
-    assert "truncated" in caplog.text
-    assert teams.teams_search("Vagelis")[0]["searchIncomplete"] is False
+@pytest.mark.parametrize("matches,other,has_more,count,incomplete", [
+    (1, 0, False, 1, False),  # Exact scan and result limits, but nothing omitted.
+    (1, 3, False, 3, False),
+    (1, 3, False, 1, False),  # More candidates are not proof of more matches.
+    (2, 0, False, 1, True),
+    (2, 0, False, 2, False),
+    (1, 0, True, 3, True),  # Graph has an unvisited page.
+    (0, 2, True, 3, True),
+    (0, 2, False, 3, False),
+])
+def test_scan_and_count_limits_require_evidence(monkeypatch, caplog, matches, other, has_more, count, incomplete):
+    chats = [chat(str(index)) for index in range(matches)]
+    for index in range(other):
+        unmatched = chat(f"other-{index}")
+        unmatched["members"] = [{"displayName": "Someone Else"}]
+        chats.append(unmatched)
+    chats = TeamsChatList(chats, has_more=has_more)
+    use_client(monkeypatch, teams, "graph_client", FakeClient(list_teams_chats=chats))
+    results = teams.teams_search("Vagelis", scan=len(chats), count=count, one_on_one=True)
+    assert len(results) == min(matches, count)
+    assert all(result["searchIncomplete"] is incomplete for result in results)
+    assert ("truncated" in caplog.text) is incomplete
+
+    client = Mock()
+    client.list_teams_chats.return_value = chats
+    monkeypatch.setattr(cli_teams.runtime, "get_graph_client", lambda: client)
+    output = io.StringIO()
+    monkeypatch.setattr(cli_teams.runtime, "console", Console(file=output))
+    render, save = Mock(), Mock()
+    monkeypatch.setattr(cli_teams, "_render_search_results", render)
+    monkeypatch.setattr(cli_teams, "save_cache", save)
+    args = argparse.Namespace(query=["Vagelis"], scan=len(chats), count=count, member_count=100,
+                              no_spinner=True, one_on_one=True)
+    cli_teams.cmd_teams_search(args)
+    assert ("truncated" in output.getvalue()) is incomplete
+    assert len(render.call_args.args[1]) == min(matches, count)
+    assert len(save.call_args.args[1]) == min(matches, count)
 
 
 def test_cli_search_does_not_resort_by_update_time(monkeypatch, tmp_path):
@@ -73,12 +104,31 @@ def test_graph_expands_previews_and_members_across_pages():
         httpx.Response(200, json={"value": [person], "@odata.nextLink": "https://graph.microsoft.com/v1.0/next"}),
         httpx.Response(200, json={"value": [old]}),
     ])
-    assert client.list_teams_chats(top=2) == [person, old]
+    results = client.list_teams_chats(top=2)
+    assert results == [person, old]
+    assert results.has_more is False
     calls = client._request.call_args_list
     assert calls[0].kwargs["params"]["$expand"] == "lastMessagePreview,members"
     assert calls[0].kwargs["params"]["$orderby"] == "lastMessagePreview/createdDateTime desc"
     assert calls[1].kwargs["params"] is None
     assert len(calls) == 2  # No per-chat message or member reads.
+
+
+@pytest.mark.parametrize("size,next_link,top,has_more", [
+    (1, None, 1, False),
+    (1, "https://graph.microsoft.com/v1.0/next", 1, True),
+    (2, None, 1, True),  # A returned page can extend beyond the requested cap.
+    (0, None, 1, False),
+])
+def test_graph_chat_limit_tracks_remaining_data(size, next_link, top, has_more):
+    client = OutlookClient(Mock())
+    values = [chat(str(index)) for index in range(size)]
+    client._request = Mock(return_value=httpx.Response(200, json={"value": values, "@odata.nextLink": next_link}))
+    results = client.list_teams_chats(top)
+    assert len(results) == min(top, size)
+    assert isinstance(results, list)
+    assert results.has_more is has_more
+    client._request.assert_called_once()
 
 
 def test_missing_preview_falls_back_only_for_missing_chat(caplog):

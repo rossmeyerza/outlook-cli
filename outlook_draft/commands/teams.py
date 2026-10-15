@@ -367,12 +367,11 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
     results: list[tuple[JsonDict, list[JsonDict], list[str]]] = []
     scanned = 0
     member_errors = 0
-
     try:
         with spinner(args, f"Scanning up to {scan_count} Teams chats by topic and participants..."):
             chats = client.list_teams_chats(top=scan_count)
             chats.sort(key=activity_time, reverse=True)
-            scan_limited = len(chats) >= scan_count
+            scan_limited = getattr(chats, "has_more", False)
             if getattr(args, "one_on_one", False):
                 chats = [chat for chat in chats if chat.get("chatType") == "oneOnOne"]
 
@@ -385,19 +384,19 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
                     reasons = _chat_match_reasons(chat, members, query)
                     if reasons:
                         results.append((chat, members, reasons))
-                        if len(results) >= result_count:
+                        if len(results) > result_count:
                             break
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to search Teams chats: {e}[/]") from e
     finally:
         client.close()
-
-    matched_chats = [chat for chat, _, _ in results]
+    matched_chats = [chat for chat, _, _ in results[:result_count]]
     save_cache(TEAMS_CACHE, matched_chats, id_key="id")
-
-    _render_search_results(query, results, scanned, member_errors)
-    if scan_limited or len(results) >= result_count:
-        runtime.console.print("[yellow]Results may be truncated. Increase --scan or --count.[/]")
+    _render_search_results(query, results[:result_count], scanned, member_errors)
+    if scan_limited:
+        runtime.console.print(f"[yellow]Results may be truncated: Graph has more chats beyond --scan {scan_count}. Increase --scan.[/]")
+    if len(results) > result_count:
+        runtime.console.print(f"[yellow]Matching results truncated at --count {result_count}. Increase --count.[/]")
     if getattr(args, "command", "") == "with" and len(results) == 1:
         args.chat_id = results[0][0]["id"]
         cmd_teams_messages(args)

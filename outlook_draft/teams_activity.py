@@ -6,6 +6,14 @@ from typing import Any
 from .formatting import html_to_text
 
 
+class TeamsChatList(list[dict[str, Any]]):
+    """A normal chat list with evidence that Graph has more chats."""
+
+    def __init__(self, chats: list[dict[str, Any]], *, has_more: bool = False) -> None:
+        super().__init__(chats)
+        self.has_more = has_more
+
+
 def is_system_event(message: dict[str, Any]) -> bool:
     content = (message.get("body") or {}).get("content") or ""
     return (
