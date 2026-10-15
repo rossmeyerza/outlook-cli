@@ -15,54 +15,12 @@ from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
 from ..progress import spinner
+from .. import runtime
+from ..formatting import html_to_text, format_datetime
+from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
 
 
 JsonDict = dict[str, Any]
-
-
-def build_ctx(
-    *,
-    console: Any,
-    get_client: Callable[[], Any],
-    html_to_text: Callable[[str], str],
-    format_datetime: Callable[[str], str],
-    resolve_message_id: Callable[[Any, str], str],
-) -> dict[str, Any]:
-    return {
-        "console": console,
-        "get_client": get_client,
-        "html_to_text": html_to_text,
-        "format_datetime": format_datetime,
-        "resolve_message_id": resolve_message_id,
-    }
-
-
-def _ctx(args: argparse.Namespace) -> dict[str, Any]:
-    return args._mail_ctx
-
-
-def _console(args: argparse.Namespace):
-    return _ctx(args)["console"]
-
-
-def _get_client(args: argparse.Namespace):
-    return _ctx(args)["get_client"]()
-
-
-def _html_to_text(args: argparse.Namespace, html: str) -> str:
-    return _ctx(args)["html_to_text"](html)
-
-
-def _format_datetime(args: argparse.Namespace, value: str) -> str:
-    return _ctx(args)["format_datetime"](value)
-
-
-def _resolve_message_id(args: argparse.Namespace, client: Any, ref: str) -> str:
-    return _ctx(args)["resolve_message_id"](client, ref)
-
-
-def _print_json(value: Any) -> None:
-    print(json.dumps(value, indent=2, ensure_ascii=False))
 
 
 def _message_summary(args: argparse.Namespace, msg: JsonDict, index: int | None = None) -> JsonDict:
@@ -76,7 +34,7 @@ def _message_summary(args: argparse.Namespace, msg: JsonDict, index: int | None 
             "address": from_obj.get("Address", ""),
         },
         "receivedDateTime": msg.get("ReceivedDateTime", ""),
-        "received": _format_datetime(args, msg.get("ReceivedDateTime", "")),
+        "received": format_datetime(msg.get("ReceivedDateTime", "")),
         "isRead": msg.get("IsRead", True),
         "hasAttachments": msg.get("HasAttachments", False),
         "importance": msg.get("Importance", ""),
@@ -103,15 +61,15 @@ def _render_message_table(args: argparse.Namespace, messages: list[JsonDict], ti
         style = "" if read else "bold"
         table.add_row(
             str(i),
-            _format_datetime(args, msg.get("ReceivedDateTime", "")),
+            format_datetime(msg.get("ReceivedDateTime", "")),
             from_name,
             subject,
             attach,
             style=style,
         )
 
-    _console(args).print(table)
-    _console(args).print("[dim]Use 'outlook-cli mail read <n>' to read an email.[/]")
+    runtime.console.print(table)
+    runtime.console.print("[dim]Use 'outlook-cli mail read <n>' to read an email.[/]")
 
 
 def _resolve_folder_id(args: argparse.Namespace, ref: str) -> str:
@@ -122,13 +80,13 @@ def _resolve_folder_id(args: argparse.Namespace, ref: str) -> str:
         idx = int(ref)
         if cached and 1 <= idx <= len(cached):
             return cached[idx - 1]["Id"]
-        _console(args).print("[red]No matching cached folder. Run 'outlook-cli mail folders' first.[/]")
+        runtime.console.print("[red]No matching cached folder. Run 'outlook-cli mail folders' first.[/]")
         sys.exit(1)
     matches = [item for item in cached if item.get("DisplayName", "").lower() == ref.lower()]
     if len(matches) == 1:
         return matches[0]["Id"]
     if len(matches) > 1:
-        _console(args).print(f"[red]Ambiguous folder name '{ref}'. Use folder index or ID.[/]")
+        runtime.console.print(f"[red]Ambiguous folder name '{ref}'. Use folder index or ID.[/]")
         sys.exit(1)
     return ref
 
@@ -140,25 +98,25 @@ def _safe_filename(name: str) -> str:
 
 def cmd_unread(args: argparse.Namespace) -> None:
     """List unread emails from the Inbox."""
-    client = _get_client(args)
+    client = runtime.get_client()
     try:
         with spinner(args, "Loading unread emails..."):
             messages = client.list_unread(top=args.count)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to list unread emails: {e}[/]")
+        runtime.console.print(f"[red]Failed to list unread emails: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     if not messages:
         if args.json:
-            _print_json([])
+            runtime.print_json([])
             return
-        _console(args).print("[dim]No unread emails.[/]")
+        runtime.console.print("[dim]No unread emails.[/]")
         return
 
     if args.json:
-        _print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
+        runtime.print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
         return
 
     _render_message_table(args, messages, f"Unread emails ({len(messages)})")
@@ -166,25 +124,25 @@ def cmd_unread(args: argparse.Namespace) -> None:
 
 def cmd_mail(args: argparse.Namespace) -> None:
     """Search emails by keyword."""
-    client = _get_client(args)
+    client = runtime.get_client()
     try:
         with spinner(args, f"Searching emails for '{args.query}'..."):
             messages = client.search_messages(args.query, top=args.count)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to search emails: {e}[/]")
+        runtime.console.print(f"[red]Failed to search emails: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     if not messages:
         if args.json:
-            _print_json([])
+            runtime.print_json([])
             return
-        _console(args).print(f"[dim]No emails found for '{args.query}'.[/]")
+        runtime.console.print(f"[dim]No emails found for '{args.query}'.[/]")
         return
 
     if args.json:
-        _print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
+        runtime.print_json([_message_summary(args, msg, i) for i, msg in enumerate(messages, 1)])
         return
 
     _render_message_table(args, messages, f"Emails matching '{args.query}' ({len(messages)})")
@@ -192,13 +150,13 @@ def cmd_mail(args: argparse.Namespace) -> None:
 
 def cmd_read(args: argparse.Namespace) -> None:
     """Read a specific email by ID or search index."""
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         with spinner(args, "Loading email..."):
             msg = client.get_message(message_id)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to read email: {e}[/]")
+        runtime.console.print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
@@ -208,9 +166,9 @@ def cmd_read(args: argparse.Namespace) -> None:
         body_obj = data.get("Body", {})
         if body_obj.get("ContentType") == "HTML":
             body_obj = dict(body_obj)
-            body_obj["Text"] = _html_to_text(args, body_obj.get("Content", ""))
+            body_obj["Text"] = html_to_text(body_obj.get("Content", ""))
             data["Body"] = body_obj
-        _print_json(data)
+        runtime.print_json(data)
         return
 
     from_obj = msg.get("From", {}).get("EmailAddress", {})
@@ -239,81 +197,81 @@ def cmd_read(args: argparse.Namespace) -> None:
     body_obj = msg.get("Body", {})
     body_content = body_obj.get("Content", "")
     if body_obj.get("ContentType") == "HTML":
-        body_content = _html_to_text(args, body_content)
+        body_content = html_to_text(body_content)
 
     lines.append("")
     lines.append(body_content)
 
-    _console(args).print(Panel("\n".join(lines), title="Email", border_style="cyan"))
+    runtime.console.print(Panel("\n".join(lines), title="Email", border_style="cyan"))
 
 
 def cmd_mark_read(args: argparse.Namespace) -> None:
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         client.update_message_read_state(message_id, is_read=True)
-        _console(args).print("[green]Marked email as read.[/]")
+        runtime.console.print("[green]Marked email as read.[/]")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to mark email read: {e}[/]")
+        runtime.console.print(f"[red]Failed to mark email read: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
 
 def cmd_mark_unread(args: argparse.Namespace) -> None:
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         client.update_message_read_state(message_id, is_read=False)
-        _console(args).print("[green]Marked email as unread.[/]")
+        runtime.console.print("[green]Marked email as unread.[/]")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to mark email unread: {e}[/]")
+        runtime.console.print(f"[red]Failed to mark email unread: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
 
 def cmd_archive(args: argparse.Namespace) -> None:
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         client.archive_message(message_id)
-        _console(args).print("[green]Archived email.[/]")
+        runtime.console.print("[green]Archived email.[/]")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to archive email: {e}[/]")
+        runtime.console.print(f"[red]Failed to archive email: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
 
 def cmd_move(args: argparse.Namespace) -> None:
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     folder_id = _resolve_folder_id(args, args.folder)
     try:
         moved = client.move_message(message_id, folder_id)
-        _console(args).print(f"[green]Moved email:[/] {moved.get('Subject', message_id)}")
+        runtime.console.print(f"[green]Moved email:[/] {moved.get('Subject', message_id)}")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to move email: {e}[/]")
+        runtime.console.print(f"[red]Failed to move email: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
 
 def cmd_folders(args: argparse.Namespace) -> None:
-    client = _get_client(args)
+    client = runtime.get_client()
     try:
         with spinner(args, "Loading mail folders..."):
             folders = client.list_mail_folders(top=args.count)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to list folders: {e}[/]")
+        runtime.console.print(f"[red]Failed to list folders: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     save_cache(MAIL_FOLDER_CACHE, folders)
     if args.json:
-        _print_json([
+        runtime.print_json([
             {
                 "index": i,
                 "id": folder.get("Id", ""),
@@ -339,30 +297,30 @@ def cmd_folders(args: argparse.Namespace) -> None:
             str(folder.get("TotalItemCount", "")),
             folder.get("Id", "")[-16:],
         )
-    _console(args).print(table)
+    runtime.console.print(table)
 
 
 def cmd_attachments(args: argparse.Namespace) -> None:
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         with spinner(args, "Loading attachments..."):
             attachments = client.list_message_attachments(message_id)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to list attachments: {e}[/]")
+        runtime.console.print(f"[red]Failed to list attachments: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     if not attachments:
         if args.json:
-            _print_json([])
+            runtime.print_json([])
             return
-        _console(args).print("[dim]No attachments found.[/]")
+        runtime.console.print("[dim]No attachments found.[/]")
         return
 
     if args.json:
-        _print_json([
+        runtime.print_json([
             {
                 "index": i,
                 "id": attachment.get("Id", ""),
@@ -389,7 +347,7 @@ def cmd_attachments(args: argparse.Namespace) -> None:
             str(attachment.get("Size", "")),
             "yes" if attachment.get("IsInline") else "no",
         )
-    _console(args).print(table)
+    runtime.console.print(table)
 
 
 def _unique_path(out_dir: Path, filename: str, *, overwrite: bool) -> Path:
@@ -405,8 +363,8 @@ def _unique_path(out_dir: Path, filename: str, *, overwrite: bool) -> Path:
 
 def cmd_download_attachments(args: argparse.Namespace) -> None:
     """Download all file attachments from a message, including inline ones."""
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     out_dir = Path(args.dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
     skip_inline = not getattr(args, "include_inline", False)
@@ -426,16 +384,16 @@ def cmd_download_attachments(args: argparse.Namespace) -> None:
                 path.write_bytes(base64.b64decode(content))
                 downloaded.append(path)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to download attachments: {e}[/]")
+        runtime.console.print(f"[red]Failed to download attachments: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     if not downloaded:
-        _console(args).print("[dim]No downloadable file attachments found.[/]")
+        runtime.console.print("[dim]No downloadable file attachments found.[/]")
         return
     for path in downloaded:
-        _console(args).print(f"[green]Downloaded:[/] {path}")
+        runtime.console.print(f"[green]Downloaded:[/] {path}")
 
 
 def _collect_message_links(message: JsonDict, share_only: bool) -> list[JsonDict]:
@@ -450,13 +408,13 @@ def _collect_message_links(message: JsonDict, share_only: bool) -> list[JsonDict
 
 def cmd_links(args: argparse.Namespace) -> None:
     """List shareable links and inline image URLs in an email body."""
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to read email: {e}[/]")
+        runtime.console.print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
@@ -464,13 +422,13 @@ def cmd_links(args: argparse.Namespace) -> None:
     links = _collect_message_links(message, share_only=args.share_only)
     if not links:
         if args.json:
-            _print_json([])
+            runtime.print_json([])
             return
-        _console(args).print("[dim]No links found in this email body.[/]")
+        runtime.console.print("[dim]No links found in this email body.[/]")
         return
 
     if args.json:
-        _print_json([
+        runtime.print_json([
             {"index": i, **link}
             for i, link in enumerate(links, 1)
         ])
@@ -483,25 +441,25 @@ def cmd_links(args: argparse.Namespace) -> None:
     table.add_column("URL", ratio=2, overflow="fold")
     for i, link in enumerate(links, 1):
         table.add_row(str(i), link["kind"], link.get("label", "") or "", link["url"])
-    _console(args).print(table)
+    runtime.console.print(table)
 
 
 def cmd_download_links(args: argparse.Namespace) -> None:
     """Download SharePoint/OneDrive links from an email body via Graph."""
-    client = _get_client(args)
-    message_id = _resolve_message_id(args, client, args.message_id)
+    client = runtime.get_client()
+    message_id = _resolve_message_id(client, args.message_id)
     try:
         with spinner(args, "Loading email links..."):
             message = client.get_message(message_id)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to read email: {e}[/]")
+        runtime.console.print(f"[red]Failed to read email: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
 
     candidates = _collect_message_links(message, share_only=True)
     if not candidates:
-        _console(args).print("[dim]No SharePoint/OneDrive links found in this email body.[/]")
+        runtime.console.print("[dim]No SharePoint/OneDrive links found in this email body.[/]")
         return
 
     out_dir = Path(args.dir).expanduser()
@@ -520,7 +478,7 @@ def cmd_download_links(args: argparse.Namespace) -> None:
                     metadata = graph.get_share_drive_item(url)
                     content = graph.download_share_url(url)
                 except OutlookAPIError as e:
-                    _console(args).print(f"[yellow]Skipped {url}: {e}[/]")
+                    runtime.console.print(f"[yellow]Skipped {url}: {e}[/]")
                     continue
                 filename = _safe_filename(metadata.get("name") or link.get("label") or "download")
                 path = _unique_path(out_dir, filename, overwrite=args.overwrite)
@@ -530,7 +488,7 @@ def cmd_download_links(args: argparse.Namespace) -> None:
         graph.close()
 
     if not downloaded:
-        _console(args).print("[dim]No downloadable links resolved.[/]")
+        runtime.console.print("[dim]No downloadable links resolved.[/]")
         return
     for path in downloaded:
-        _console(args).print(f"[green]Downloaded:[/] {path}")
+        runtime.console.print(f"[green]Downloaded:[/] {path}")

@@ -11,31 +11,9 @@ import json
 from ..cache import CONTACT_CACHE
 from ..errors import OutlookAPIError
 from ..progress import spinner
-
-
-def build_ctx(*, console: Any, get_client: Callable[[], Any], resolve_contact_id: Callable[[str], str] | None = None) -> dict[str, Any]:
-    return {
-        "console": console,
-        "get_client": get_client,
-        "resolve_contact_id": resolve_contact_id,
-    }
-
-
-def _ctx(args: argparse.Namespace) -> dict[str, Any]:
-    return args._contacts_ctx
-
-
-def _console(args: argparse.Namespace):
-    return _ctx(args)["console"]
-
-
-def _get_client(args: argparse.Namespace):
-    return _ctx(args)["get_client"]()
-
-
-def _resolve_contact_id(args: argparse.Namespace, ref: str) -> str:
-    resolver = _ctx(args).get("resolve_contact_id")
-    return resolver(ref) if resolver else ref
+from .. import runtime
+from ..formatting import html_to_text, format_datetime
+from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
 
 
 def _type_label(person: dict[str, Any]) -> str:
@@ -53,12 +31,12 @@ def _contact_id(person: dict[str, Any]) -> str:
 
 def cmd_contacts(args: argparse.Namespace) -> None:
     """Search contacts and directory by name or email."""
-    client = _get_client(args)
+    client = runtime.get_client()
     try:
         with spinner(args, f"Searching contacts for '{args.query}'..."):
             people = client.search_people(args.query, top=args.count)
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to search contacts: {e}[/]")
+        runtime.console.print(f"[red]Failed to search contacts: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
@@ -67,7 +45,7 @@ def cmd_contacts(args: argparse.Namespace) -> None:
         if args.json:
             print(json.dumps([]))
             return
-        _console(args).print(f"[dim]No contacts found for '{args.query}'.[/]")
+        runtime.console.print(f"[dim]No contacts found for '{args.query}'.[/]")
         return
 
     CONTACT_CACHE.write_text(json.dumps([{"Id": _contact_id(p)} for p in people if _contact_id(p)]))
@@ -108,11 +86,11 @@ def cmd_contacts(args: argparse.Namespace) -> None:
             cid[-16:],
         )
 
-    _console(args).print(table)
+    runtime.console.print(table)
 
 
 def cmd_contact_create(args: argparse.Namespace) -> None:
-    client = _get_client(args)
+    client = runtime.get_client()
     try:
         with spinner(args, "Creating contact..."):
             contact = client.create_contact(
@@ -123,9 +101,9 @@ def cmd_contact_create(args: argparse.Namespace) -> None:
                 company=args.company,
                 mobile_phone=args.mobile,
             )
-        _console(args).print(f"[green]Created contact:[/] {contact.get('DisplayName', args.name)}")
+        runtime.console.print(f"[green]Created contact:[/] {contact.get('DisplayName', args.name)}")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to create contact: {e}[/]")
+        runtime.console.print(f"[red]Failed to create contact: {e}[/]")
         sys.exit(1)
     finally:
         client.close()
@@ -133,10 +111,10 @@ def cmd_contact_create(args: argparse.Namespace) -> None:
 
 def cmd_contact_update(args: argparse.Namespace) -> None:
     if not any([args.name, args.email, args.given_name, args.surname, args.company, args.mobile]):
-        _console(args).print("[red]Provide at least one field to update.[/]")
+        runtime.console.print("[red]Provide at least one field to update.[/]")
         sys.exit(1)
-    client = _get_client(args)
-    contact_id = _resolve_contact_id(args, args.contact_id)
+    client = runtime.get_client()
+    contact_id = _resolve_contact_id(args.contact_id)
     try:
         with spinner(args, "Updating contact..."):
             client.update_contact(
@@ -148,9 +126,9 @@ def cmd_contact_update(args: argparse.Namespace) -> None:
                 company=args.company,
                 mobile_phone=args.mobile,
             )
-        _console(args).print("[green]Contact updated.[/]")
+        runtime.console.print("[green]Contact updated.[/]")
     except OutlookAPIError as e:
-        _console(args).print(f"[red]Failed to update contact: {e}[/]")
+        runtime.console.print(f"[red]Failed to update contact: {e}[/]")
         sys.exit(1)
     finally:
         client.close()

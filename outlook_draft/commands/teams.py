@@ -13,45 +13,13 @@ from ..cache import TEAMS_CACHE, load_cache, save_cache
 from ..errors import OutlookAPIError
 from ..links import extract_links_from_html, looks_like_share_url
 from ..progress import spinner
+from .. import runtime
+from ..formatting import html_to_text, format_datetime
+from ..references import _resolve_message_id, _resolve_cal_id, _resolve_task_id, _resolve_contact_id
 
 
 JsonDict = dict[str, Any]
 SELF_CHAT_ID = "48:notes"
-
-
-def _ctx(args: argparse.Namespace) -> dict[str, Any]:
-    return args._teams_ctx
-
-
-def _console(args: argparse.Namespace):
-    return _ctx(args)["console"]
-
-
-def _get_graph_client(args: argparse.Namespace):
-    return _ctx(args)["get_graph_client"]()
-
-
-def _format_datetime(args: argparse.Namespace, value: str) -> str:
-    return _ctx(args)["format_datetime"](value)
-
-
-def _html_to_text(args: argparse.Namespace, html: str) -> str:
-    return _ctx(args)["html_to_text"](html)
-
-
-def build_ctx(
-    *,
-    console: Any,
-    get_graph_client: Callable[[], Any],
-    format_datetime: Callable[[str], str],
-    html_to_text: Callable[[str], str],
-) -> dict[str, Any]:
-    return {
-        "console": console,
-        "get_graph_client": get_graph_client,
-        "format_datetime": format_datetime,
-        "html_to_text": html_to_text,
-    }
 
 
 def _member_label(member: JsonDict) -> str:
@@ -142,7 +110,7 @@ def _chat_title(chat: JsonDict, members: list[JsonDict] | None = None) -> str:
 
 def _resolve_teams_chat_id(args: argparse.Namespace, ref: str) -> str:
     cached = load_cache(TEAMS_CACHE)
-    console = _console(args)
+    console = runtime.console
 
     if ref.isdigit():
         idx = int(ref)
@@ -288,7 +256,7 @@ def _teams_body(args: argparse.Namespace, message: JsonDict) -> str:
     body = message.get("body", {})
     content = body.get("content", "")
     if body.get("contentType") == "html":
-        content = _html_to_text(args, content)
+        content = html_to_text(content)
     content = content.strip()
 
     if content:
@@ -299,8 +267,8 @@ def _teams_body(args: argparse.Namespace, message: JsonDict) -> str:
 
 
 def cmd_teams_list(args: argparse.Namespace) -> None:
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     try:
         with spinner(args, "Loading Teams chats..."):
             chats = client.list_teams_chats(top=args.count)
@@ -343,7 +311,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
     table.add_column("Chat", ratio=1)
     table.add_column("ID", style="dim", width=16, no_wrap=True)
 
-    client = _get_graph_client(args)
+    client = runtime.get_graph_client()
     try:
         with spinner(args, "Resolving Teams chat participants..."):
             for i, chat in enumerate(chats, 1):
@@ -355,7 +323,7 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
                         members = []
                 table.add_row(
                     str(i),
-                    _format_datetime(args, chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
+                    format_datetime(chat.get("_lastReceivedMessageDateTime") or chat.get("lastUpdatedDateTime", "")),
                     chat.get("chatType", ""),
                     _chat_title(chat, members),
                     chat.get("id", "")[-16:],
@@ -368,8 +336,8 @@ def cmd_teams_list(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_search(args: argparse.Namespace) -> None:
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     query = " ".join(args.query).strip() if isinstance(args.query, list) else args.query.strip()
     if not query:
         console.print("[red]Provide a search query.[/]")
@@ -431,7 +399,7 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
     for i, (chat, members, reasons) in enumerate(results, 1):
         table.add_row(
             str(i),
-            _format_datetime(args, chat.get("lastUpdatedDateTime", "")),
+            format_datetime(chat.get("lastUpdatedDateTime", "")),
             chat.get("chatType", ""),
             "; ".join(reasons),
             _chat_title(chat, members),
@@ -448,8 +416,8 @@ def cmd_teams_search(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_show(args: argparse.Namespace) -> None:
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
         if chat_id == SELF_CHAT_ID:
@@ -482,8 +450,8 @@ def cmd_teams_show(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_self(args: argparse.Namespace) -> None:
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     try:
         found = find_self_chat(client)
     except OutlookAPIError as e:
@@ -511,12 +479,12 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_send(args: argparse.Namespace) -> None:
-    console = _console(args)
+    console = runtime.console
     if not getattr(args, "yes", False):
         console.print(f"[yellow]Not sent.[/] Would send to chat {args.chat_id}: {args.message}")
         console.print("[dim]Re-run with --yes to send.[/]")
         sys.exit(2)
-    client = _get_graph_client(args)
+    client = runtime.get_graph_client()
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
         client.send_teams_message(
@@ -586,8 +554,8 @@ def _resolve_chat_attachment_index(items: list[JsonDict], ref: str | None) -> li
 
 def cmd_teams_attachments(args: argparse.Namespace) -> None:
     """List Teams attachments and SharePoint/OneDrive links in a chat."""
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
@@ -612,7 +580,7 @@ def cmd_teams_attachments(args: argparse.Namespace) -> None:
     for i, item in enumerate(items, 1):
         table.add_row(
             str(i),
-            _format_datetime(args, item["created"]),
+            format_datetime(item["created"]),
             item["sender"],
             item["source"],
             item["name"],
@@ -623,8 +591,8 @@ def cmd_teams_attachments(args: argparse.Namespace) -> None:
 
 def cmd_teams_download_attachments(args: argparse.Namespace) -> None:
     """Download Teams attachments/share links via Graph."""
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
         messages = client.list_teams_messages(chat_id, top=args.scan)
@@ -643,7 +611,7 @@ def cmd_teams_download_attachments(args: argparse.Namespace) -> None:
     out_dir = Path(args.dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    graph = _get_graph_client(args)
+    graph = runtime.get_graph_client()
     downloaded: list[Path] = []
     try:
         for item in selected:
@@ -676,8 +644,8 @@ def cmd_teams_download_attachments(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_messages(args: argparse.Namespace) -> None:
-    console = _console(args)
-    client = _get_graph_client(args)
+    console = runtime.console
+    client = runtime.get_graph_client()
     chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
         if chat_id == SELF_CHAT_ID:
@@ -705,7 +673,7 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
 
     for message in messages:
         table.add_row(
-            _format_datetime(args, message.get("createdDateTime", "")),
+            format_datetime(message.get("createdDateTime", "")),
             _teams_sender(message),
             _teams_body(args, message),
         )

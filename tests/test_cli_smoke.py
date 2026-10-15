@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 from rich.console import Console
 
-from outlook_draft import cli
+from outlook_draft import cli, runtime
 from outlook_draft.commands import files
 from outlook_draft.errors import OutlookAPIError
 
@@ -62,6 +62,9 @@ def isolated_cli(monkeypatch, tmp_path):
     client.sp_list_sites.return_value = [{"id": "site", "displayName": "Sample"}]
     console = Console(width=100, force_terminal=False, color_system=None)
     monkeypatch.setattr(cli, "console", console)
+    monkeypatch.setattr(runtime, "console", console)
+    monkeypatch.setattr(runtime, "get_client", lambda **kwargs: client)
+    monkeypatch.setattr(runtime, "get_graph_client", lambda: client)
     monkeypatch.setattr(cli, "_get_client", lambda **kwargs: client)
     monkeypatch.setattr(cli, "_get_graph_client", lambda: client)
     monkeypatch.setattr(files, "_GraphClient", lambda: client)

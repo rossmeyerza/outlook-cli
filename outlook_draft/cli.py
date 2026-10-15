@@ -68,7 +68,8 @@ from .progress import spinner
 from .signatures import load_signature
 from .token_manager import TokenManager
 
-console = Console()
+from .runtime import console, get_client as _get_client, get_graph_client as _get_graph_client
+from .references import _resolve_message_id, _resolve_contact_id, _resolve_task_id, _resolve_cal_id
 
 
 def _refresh_account_paths() -> None:
@@ -88,31 +89,6 @@ def _refresh_account_paths() -> None:
     contacts_commands.CONTACT_CACHE = cache.CONTACT_CACHE
     tasks_commands.TASK_CACHE = cache.TASK_CACHE
     teams_commands.TEAMS_CACHE = cache.TEAMS_CACHE
-
-
-def _get_client(
-    *,
-    base_url: str = config.OUTLOOK_BASE_URL,
-    token_domain: str = config.OUTLOOK_TOKEN_DOMAIN,
-    token_label: str = "Outlook API",
-) -> OutlookClient:
-    """Build a client, handling auth errors."""
-    tm = TokenManager(token_domain=token_domain, token_label=token_label)
-    try:
-        _ = tm.get_token(auto_reauth=True)
-    except (TokenNotFoundError, TokenExpiredError):
-        console.print(f"[red]{token_label} authentication failed. Run 'outlook-cli auth' to retry.[/]")
-        sys.exit(1)
-    return OutlookClient(tm, base_url=base_url)
-
-
-def _get_graph_client() -> OutlookClient:
-    """Build a Microsoft Graph client."""
-    return _get_client(
-        base_url=config.GRAPH_BASE_URL,
-        token_domain=config.GRAPH_TOKEN_DOMAIN,
-        token_label="Microsoft Graph",
-    )
 
 
 def _token_available(domain: str) -> bool:
@@ -421,86 +397,6 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
 
 
 # ── Object cache (persisted to disk for cross-invocation read) ────────────
-
-
-def _resolve_message_id(client: OutlookClient, ref: str) -> str:
-    """Resolve a message reference to a full ID.
-
-    Accepts a numeric index, cached ID suffix, or full ID.
-    """
-    cached = load_cache(MAIL_CACHE)
-
-    if ref.isdigit():
-        idx = int(ref)
-        if cached and 1 <= idx <= len(cached):
-            return cached[idx - 1]["Id"]
-        if not cached:
-            console.print("[red]No search results cached. Run 'outlook-cli mail unread' or 'outlook-cli mail search <query>' first.[/]")
-        else:
-            console.print(f"[red]Index {idx} out of range. Only {len(cached)} results cached.[/]")
-        sys.exit(1)
-
-    if len(ref) < 40 and cached:
-        matches = [item for item in cached if item["Id"].endswith(ref)]
-        if len(matches) == 1:
-            return matches[0]["Id"]
-        if len(matches) > 1:
-            console.print(f"[red]Ambiguous message ID suffix '{ref}'. Use a longer ID.[/]")
-            sys.exit(1)
-
-    return ref
-
-
-# ── Tasks ─────────────────────────────────────────────────────────────────
-
-
-
-
-
-def _resolve_contact_id(ref: str) -> str:
-    if ref.isdigit():
-        idx = int(ref)
-        cached = load_cache(CONTACT_CACHE)
-        if cached and 1 <= idx <= len(cached):
-            return cached[idx - 1]["Id"]
-        if not cached:
-            console.print("[red]No contacts cached. Run 'outlook-cli contact search <query>' first.[/]")
-        else:
-            console.print(f"[red]Index {idx} out of range.[/]")
-        sys.exit(1)
-    return ref
-
-
-def _resolve_task_id(client: OutlookClient, ref: str) -> str:
-    if ref.isdigit():
-        idx = int(ref)
-        cached = load_cache(TASK_CACHE)
-        if cached and 1 <= idx <= len(cached):
-            return cached[idx - 1]["Id"]
-        if not cached:
-            console.print("[red]No tasks cached. Run 'outlook-cli task list' first.[/]")
-        else:
-            console.print(f"[red]Index {idx} out of range.[/]")
-        sys.exit(1)
-    return ref
-
-
-
-
-
-
-def _resolve_cal_id(client: OutlookClient, ref: str) -> str:
-    if ref.isdigit():
-        idx = int(ref)
-        cached = load_cache(CAL_CACHE)
-        if cached and 1 <= idx <= len(cached):
-            return cached[idx - 1]["Id"]
-        if not cached:
-            console.print("[red]No agenda cached. Run 'outlook-cli cal agenda' first.[/]")
-        else:
-            console.print(f"[red]Index {idx} out of range.[/]")
-        sys.exit(1)
-    return ref
 
 
 def _decode_token_claims(token: str) -> dict[str, object]:
@@ -1054,18 +950,6 @@ def main() -> None:
     _add_yes_arg(cmd_draft_send)
     cmd_draft_send.set_defaults(func=cmd_send_draft)
 
-    mail_ctx = mail_commands.build_ctx(
-        console=console,
-        get_client=_get_client,
-        html_to_text=_html_to_text,
-        format_datetime=_format_datetime,
-        resolve_message_id=_resolve_message_id,
-    )
-    contacts_ctx = contacts_commands.build_ctx(
-        console=console,
-        get_client=_get_client,
-        resolve_contact_id=_resolve_contact_id,
-    )
 
     # ── Mail ──────────────────────────────────────────────────────────
     p_mail = sub.add_parser("mail", help="Read and search emails")
@@ -1075,45 +959,45 @@ def main() -> None:
     cmd_mail_unread = mail_sub.add_parser("unread", help="List unread emails from the Inbox")
     add_output_args(cmd_mail_unread)
     cmd_mail_unread.add_argument("--count", "-n", type=int, default=50, help="Max results")
-    cmd_mail_unread.set_defaults(func=mail_commands.cmd_unread, _mail_ctx=mail_ctx)
+    cmd_mail_unread.set_defaults(func=mail_commands.cmd_unread)
 
     cmd_mail_search = mail_sub.add_parser("search", help="Search emails by keyword")
     add_output_args(cmd_mail_search)
     cmd_mail_search.add_argument("query", help="Search term")
     cmd_mail_search.add_argument("--count", "-n", type=int, default=20, help="Max results")
-    cmd_mail_search.set_defaults(func=mail_commands.cmd_mail, _mail_ctx=mail_ctx)
+    cmd_mail_search.set_defaults(func=mail_commands.cmd_mail)
 
     cmd_mail_read = mail_sub.add_parser("read", help="Read an email by index or ID")
     add_output_args(cmd_mail_read)
     cmd_mail_read.add_argument("message_id", help="Message index (from last search) or full ID")
-    cmd_mail_read.set_defaults(func=mail_commands.cmd_read, _mail_ctx=mail_ctx)
+    cmd_mail_read.set_defaults(func=mail_commands.cmd_read)
 
     cmd_mail_mark_read = mail_sub.add_parser("mark-read", help="Mark an email as read")
     cmd_mail_mark_read.add_argument("message_id", help="Message index (from last search) or full ID")
-    cmd_mail_mark_read.set_defaults(func=mail_commands.cmd_mark_read, _mail_ctx=mail_ctx)
+    cmd_mail_mark_read.set_defaults(func=mail_commands.cmd_mark_read)
 
     cmd_mail_mark_unread = mail_sub.add_parser("mark-unread", help="Mark an email as unread")
     cmd_mail_mark_unread.add_argument("message_id", help="Message index (from last search) or full ID")
-    cmd_mail_mark_unread.set_defaults(func=mail_commands.cmd_mark_unread, _mail_ctx=mail_ctx)
+    cmd_mail_mark_unread.set_defaults(func=mail_commands.cmd_mark_unread)
 
     cmd_mail_archive = mail_sub.add_parser("archive", help="Archive an email")
     cmd_mail_archive.add_argument("message_id", help="Message index (from last search) or full ID")
-    cmd_mail_archive.set_defaults(func=mail_commands.cmd_archive, _mail_ctx=mail_ctx)
+    cmd_mail_archive.set_defaults(func=mail_commands.cmd_archive)
 
     cmd_mail_move = mail_sub.add_parser("move", help="Move an email to another folder")
     cmd_mail_move.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_move.add_argument("--folder", "-f", required=True, help="Folder index, well-known name, folder name, or folder ID")
-    cmd_mail_move.set_defaults(func=mail_commands.cmd_move, _mail_ctx=mail_ctx)
+    cmd_mail_move.set_defaults(func=mail_commands.cmd_move)
 
     cmd_mail_folders = mail_sub.add_parser("folders", help="List mail folders")
     add_output_args(cmd_mail_folders)
     cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
-    cmd_mail_folders.set_defaults(func=mail_commands.cmd_folders, _mail_ctx=mail_ctx)
+    cmd_mail_folders.set_defaults(func=mail_commands.cmd_folders)
 
     cmd_mail_attachments = mail_sub.add_parser("attachments", help="List message attachments")
     add_output_args(cmd_mail_attachments)
     cmd_mail_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
-    cmd_mail_attachments.set_defaults(func=mail_commands.cmd_attachments, _mail_ctx=mail_ctx)
+    cmd_mail_attachments.set_defaults(func=mail_commands.cmd_attachments)
 
     cmd_mail_download_attachments = mail_sub.add_parser("download-attachments", help="Download message attachments")
     cmd_mail_download_attachments.add_argument("message_id", help="Message index (from last search) or full ID")
@@ -1124,7 +1008,7 @@ def main() -> None:
         action="store_true",
         help="Also download attachments marked as inline (e.g. embedded images)",
     )
-    cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments, _mail_ctx=mail_ctx)
+    cmd_mail_download_attachments.set_defaults(func=mail_commands.cmd_download_attachments)
 
     cmd_mail_links = mail_sub.add_parser("links", help="List links and inline image URLs in an email body")
     add_output_args(cmd_mail_links)
@@ -1134,7 +1018,7 @@ def main() -> None:
         action="store_true",
         help="Only show SharePoint/OneDrive style links",
     )
-    cmd_mail_links.set_defaults(func=mail_commands.cmd_links, _mail_ctx=mail_ctx)
+    cmd_mail_links.set_defaults(func=mail_commands.cmd_links)
 
     cmd_mail_download_links = mail_sub.add_parser(
         "download-links",
@@ -1143,7 +1027,7 @@ def main() -> None:
     cmd_mail_download_links.add_argument("message_id", help="Message index (from last search) or full ID")
     cmd_mail_download_links.add_argument("--dir", "-d", default="attachments", help="Output directory")
     cmd_mail_download_links.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
-    cmd_mail_download_links.set_defaults(func=mail_commands.cmd_download_links, _mail_ctx=mail_ctx)
+    cmd_mail_download_links.set_defaults(func=mail_commands.cmd_download_links)
 
     cmd_mail_send = mail_sub.add_parser("send", help="Send a new email immediately (requires --yes)")
     cmd_mail_send.add_argument("--to", required=True, action="append", help="Recipient (repeatable, comma-separated ok)")
@@ -1159,11 +1043,6 @@ def main() -> None:
     _add_yes_arg(cmd_mail_send)
     cmd_mail_send.set_defaults(func=cmd_send_mail)
 
-    tasks_ctx = tasks_commands.build_ctx(
-        console=console,
-        get_client=_get_client,
-        resolve_task_id=_resolve_task_id,
-    )
 
     # ── Tasks ─────────────────────────────────────────────────────────
     p_task = sub.add_parser("task", help="Manage tasks")
@@ -1173,11 +1052,11 @@ def main() -> None:
     cmd_task_l = task_sub.add_parser("list", help="List active tasks")
     add_output_args(cmd_task_l)
     cmd_task_l.add_argument("--count", "-n", type=int, default=50, help="Max tasks")
-    cmd_task_l.set_defaults(func=tasks_commands.cmd_task_list, _tasks_ctx=tasks_ctx)
+    cmd_task_l.set_defaults(func=tasks_commands.cmd_task_list)
 
     cmd_task_c = task_sub.add_parser("create", help="Create a task")
     cmd_task_c.add_argument("subject", help="Task description")
-    cmd_task_c.set_defaults(func=tasks_commands.cmd_task_create, _tasks_ctx=tasks_ctx)
+    cmd_task_c.set_defaults(func=tasks_commands.cmd_task_create)
 
     cmd_task_update_cmd = task_sub.add_parser("update", help="Update a task")
     cmd_task_update_cmd.add_argument("task_id", help="Task index or full ID")
@@ -1185,23 +1064,16 @@ def main() -> None:
     cmd_task_update_cmd.add_argument("--due", help="Due date/time")
     cmd_task_update_cmd.add_argument("--importance", choices=["Low", "Normal", "High"], help="Task importance")
     cmd_task_update_cmd.add_argument("--status", choices=["NotStarted", "InProgress", "Completed", "WaitingOnOthers", "Deferred"], help="Task status")
-    cmd_task_update_cmd.set_defaults(func=tasks_commands.cmd_task_update, _tasks_ctx=tasks_ctx)
+    cmd_task_update_cmd.set_defaults(func=tasks_commands.cmd_task_update)
 
     cmd_task_complete_cmd = task_sub.add_parser("complete", help="Mark task complete")
     cmd_task_complete_cmd.add_argument("task_id", help="Task index or full ID")
-    cmd_task_complete_cmd.set_defaults(func=tasks_commands.cmd_task_complete, _tasks_ctx=tasks_ctx)
+    cmd_task_complete_cmd.set_defaults(func=tasks_commands.cmd_task_complete)
 
     cmd_task_delete_cmd = task_sub.add_parser("delete", help="Delete a task")
     cmd_task_delete_cmd.add_argument("task_id", help="Task index or full ID")
-    cmd_task_delete_cmd.set_defaults(func=tasks_commands.cmd_task_delete, _tasks_ctx=tasks_ctx)
+    cmd_task_delete_cmd.set_defaults(func=tasks_commands.cmd_task_delete)
 
-    calendar_ctx = calendar_commands.build_ctx(
-        console=console,
-        get_client=_get_client,
-        html_to_text=_html_to_text,
-        format_datetime=_format_datetime,
-        resolve_cal_id=_resolve_cal_id,
-    )
 
     # ── Calendar ──────────────────────────────────────────────────────
     p_cal = sub.add_parser("cal", help="Manage calendar events")
@@ -1213,12 +1085,12 @@ def main() -> None:
     cmd_cal_agenda.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
     cmd_cal_agenda.add_argument("--count", "-n", type=int, default=20, help="Max events")
     cmd_cal_agenda.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
-    cmd_cal_agenda.set_defaults(func=calendar_commands.cmd_cal_agenda, _calendar_ctx=calendar_ctx)
+    cmd_cal_agenda.set_defaults(func=calendar_commands.cmd_cal_agenda)
 
     cmd_cal_show = cal_sub.add_parser("show", help="Show event details")
     add_output_args(cmd_cal_show)
     cmd_cal_show.add_argument("event_id", help="Event index (from agenda) or full ID")
-    cmd_cal_show.set_defaults(func=calendar_commands.cmd_cal_show, _calendar_ctx=calendar_ctx)
+    cmd_cal_show.set_defaults(func=calendar_commands.cmd_cal_show)
 
     cmd_cal_create_cmd = cal_sub.add_parser("create", help="Create an event")
     cmd_cal_create_cmd.add_argument("subject", help="Event subject")
@@ -1232,12 +1104,12 @@ def main() -> None:
         action="store_true",
         help="Create as a Teams meeting (adds Teams join link)",
     )
-    cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create, _calendar_ctx=calendar_ctx)
+    cmd_cal_create_cmd.set_defaults(func=calendar_commands.cmd_cal_create)
 
     cmd_cal_rooms_cmd = cal_sub.add_parser("rooms", help="Find rooms")
     add_output_args(cmd_cal_rooms_cmd)
     cmd_cal_rooms_cmd.add_argument("--room-list", help="Optional room list email/address")
-    cmd_cal_rooms_cmd.set_defaults(func=calendar_commands.cmd_cal_rooms, _calendar_ctx=calendar_ctx)
+    cmd_cal_rooms_cmd.set_defaults(func=calendar_commands.cmd_cal_rooms)
 
     cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
     add_output_args(cmd_cal_availability_cmd)
@@ -1245,7 +1117,7 @@ def main() -> None:
     cmd_cal_availability_cmd.add_argument("--start", required=True, help="Start time")
     cmd_cal_availability_cmd.add_argument("--end", required=True, help="End time")
     cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
-    cmd_cal_availability_cmd.set_defaults(func=calendar_commands.cmd_cal_availability, _calendar_ctx=calendar_ctx)
+    cmd_cal_availability_cmd.set_defaults(func=calendar_commands.cmd_cal_availability)
 
     cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
     add_output_args(cmd_cal_find_time_cmd)
@@ -1254,7 +1126,7 @@ def main() -> None:
     cmd_cal_find_time_cmd.add_argument("--end", required=True, help="Window end time")
     cmd_cal_find_time_cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
     cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
-    cmd_cal_find_time_cmd.set_defaults(func=calendar_commands.cmd_cal_find_time, _calendar_ctx=calendar_ctx)
+    cmd_cal_find_time_cmd.set_defaults(func=calendar_commands.cmd_cal_find_time)
 
     cmd_cal_update_cmd = cal_sub.add_parser("update", help="Update an event")
     cmd_cal_update_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
@@ -1277,11 +1149,11 @@ def main() -> None:
         action="store_false",
         help="Remove the Teams meeting flag",
     )
-    cmd_cal_update_cmd.set_defaults(func=calendar_commands.cmd_cal_update, _calendar_ctx=calendar_ctx)
+    cmd_cal_update_cmd.set_defaults(func=calendar_commands.cmd_cal_update)
 
     cmd_cal_delete_cmd = cal_sub.add_parser("delete", help="Delete an event")
     cmd_cal_delete_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
-    cmd_cal_delete_cmd.set_defaults(func=calendar_commands.cmd_cal_delete, _calendar_ctx=calendar_ctx)
+    cmd_cal_delete_cmd.set_defaults(func=calendar_commands.cmd_cal_delete)
 
     cmd_cal_accept_cmd = cal_sub.add_parser("accept", help="Accept an event invitation")
     cmd_cal_accept_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
@@ -1294,7 +1166,6 @@ def main() -> None:
     )
     cmd_cal_accept_cmd.set_defaults(
         func=calendar_commands.cmd_cal_accept,
-        _calendar_ctx=calendar_ctx,
         send_response=True,
     )
 
@@ -1309,7 +1180,6 @@ def main() -> None:
     )
     cmd_cal_decline_cmd.set_defaults(
         func=calendar_commands.cmd_cal_decline,
-        _calendar_ctx=calendar_ctx,
         send_response=True,
     )
 
@@ -1324,14 +1194,13 @@ def main() -> None:
     )
     cmd_cal_tentative_cmd.set_defaults(
         func=calendar_commands.cmd_cal_tentative,
-        _calendar_ctx=calendar_ctx,
         send_response=True,
     )
 
     cmd_cal_cancel_cmd = cal_sub.add_parser("cancel", help="Cancel an event you organize")
     cmd_cal_cancel_cmd.add_argument("event_id", help="Event index (from agenda) or full ID")
     cmd_cal_cancel_cmd.add_argument("--comment", "-m", help="Optional cancellation comment")
-    cmd_cal_cancel_cmd.set_defaults(func=calendar_commands.cmd_cal_cancel, _calendar_ctx=calendar_ctx)
+    cmd_cal_cancel_cmd.set_defaults(func=calendar_commands.cmd_cal_cancel)
 
     # ── Contacts ──────────────────────────────────────────────────────
     p_contact = sub.add_parser("contact", help="Manage contacts")
@@ -1342,7 +1211,7 @@ def main() -> None:
     add_output_args(cmd_contact_search)
     cmd_contact_search.add_argument("query", help="Name or email to search for")
     cmd_contact_search.add_argument("--count", "-n", type=int, default=10, help="Max results")
-    cmd_contact_search.set_defaults(func=contacts_commands.cmd_contacts, _contacts_ctx=contacts_ctx)
+    cmd_contact_search.set_defaults(func=contacts_commands.cmd_contacts)
 
     cmd_contact_create = contact_sub.add_parser("create", help="Create a personal contact")
     cmd_contact_create.add_argument("--name", required=True, help="Display name")
@@ -1351,7 +1220,7 @@ def main() -> None:
     cmd_contact_create.add_argument("--surname", help="Surname")
     cmd_contact_create.add_argument("--company", help="Company name")
     cmd_contact_create.add_argument("--mobile", help="Mobile phone")
-    cmd_contact_create.set_defaults(func=contacts_commands.cmd_contact_create, _contacts_ctx=contacts_ctx)
+    cmd_contact_create.set_defaults(func=contacts_commands.cmd_contact_create)
 
     cmd_contact_update = contact_sub.add_parser("update", help="Update a personal contact")
     cmd_contact_update.add_argument("contact_id", help="Contact index from search or full ID")
@@ -1361,43 +1230,37 @@ def main() -> None:
     cmd_contact_update.add_argument("--surname", help="Surname")
     cmd_contact_update.add_argument("--company", help="Company name")
     cmd_contact_update.add_argument("--mobile", help="Mobile phone")
-    cmd_contact_update.set_defaults(func=contacts_commands.cmd_contact_update, _contacts_ctx=contacts_ctx)
+    cmd_contact_update.set_defaults(func=contacts_commands.cmd_contact_update)
 
     # ── Teams ─────────────────────────────────────────────────────────
     p_teams = sub.add_parser("teams", help="Browse Teams chats and messages")
     teams_sub = p_teams.add_subparsers(dest="command", required=True)
 
-    teams_ctx = teams_commands.build_ctx(
-        console=console,
-        get_graph_client=_get_graph_client,
-        format_datetime=_format_datetime,
-        html_to_text=_html_to_text,
-    )
 
     cmd_teams_list_cmd = teams_sub.add_parser("list", help="List Teams chats")
     cmd_teams_list_cmd.add_argument("--count", "-n", type=int, default=20, help="Max chats")
     cmd_teams_list_cmd.add_argument("--sort-received", action="store_true",
         help="Sort by last received message (slower — makes one API call per chat)")
-    cmd_teams_list_cmd.set_defaults(func=teams_commands.cmd_teams_list, _teams_ctx=teams_ctx)
+    cmd_teams_list_cmd.set_defaults(func=teams_commands.cmd_teams_list)
 
     cmd_teams_search_cmd = teams_sub.add_parser("search", help="Search Teams chats by topic or participant")
     cmd_teams_search_cmd.add_argument("query", nargs="+", help="Name, email, or chat topic to search for")
     cmd_teams_search_cmd.add_argument("--count", "-n", type=int, default=20, help="Max matching chats")
     cmd_teams_search_cmd.add_argument("--scan", type=int, default=200, help="Max chats to scan")
     cmd_teams_search_cmd.add_argument("--member-count", type=int, default=100, help="Max members to inspect per chat")
-    cmd_teams_search_cmd.set_defaults(func=teams_commands.cmd_teams_search, _teams_ctx=teams_ctx)
+    cmd_teams_search_cmd.set_defaults(func=teams_commands.cmd_teams_search)
 
     cmd_teams_show_cmd = teams_sub.add_parser("show", help="Show Teams chat details")
     cmd_teams_show_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
-    cmd_teams_show_cmd.set_defaults(func=teams_commands.cmd_teams_show, _teams_ctx=teams_ctx)
+    cmd_teams_show_cmd.set_defaults(func=teams_commands.cmd_teams_show)
 
     cmd_teams_self_cmd = teams_sub.add_parser("self", help="Show your Teams self-chat")
-    cmd_teams_self_cmd.set_defaults(func=teams_commands.cmd_teams_self, _teams_ctx=teams_ctx)
+    cmd_teams_self_cmd.set_defaults(func=teams_commands.cmd_teams_self)
 
     cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
     cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
-    cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages, _teams_ctx=teams_ctx)
+    cmd_teams_messages_cmd.set_defaults(func=teams_commands.cmd_teams_messages)
 
     cmd_teams_attachments_cmd = teams_sub.add_parser(
         "attachments",
@@ -1412,7 +1275,6 @@ def main() -> None:
     )
     cmd_teams_attachments_cmd.set_defaults(
         func=teams_commands.cmd_teams_attachments,
-        _teams_ctx=teams_ctx,
     )
 
     cmd_teams_download_attachments_cmd = teams_sub.add_parser(
@@ -1435,7 +1297,6 @@ def main() -> None:
     cmd_teams_download_attachments_cmd.add_argument("--overwrite", action="store_true", help="Overwrite files with matching names")
     cmd_teams_download_attachments_cmd.set_defaults(
         func=teams_commands.cmd_teams_download_attachments,
-        _teams_ctx=teams_ctx,
     )
 
     cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message (requires --yes)")
@@ -1443,7 +1304,7 @@ def main() -> None:
     cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")
     cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
     _add_yes_arg(cmd_teams_send_cmd)
-    cmd_teams_send_cmd.set_defaults(func=teams_commands.cmd_teams_send, _teams_ctx=teams_ctx)
+    cmd_teams_send_cmd.set_defaults(func=teams_commands.cmd_teams_send)
 
     # ── Mailbox ───────────────────────────────────────────────────────
     p_mailbox = sub.add_parser("mailbox", help="Manage mailbox settings")
