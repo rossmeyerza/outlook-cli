@@ -104,6 +104,10 @@ outlook-cli files mkdir "Q2" --site "Tesco" --library "Documents" # create Share
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
 outlook-cli files move "Documents/file.pdf" "Archive"     # move
 
+# MCP server (stdio, no send tools)
+outlook-cli mcp
+outlook-cli --account wpp mcp
+
 # Shell completion
 outlook-cli completion bash                # print bash completion script
 outlook-cli completion zsh                 # print zsh completion script
@@ -159,6 +163,46 @@ outlook-cli config check                   # validate local config without print
 - **Signatures**: `signature fetch` opens a headless browser with the active account's saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 - **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state for the active account. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser. Existing single-account installs keep using `~/.config/outlook-cli/.env` and do not need to re-authenticate unless you switch to a new profile or tokens are expired.
 
+## MCP Server
+
+`outlook-cli mcp` runs a stdio MCP server named `outlook` (package `outlook_draft/mcp/`, built on `mcp.server.fastmcp.FastMCP`, SDK pinned `mcp>=1.10,<2`). It is registered in `~/.pi/agent/mcp.json` and appears as `mcp__outlook` in Pi codemode.
+
+```json
+"outlook": {
+  "command": "/home/ross/.local/lib/outlook-draft-cli/.venv/bin/outlook-cli",
+  "args": ["mcp"],
+  "description": "Outlook mail, drafts, calendar, contacts, tasks, Teams (read-only) and OneDrive/SharePoint files",
+  "timeout": 120
+}
+```
+
+Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
+
+- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_mark_read`, `mail_move`, `mail_archive`
+- Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (drafts are saved for review, never sent; `draft_delete` refuses non-drafts)
+- Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
+- Contacts: `contact_search`
+- Tasks: `task_list`, `task_create`, `task_complete`
+- Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
+- Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
+- Auth: `auth_status` (read-only)
+
+Side effects to know about: `cal_create` with attendees emails invitations immediately, and `cal_respond` with `send_response` true emails the organizer.
+
+Rules:
+
+- No send tools exist. `draft send`, `mail send` and `teams send` stay CLI-only behind `--yes`.
+- Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
+- The server never re-authenticates. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- stdout is the protocol channel. Logs go to stderr.
+
+Implementation notes:
+
+- Tools build a client per call through `outlook_draft/mcp/clients.py`. `NoReauthTokenManager` never runs `run_reauth`, so a stale token raises `McpAuthError` instead of starting headless auth.
+- Tool code must not print to stdout and must not call `sys.exit`. Raise exceptions; FastMCP returns them as `isError` results.
+- Pure helpers shared with the CLI live in `outlook_draft/formatting.py`. `cli.py` re-imports them under the old private names.
+- Do not run `uv run`, `uv sync` or `uv lock` in this repo. They replace `.venv` and break the global `outlook-cli`. Use `uv pip install --python .venv/bin/python <pkg>` and `.venv/bin/python -m pytest -q`.
+
 ## File Layout
 
 ```
@@ -180,6 +224,7 @@ outlook-cli config check                   # validate local config without print
     auth.py                     # Playwright auth, token capture, browser session save
     calendar_time.py            # Calendar timezone parsing and Outlook headers
     cli.py                      # CLI entry point
+    formatting.py               # Pure text/HTML/datetime/email helpers shared with the MCP server
     signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths
     errors.py                   # Exceptions
@@ -194,6 +239,7 @@ outlook-cli config check                   # validate local config without print
       signature.py              # Signature fetch via OWA API interception
       tasks.py                  # Tasks subcommands
       teams.py                  # Teams read subcommands
+    mcp/                        # MCP server: server.py, clients.py, one module per tool area
 ```
 
 ## Caveats

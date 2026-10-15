@@ -341,6 +341,43 @@ source ~/.cache/outlook-cli.nu
 
 Re-run the command after upgrading to pick up new subcommands or flags.
 
+### MCP server
+
+`outlook-cli mcp` runs a local stdio MCP server (server name `outlook`) over the same client code as the CLI. Use `outlook-cli --account <name> mcp` to serve a specific account profile.
+
+Register it with Pi in `~/.pi/agent/mcp.json`:
+
+```json
+"outlook": {
+  "command": "/home/ross/.local/lib/outlook-draft-cli/.venv/bin/outlook-cli",
+  "args": ["mcp"],
+  "description": "Outlook mail, drafts, calendar, contacts, tasks, Teams (read-only) and OneDrive/SharePoint files",
+  "timeout": 120
+}
+```
+
+Check it with `pi mcp list`.
+
+Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
+
+- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_mark_read`, `mail_move`, `mail_archive`
+- Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (drafts are saved for review, never sent; `draft_delete` refuses non-drafts)
+- Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
+- Contacts: `contact_search`
+- Tasks: `task_list`, `task_create`, `task_complete`
+- Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
+- Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
+- Auth: `auth_status` (read-only)
+
+Side effects to know about: `cal_create` with attendees emails invitations immediately, and `cal_respond` with `send_response` true emails the organizer.
+
+Rules:
+
+- No send tools exist. `draft send`, `mail send` and `teams send` stay CLI-only behind `--yes`.
+- Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
+- The server never re-authenticates. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- stdout is the protocol channel. Logs go to stderr.
+
 ## Configuration
 
 Config file:
@@ -378,6 +415,7 @@ outlook_draft/
   auth.py              # Built-in Playwright auth, token capture, browser session save
   calendar_time.py     # Calendar timezone parsing and Outlook timezone headers
   cli.py               # CLI with argparse subcommands
+  formatting.py        # Pure HTML/text/datetime/email-body helpers shared by CLI and MCP
   signatures.py        # Signature path loading and HTML sanitization
   config.py            # Paths and env vars
   errors.py            # Exception types
@@ -391,6 +429,10 @@ outlook_draft/
     signature.py       # Signature fetch via OWA API interception
     tasks.py           # Tasks subcommands
     teams.py           # Teams read subcommands
+  mcp/
+    server.py          # FastMCP app, tool registration, stdio run()
+    clients.py         # Per-call clients with no-reauth token handling
+    mail.py drafts.py calendar.py contacts.py tasks.py teams.py files.py auth.py  # Tool modules
 ```
 
 Auth flow: `token_manager.py` reads local tokens from `~/.local/share/outlook-cli/session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
@@ -417,6 +459,7 @@ OUTLOOK_CLI_LIVE=1 .venv/bin/python -m pytest -q tests/test_live_calendar.py
 - playwright (browser auth automation)
 - requests (token validation)
 - rich (terminal output)
+- mcp (official MCP Python SDK, 1.x, for `outlook-cli mcp`)
 
 ## License
 
