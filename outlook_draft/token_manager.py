@@ -117,7 +117,6 @@ class TokenManager:
         try:
             captured = capture_tokens_via_browser(headless=headless)
         except Exception:
-            log.debug("Best-effort operation failed", exc_info=True)
             log.exception("Local re-authentication failed")
             return False
         if not captured:
