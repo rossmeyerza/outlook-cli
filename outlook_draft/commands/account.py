@@ -215,6 +215,7 @@ def _auth_status(args: argparse.Namespace) -> None:
     statuses = [
         _token_status(config.OUTLOOK_TOKEN_DOMAIN, "Outlook API"),
         _token_status(config.GRAPH_TOKEN_DOMAIN, "Microsoft Graph"),
+        _token_status(config.COPILOT_TOKEN_DOMAIN, "Microsoft 365 Copilot"),
     ]
     if args.json:
         print(json.dumps({

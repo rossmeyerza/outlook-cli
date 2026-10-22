@@ -127,3 +127,36 @@ class TokenManager:
     def force_reload(self) -> None:
         self._file_mtime = 0.0
         self._maybe_reload()
+
+
+class CopilotTokenManager(TokenManager):
+    """Token manager for the Microsoft 365 Copilot chat service.
+
+    The Copilot token lasts about an hour. Re-authentication first refreshes it
+    from the saved browser session, which needs no MFA. If that fails and
+    `full_login_fallback` is True, the full login runs.
+    """
+
+    def __init__(self, tokens_file: Path | None = None, *, full_login_fallback: bool = True):
+        super().__init__(
+            tokens_file,
+            token_domain=config.COPILOT_TOKEN_DOMAIN,
+            token_label="Microsoft 365 Copilot",
+        )
+        self._full_login_fallback = full_login_fallback
+
+    def run_reauth(self, *, headless: bool = True) -> bool:
+        from .auth import capture_copilot_token
+
+        log.info("Refreshing the Copilot token from the saved browser session")
+        try:
+            token = capture_copilot_token(headless=headless)
+        except Exception:
+            log.exception("Copilot token refresh failed")
+            token = None
+        if token:
+            self.force_reload()
+            return self._token is not None and not self.is_expired
+        if self._full_login_fallback:
+            return super().run_reauth(headless=headless)
+        return False

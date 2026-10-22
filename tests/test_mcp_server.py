@@ -24,7 +24,7 @@ EXPECTED_TOOLS = {
     "contact_search", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
-    "auth_status", "mail_send", "draft_send", "teams_send",
+    "copilot_ask", "auth_status", "mail_send", "draft_send", "teams_send",
 }
 
 

@@ -14,13 +14,14 @@ def _cache_path(name: str) -> Path:
 
 
 def refresh_paths() -> None:
-    global MAIL_CACHE, MAIL_FOLDER_CACHE, CONTACT_CACHE, CAL_CACHE, TASK_CACHE, TEAMS_CACHE
+    global MAIL_CACHE, MAIL_FOLDER_CACHE, CONTACT_CACHE, CAL_CACHE, TASK_CACHE, TEAMS_CACHE, COPILOT_CACHE
     MAIL_CACHE = _cache_path("mail-cache.json")
     MAIL_FOLDER_CACHE = _cache_path("mail-folder-cache.json")
     CONTACT_CACHE = _cache_path("contact-cache.json")
     CAL_CACHE = _cache_path("cal-cache.json")
     TASK_CACHE = _cache_path("task-cache.json")
     TEAMS_CACHE = _cache_path("teams-cache.json")
+    COPILOT_CACHE = _cache_path("copilot-conversation.json")
 
 
 refresh_paths()

@@ -2,7 +2,7 @@
 
 ## Overview
 
-CLI for managing Outlook email, drafts, calendar, tasks, contacts, Teams browsing, and signatures via the Outlook REST API v2.0 and Microsoft Graph. Globally available as `outlook-cli`. Repo: `rossmeyerza/outlook-cli`.
+CLI for managing Outlook email, drafts, calendar, tasks, contacts, Teams browsing, signatures, and Microsoft 365 Copilot questions via the Outlook REST API v2.0, Microsoft Graph, and the internal Copilot StreamHub protocol. Globally available as `outlook-cli`. Repo: `rossmeyerza/outlook-cli`.
 
 ## Quick Reference
 
@@ -104,6 +104,13 @@ outlook-cli files mkdir "Q2" --site "Tesco" --library "Documents" # create Share
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
 outlook-cli files move "Documents/file.pdf" "Archive"     # move
 
+# Microsoft 365 Copilot (internal protocol, can change)
+outlook-cli copilot ask "<prompt>"         # ask Copilot (work chat)
+outlook-cli copilot ask "Summarise" --file <sharepoint-url> # file as context (repeatable)
+outlook-cli copilot ask "Summarise" --file "General/Plan.docx" --site "Tesco" --library "Documents"
+outlook-cli copilot ask "And the budget?" --continue      # follow-up in the last conversation
+outlook-cli copilot ask "..." --conversation <id> --json  # JSON: text, sources, conversationId
+
 # MCP server (stdio, confirmed sending)
 outlook-cli mcp
 outlook-cli --account wpp mcp
@@ -159,9 +166,10 @@ outlook-cli config check                   # validate local config without print
 - **Gateway commands in Teams**: Use `@Marlow !help`, `@Marlow !commands`, or `@Marlow !help <command>` to list commands. Current commands include `!status`, `!new`, `!reset`, `!model`, `!pause`, `!resume`, `!tools`, `!files`, `!send`, and `!logs`.
 - **Draft references**: `draft show` and `draft delete` accept a numeric index from `draft list`, a partial ID suffix, or a full ID.
 - **Files**: `files sites` lists SharePoint sites via M365 group membership. `files libraries --site <name>` lists SharePoint document libraries. `files list --site <name>` shows libraries; use `--library <name>` to browse or mutate a specific document library. `files search <query> --site <name>` searches across document libraries, or one library with `--library`. Use `--links` on `files list`, `files search`, or `files libraries` to include SharePoint/OneDrive browser links in table output. Use `--json` for machine-readable `id`, `path`, `parentPath`, `library`, and `webUrl` fields. Browser links open the file in Microsoft 365; `files download` downloads file bytes to local disk and accepts either a relative path or a drive item ID from search/list JSON. `--site` and `--library` do case-insensitive partial name matches. Without `--site`, operations target personal OneDrive. Uploads under 4 MB use a single PUT; larger files use chunked upload sessions. Uses the Microsoft Graph token.
+- **Copilot**: `copilot ask` sends a prompt to Microsoft 365 Copilot over the StreamHub WebSocket of the Copilot web app (`wss://substrate.office.com/m365Copilot/StreamHub/<oid>@<tid>`). This is not a public API, and Microsoft can change it without notice. `--file` takes a SharePoint/OneDrive URL (such as `webUrl` from `files search --json`), a drive item ID, or a path. Paths and IDs are in OneDrive unless `--site` is given. The CLI reads the file's `sharepointIds` with Graph and attaches it as a `File` message annotation with the ID `SPO_<base64url(siteId,webId,listId)>_<driveItemId>`. Other ID formats make Copilot fail to open the file. `--continue` uses the last conversation ID from the account cache (`copilot-conversation.json`). Copilot keeps the files of earlier turns. The answer text has citation markers (`\ue200...\ue201`) and entity tags (`<Person>...</Person>`) removed. Sources come from the `searchResultsMap` of the citation message.
 - **Shell completion**: `completion <bash|zsh|fish|powershell|nushell>` prints a completion script. Bash/zsh/fish/PowerShell use `argcomplete`; Nushell emits static extern definitions.
 - **Signatures**: `signature fetch` opens a headless browser with the active account's saved OWA browser session (`session_state/browser_state.json`), intercepts the `OutlookCloudSettings/settings/account` API responses OWA fires on load, and saves the active new-message and reply signatures. No MFA after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
-- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token. `auth` saves both API tokens and the full browser session state for the active account. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser. Existing single-account installs keep using `~/.config/outlook-cli/.env` and do not need to re-authenticate unless you switch to a new profile or tokens are expired.
+- **Auth**: Built into this repo via `outlook_draft/auth.py`. Outlook features use the Outlook token, Teams uses the Microsoft Graph token, and `copilot` uses the Copilot token (audience `https://substrate.office.com/sydney`, key `substrate.office.com/sydney` in `tokens.json`). After the Outlook login, `auth` opens `https://m365.cloud.microsoft/chat` in the same browser context, clicks the "Do you trust ...?" page, and captures the Copilot token from the request headers or the StreamHub `access_token` parameter. If the account has no Copilot licence, `auth` prints a warning and continues. The Copilot token lasts about an hour. `CopilotTokenManager` refreshes it from the saved `browser_state.json` with no MFA, and falls back to the full login only in the CLI. `auth` saves both API tokens and the full browser session state for the active account. Run `outlook-cli auth` if expired, or `outlook-cli auth --headed` for a visible browser. Existing single-account installs keep using `~/.config/outlook-cli/.env` and do not need to re-authenticate unless you switch to a new profile or tokens are expired.
 
 ## MCP Server
 
@@ -185,6 +193,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Tasks: `task_list`, `task_create`, `task_complete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
+- Copilot: `copilot_ask` (prompt, optional `files`, `site`, `library`, `conversation_id`)
 - Auth: `auth_status` (read-only)
 - Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
 
@@ -194,12 +203,14 @@ Rules:
 
 - Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
 - Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
-- The server never re-authenticates. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- The server never runs the login. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- One exception: `copilot_ask` refreshes the Copilot token from the saved browser session (no password, no MFA, no stdout output). If the saved session has expired, the tool returns the auth message.
 - stdout is the protocol channel. Logs go to stderr.
 
 Implementation notes:
 
 - Tools build a client per call through `outlook_draft/mcp/clients.py`. `NoReauthTokenManager` never runs `run_reauth`, so a stale token raises `McpAuthError` instead of starting headless auth.
+- `mcp/clients.py` `copilot_client()` uses `CopilotTokenManager(full_login_fallback=False)`. `auth.capture_copilot_token` runs Playwright in a worker thread, because the Playwright sync API fails inside the MCP asyncio loop.
 - Tool code must not print to stdout and must not call `sys.exit`. Raise exceptions; FastMCP returns them as `isError` results.
 - Pure helpers live in `outlook_draft/formatting.py`. CLI factories and output helpers live in `runtime.py`. Cached reference resolution lives in `references.py`.
 - Command modules register their parsers through `register(subparsers)`. `cli.py` handles account selection, dispatch and `CliError`/`OutlookDraftError` rendering. Gateway parser registration lives in `commands/gateway_parser.py` so the daemon module stays unchanged.
@@ -238,6 +249,7 @@ Implementation notes:
     config.py                   # Config and local paths
     errors.py                   # Exceptions
     links.py                    # SharePoint/OneDrive URL extraction and Graph share encoding
+    copilot.py                  # Copilot StreamHub client, file annotations, answer parsing
     outlook_client.py           # Outlook REST API v2.0 client
     token_manager.py            # Token management + reauth trigger
     commands/
@@ -248,6 +260,7 @@ Implementation notes:
       gateway_parser.py         # Gateway parser registration only
       calendar.py               # Calendar subcommands
       contacts.py               # Contacts subcommands
+      copilot.py                # Copilot ask command and file resolution
       files.py                  # OneDrive and SharePoint file operations via Graph
       mail.py                   # Mail subcommands
       signature.py              # Signature fetch via OWA API interception
@@ -259,6 +272,7 @@ Implementation notes:
 ## Caveats
 
 - Uses the Outlook REST API v2.0, not Microsoft Graph.
+- `copilot` uses an undocumented internal Microsoft protocol. If it stops working, record a new HAR from `m365.cloud.microsoft/chat` with a file attached and compare the `chat_request` frame with `outlook_draft/copilot.py`.
 - Token validity is ~24 hours. If expired, the CLI auto-triggers headless reauth (prints MFA number to console).
 - Sending (`draft send`, `mail send`, `teams send`) requires an explicit `--yes` flag. Without it the command previews and exits with code 2.
 - Email bodies are HTML-to-text converted for console display, truncated at 3000 chars.

@@ -27,3 +27,7 @@ class OutlookAPIError(OutlookDraftError):
     def __init__(self, status: int, message: str = ""):
         self.status = status
         super().__init__(f"Outlook API {status}: {message}")
+
+
+class CopilotError(OutlookDraftError):
+    """Microsoft 365 Copilot chat returned an error or closed the connection."""

@@ -13,6 +13,7 @@ from .shaping import JsonDict
 TOKENS = (
     ("Outlook API", config.OUTLOOK_TOKEN_DOMAIN),
     ("Microsoft Graph", config.GRAPH_TOKEN_DOMAIN),
+    ("Microsoft 365 Copilot", config.COPILOT_TOKEN_DOMAIN),
 )
 
 
@@ -43,7 +44,7 @@ def _token_state(tokens: JsonDict, label: str, domain: str) -> JsonDict:
 
 
 def auth_status() -> JsonDict:
-    """Report whether the Outlook and Graph tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal."""
+    """Report whether the Outlook, Graph and Copilot tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal."""
     tokens: JsonDict = {}
     if config.TOKENS_FILE.exists():
         try:

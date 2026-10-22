@@ -271,6 +271,31 @@ outlook-cli files move "General/file.pdf" "Archive" --site "Tesco" --library "Do
 
 Uploads under 4 MB use a single PUT. Larger files use chunked upload sessions automatically. Downloads save to the current directory by default and require `--overwrite` if the local output file already exists.
 
+### Microsoft 365 Copilot
+
+```bash
+# Ask a question
+outlook-cli copilot ask "What changed in our travel policy this year?"
+
+# Ask about a file: a SharePoint/OneDrive URL, a drive item ID, or a path
+outlook-cli copilot ask "Summarise this deck" --file "https://contoso.sharepoint.com/sites/team/Shared Documents/Plan.pptx"
+outlook-cli copilot ask "List the risks" --file "General/Plan.docx" --site "Tesco" --library "Documents"
+outlook-cli copilot ask "Compare these" --file "Documents/a.docx" --file "Documents/b.docx"
+
+# Ask a follow-up in the same conversation
+outlook-cli copilot ask "What does it say about budget?" --continue
+outlook-cli copilot ask "And the timeline?" --conversation <conversation-id>
+
+# Machine-readable answer
+outlook-cli copilot ask "Summarise this deck" --file <url> --json
+```
+
+`copilot ask` sends a prompt to Microsoft 365 Copilot (the work chat at `m365.cloud.microsoft/chat`). `--file` attaches a OneDrive or SharePoint file as context. It is repeatable. A URL can be the `webUrl` from `files search --json`. Paths and drive item IDs are in your OneDrive, unless you give `--site`. The answer streams to the terminal, then the sources and the conversation ID show. `--continue` uses the last conversation of the active account. Copilot keeps the files of earlier turns, so a follow-up does not need `--file` again.
+
+Warning: Microsoft has no public API for this access. The command uses the internal WebSocket protocol of the Copilot web app. Microsoft can change this protocol without notice, and then the command stops working.
+
+The command needs a Microsoft 365 Copilot licence. `outlook-cli auth` captures the Copilot token after the normal login. The token is valid for about an hour. When it expires, the CLI gets a new token from the saved browser session, with no password or MFA step.
+
 ### Auth and config
 
 ```bash
@@ -367,6 +392,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Tasks: `task_list`, `task_create`, `task_complete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
+- Copilot: `copilot_ask` (prompt with optional `files`; pass `conversation_id` for a follow-up)
 - Auth: `auth_status` (read-only)
 - Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
 
@@ -376,7 +402,8 @@ Rules:
 
 - Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
 - Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
-- The server never re-authenticates. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- The server never runs the login. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
+- One exception: `copilot_ask` gets a new Copilot token from the saved browser session when the token expires. This step has no password or MFA. If the saved session has expired, the tool returns the auth message.
 - stdout is the protocol channel. Logs go to stderr.
 
 ## Configuration
@@ -421,11 +448,13 @@ outlook_draft/
   config.py            # Paths and env vars
   errors.py            # Exception types
   links.py             # SharePoint/OneDrive URL extraction and Graph share ID encoding
+  copilot.py           # Microsoft 365 Copilot StreamHub client, file annotations, answer parsing
   outlook_client.py    # Outlook REST API v2.0 client (mail, drafts, contacts)
   token_manager.py     # Token loading, validation, triggers reauth
   commands/
     calendar.py        # Calendar subcommands
     contacts.py        # Contacts subcommands
+    copilot.py         # Copilot ask command and file resolution
     mail.py            # Mail subcommands
     signature.py       # Signature fetch via OWA API interception
     tasks.py           # Tasks subcommands
@@ -433,10 +462,10 @@ outlook_draft/
   mcp/
     server.py          # FastMCP app, tool registration, stdio run()
     clients.py         # Per-call clients with no-reauth token handling
-    mail.py drafts.py calendar.py contacts.py tasks.py teams.py files.py auth.py  # Tool modules
+    mail.py drafts.py calendar.py contacts.py tasks.py teams.py files.py copilot.py auth.py  # Tool modules
 ```
 
-Auth flow: `token_manager.py` reads local tokens from `~/.local/share/outlook-cli/session_state/tokens.json`. Outlook features use the Outlook token, and Teams browsing uses the Microsoft Graph token. If expired, it runs the built-in auth flow from `outlook_draft/auth.py`.
+Auth flow: `token_manager.py` reads local tokens from `~/.local/share/outlook-cli/session_state/tokens.json`. Outlook features use the Outlook token, Teams browsing and files use the Microsoft Graph token, and `copilot` uses the Copilot token (audience `https://substrate.office.com/sydney`, saved under the key `substrate.office.com/sydney`). If a token is expired, the CLI runs the built-in auth flow from `outlook_draft/auth.py`. For the Copilot token, it first tries the saved browser session.
 
 ## Tests
 
@@ -461,6 +490,7 @@ OUTLOOK_CLI_LIVE=1 .venv/bin/python -m pytest -q tests/test_live_calendar.py
 - requests (token validation)
 - rich (terminal output)
 - mcp (official MCP Python SDK, 1.x, for `outlook-cli mcp`)
+- websockets (Copilot StreamHub connection)
 
 ## License
 

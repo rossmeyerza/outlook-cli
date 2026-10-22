@@ -19,7 +19,9 @@ Usage:
 import base64
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 from playwright.sync_api import sync_playwright
@@ -39,19 +41,38 @@ KNOWN_DOMAINS = [
 ]
 
 
+# The Microsoft 365 Copilot web app gets a token for this audience.
+COPILOT_CHAT_URL = "https://m365.cloud.microsoft/chat"
+COPILOT_AUDIENCE = "https://substrate.office.com/sydney"
+
+# Buttons on Microsoft sign-in pages that can appear after SSO:
+# "Do you trust <domain>?", "Stay signed in?" and the account picker.
+LOGIN_INTERSTITIAL_SELECTORS = (
+    "input#idSIButton9:visible",
+    'button:has-text("Continue"):visible',
+    'input[value="Continue"]:visible',
+    'input[value="Yes"]:visible',
+    "div[data-test-id]:visible >> nth=0",
+)
+
+
 log = logging.getLogger(__name__)
+
+
+def _token_claims(token: str) -> dict:
+    """Decode JWT claims without verification."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (4 - len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        log.debug("Best-effort operation failed", exc_info=True)
+        return {}
 
 
 def _token_scopes(token: str) -> set[str]:
     """Decode JWT scopes without verification."""
-    try:
-        payload = token.split(".")[1]
-        payload += "=" * (4 - len(payload) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(payload))
-        return set(claims.get("scp", "").split())
-    except Exception:
-        log.debug("Best-effort operation failed", exc_info=True)
-        return set()
+    return set(_token_claims(token).get("scp", "").split())
 
 
 def _save_tokens(tokens: dict[str, str]):
@@ -386,6 +407,14 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         if not captured:
             _extract_storage_tokens(page, captured)
 
+        if captured:
+            copilot_token = _capture_copilot_in_context(context)
+            if copilot_token:
+                captured[config.COPILOT_TOKEN_DOMAIN] = copilot_token
+                console.print(f"[dim]  Captured token for {config.COPILOT_TOKEN_DOMAIN}[/]")
+            else:
+                console.print("[yellow]No Microsoft 365 Copilot token captured. 'copilot' commands will not work.[/]")
+
         # Save browser session state so Playwright can reuse it without MFA
         storage_path = config.SESSION_DIR / "browser_state.json"
         try:
@@ -405,6 +434,94 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         console.print("[red]Could not capture any bearer tokens.[/]")
 
     return captured
+
+
+def _click_login_interstitial(page) -> None:
+    for selector in LOGIN_INTERSTITIAL_SELECTORS:
+        try:
+            button = page.locator(selector).first
+            if button.count() and button.is_visible(timeout=500):
+                button.click()
+                page.wait_for_timeout(2000)
+                return
+        except Exception:
+            log.debug("Best-effort operation failed", exc_info=True)
+
+
+def _capture_copilot_in_context(context, timeout_ms: int = 30000) -> str | None:
+    """Open the Copilot web app in a signed-in context and capture its token.
+
+    The app sends the token in request headers to substrate.office.com and in
+    the `access_token` parameter of its StreamHub WebSocket URL.
+    """
+    found: list[str] = []
+
+    def consider(token: str) -> None:
+        if _token_claims(token).get("aud") == COPILOT_AUDIENCE:
+            found.append(token)
+
+    def on_request(request) -> None:
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            consider(auth.removeprefix("Bearer "))
+
+    def on_websocket(websocket) -> None:
+        for token in parse_qs(urlsplit(websocket.url).query).get("access_token", []):
+            consider(token)
+
+    page = context.new_page()
+    page.on("request", on_request)
+    page.on("websocket", on_websocket)
+    try:
+        page.goto(COPILOT_CHAT_URL, wait_until="domcontentloaded", timeout=60000)
+        waited = 0
+        while not found and waited < timeout_ms:
+            page.wait_for_timeout(1000)
+            waited += 1000
+            if "login.microsoftonline.com" in page.url:
+                _click_login_interstitial(page)
+    except Exception:
+        log.debug("Copilot token capture failed", exc_info=True)
+    finally:
+        page.close()
+    if not found:
+        return None
+    return max(found, key=lambda token: _token_claims(token).get("exp", 0))
+
+
+def _capture_copilot_with_saved_session(headless: bool) -> str | None:
+    storage_path = config.SESSION_DIR / "browser_state.json"
+    if not storage_path.exists():
+        return None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context(storage_state=str(storage_path), viewport={"width": 1280, "height": 900})
+        token = _capture_copilot_in_context(context)
+        if token:
+            try:
+                context.storage_state(path=str(storage_path))
+            except Exception:
+                log.debug("Best-effort operation failed", exc_info=True)
+        context.close()
+        browser.close()
+    return token
+
+
+def capture_copilot_token(headless: bool = True) -> str | None:
+    """Refresh only the Copilot token from the saved browser session.
+
+    No password or MFA step runs. If the saved session has expired, this
+    returns None and the caller must run the full login. The capture runs in
+    a worker thread because the Playwright sync API fails inside an asyncio
+    event loop, such as the MCP server loop.
+    """
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        token = pool.submit(_capture_copilot_with_saved_session, headless).result()
+    if token:
+        tokens = _load_tokens()
+        tokens[config.COPILOT_TOKEN_DOMAIN] = token
+        _save_tokens(tokens)
+    return token
 
 
 def get_tokens(headless: bool = False) -> dict[str, str]:

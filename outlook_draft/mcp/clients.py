@@ -11,9 +11,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from .. import config
+from ..copilot import CopilotClient
 from ..errors import OutlookDraftError, TokenExpiredError, TokenNotFoundError
 from ..outlook_client import OutlookClient
-from ..token_manager import TokenManager
+from ..token_manager import CopilotTokenManager, TokenManager
 
 
 class McpAuthError(OutlookDraftError):
@@ -76,6 +77,24 @@ def files_client() -> Iterator[OutlookClient]:
         yield client
     finally:
         client.close()
+
+
+@contextmanager
+def copilot_client() -> Iterator[CopilotClient]:
+    """Microsoft 365 Copilot chat client.
+
+    The Copilot token lasts about an hour. It is the one token that this server
+    refreshes: the refresh uses the saved browser session and has no password
+    or MFA step. If the saved session has expired, the user must run auth.
+    """
+    manager = CopilotTokenManager(full_login_fallback=False)
+    try:
+        manager.get_token(auto_reauth=True)
+    except (TokenNotFoundError, TokenExpiredError) as exc:
+        raise McpAuthError(
+            "Microsoft 365 Copilot token expired or missing. Run 'outlook-cli auth' in a terminal, then retry."
+        ) from exc
+    yield CopilotClient(manager)
 
 
 def clamp(value: int, *, low: int = 1, high: int = 100) -> int:

@@ -168,6 +168,8 @@ OUTLOOK_BASE_URL: str = "https://outlook.office.com/api/v2.0"
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 OUTLOOK_TOKEN_DOMAIN: str = "outlook.office.com"
 GRAPH_TOKEN_DOMAIN: str = "graph.microsoft.com"
+# Token key for the Microsoft 365 Copilot chat service. The key is the token audience without "https://".
+COPILOT_TOKEN_DOMAIN: str = "substrate.office.com/sydney"
 EMAIL_FONT_FAMILY: str = (
     "Aptos, Aptos_EmbeddedFont, Aptos_MSFontService, Calibri, Helvetica, sans-serif"
 )

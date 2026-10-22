@@ -1541,7 +1541,85 @@
   },
   {
     "annotations": null,
-    "description": "Report whether the Outlook and Graph tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal.",
+    "description": "Ask Microsoft 365 Copilot a question. `files` are SharePoint/OneDrive URLs (such as webUrl from files_search), drive item IDs or paths (OneDrive unless `site` is given); Copilot reads them as context. For a follow-up, pass conversationId from an earlier result; Copilot keeps earlier files. Read-only. An answer can take a few minutes.",
+    "execution": null,
+    "icons": null,
+    "inputSchema": {
+      "properties": {
+        "conversation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conversation Id"
+        },
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "title": "copilot_askArguments",
+      "type": "object"
+    },
+    "meta": null,
+    "name": "copilot_ask",
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "copilot_askDictOutput",
+      "type": "object"
+    },
+    "title": null
+  },
+  {
+    "annotations": null,
+    "description": "Report whether the Outlook, Graph and Copilot tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal.",
     "execution": null,
     "icons": null,
     "inputSchema": {

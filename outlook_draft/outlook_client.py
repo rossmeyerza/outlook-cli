@@ -261,6 +261,13 @@ class OutlookClient:
                              params={"$select": ITEM_SELECT})
         return resp.json()
 
+    def drive_item_with_sharepoint_ids(self, item_id: str, drive_id: str | None = None) -> dict:
+        """Get a drive item with its `sharepointIds`. Without drive_id, use the user's OneDrive."""
+        drive = f"drives/{drive_id}" if drive_id else "me/drive"
+        resp = self._request("GET", f"{GRAPH_BASE}/{drive}/items/{item_id}",
+                             params={"$select": "id,name,webUrl,file,folder,parentReference,sharepointIds"})
+        return resp.json()
+
     def sp_list_children(self, drive_id: str, item_id: str) -> list[dict]:
         url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/children"
         params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}

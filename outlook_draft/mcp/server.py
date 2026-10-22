@@ -11,11 +11,11 @@ import sys
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from . import auth, calendar, contacts, drafts, files, mail, sending, tasks, teams
+from . import auth, calendar, contacts, copilot, drafts, files, mail, sending, tasks, teams
 
 INSTRUCTIONS = (
-    "Outlook mail, drafts, calendar, contacts, tasks, Teams and OneDrive/SharePoint "
-    "files for Ross's Microsoft 365 account. Send tools preview unless confirm=true.\n\n"
+    "Outlook mail, drafts, calendar, contacts, tasks, Teams, OneDrive/SharePoint files "
+    "and Microsoft 365 Copilot for Ross's Microsoft 365 account. Send tools preview unless confirm=true.\n\n"
     "Set confirm=true only when the user explicitly requests sending that message. "
     "Prefer drafts. Never automatically retry a send after an uncertain result. "
     "Do not send Teams messages directly from the Teams gateway.\n\n"
@@ -23,7 +23,7 @@ INSTRUCTIONS = (
     "If a tool reports an expired token, ask the user to run 'outlook-cli auth' in a terminal."
 )
 
-MODULES = (mail, drafts, calendar, contacts, tasks, teams, files, auth, sending)
+MODULES = (mail, drafts, calendar, contacts, tasks, teams, files, copilot, auth, sending)
 
 
 def build_server() -> FastMCP:

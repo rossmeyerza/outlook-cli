@@ -10,6 +10,7 @@ from .commands import (
     calendar,
     completion,
     contacts,
+    copilot,
     drafts,
     files,
     gateway_parser,
@@ -77,6 +78,7 @@ def build_parser(account_override: str | None = None) -> argparse.ArgumentParser
     account.register_mailbox(sub)
     account.register_auth(sub)
     files.register(sub)
+    copilot.register(sub)
     signature.register(sub)
     gateway_parser.register(sub)
     account.register_config(sub)

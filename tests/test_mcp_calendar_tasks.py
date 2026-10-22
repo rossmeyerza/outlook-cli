@@ -150,14 +150,15 @@ def test_auth_status_reports_validity_without_reauth(monkeypatch, tmp_path: Path
     tokens.write_text(json.dumps({"tokens": {config.OUTLOOK_TOKEN_DOMAIN: _token(3600), config.GRAPH_TOKEN_DOMAIN: _token(-60)}}))
     monkeypatch.setattr(config, "TOKENS_FILE", tokens)
 
-    outlook, graph = auth.auth_status()["tokens"]
+    outlook, graph, copilot = auth.auth_status()["tokens"]
 
     assert outlook["valid"] is True and 59 <= outlook["minutesLeft"] <= 60
     assert outlook["user"] == "ross@example.com"
     assert graph["valid"] is False and graph["expired"] is True
+    assert copilot["domain"] == config.COPILOT_TOKEN_DOMAIN and copilot["present"] is False
 
 
 def test_auth_status_with_no_tokens_file(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(config, "TOKENS_FILE", tmp_path / "none.json")
 
-    assert [t["present"] for t in auth.auth_status()["tokens"]] == [False, False]
+    assert [t["present"] for t in auth.auth_status()["tokens"]] == [False, False, False]
