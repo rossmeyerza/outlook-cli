@@ -10,6 +10,8 @@ change without notice.
 from __future__ import annotations
 
 import base64
+import contextlib
+import html
 import json
 import logging
 import re
@@ -109,6 +111,15 @@ _OPEN_MARKER_TAIL = re.compile("[^]*$")
 _ENTITY_TAG = re.compile(r"</?[A-Z][A-Za-z]{2,30}>")
 _PARTIAL_TAG_TAIL = re.compile(r"</?[A-Za-z]*$")
 _TRAILING_SPACES = re.compile(r"[ \t]+\n")
+_CITED_RESULT = re.compile(r"turn\d+search(\d+)")
+
+# Copilot finds its tools with this call. It is not an action.
+TOOL_DISCOVERY_CALLS = {"api_tool_list_resources"}
+# Copilot sends these when it wants the user to confirm, give input, or sign in.
+# The client never confirms: it stops and reports them.
+CONFIRMATION_MESSAGE_TYPES = {
+    "ConfirmationCard", "TriggerConfirmation", "TriggerUserInputRequest", "TriggerPluginAuth",
+}
 
 
 @dataclass(frozen=True)
@@ -143,6 +154,8 @@ class CopilotAnswer:
     chat_name: str | None = None
     sources: list[dict[str, str]] = field(default_factory=list)
     complete: bool = True
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    pending_confirmations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -152,6 +165,8 @@ class CopilotAnswer:
             "chatName": self.chat_name,
             "sources": self.sources,
             "complete": self.complete,
+            "toolCalls": self.tool_calls,
+            "pendingConfirmations": self.pending_confirmations,
         }
 
 
@@ -310,18 +325,58 @@ def clean_answer_text(text: str, *, final: bool = True) -> str:
     return _TRAILING_SPACES.sub("\n", text).strip()
 
 
-def _sources_from_citation_message(text: str) -> list[dict[str, str]]:
+def _tool_calls_from_invocation(invocation: Any) -> list[dict[str, Any]]:
+    """Parse the `invocation` field of a message into tool calls.
+
+    The field is a JSON list of OpenAI-style function calls. Hint messages use
+    a plain-text form, which is not a tool call and is ignored.
+    """
+    if not isinstance(invocation, str):
+        return []
+    try:
+        calls = json.loads(invocation)
+    except json.JSONDecodeError:
+        return []
+    result = []
+    for call in calls if isinstance(calls, list) else []:
+        function = (call or {}).get("function") or {}
+        name = function.get("name")
+        if not name or name in TOOL_DISCOVERY_CALLS:
+            continue
+        arguments: Any = function.get("arguments")
+        with contextlib.suppress(json.JSONDecodeError):
+            arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+        result.append({"id": call.get("id"), "tool": name, "arguments": arguments})
+    return result
+
+
+def _search_results_from_citation_message(text: str) -> dict[str, dict[str, str]]:
+    """Map search result numbers to sources. Results without a name, such as thumbnails, are skipped."""
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
-        return []
+        return {}
     results = (data or {}).get("searchResultsMap") or {}
-    sources = []
-    for key in sorted(results, key=lambda k: int(k) if str(k).isdigit() else 0):
-        result = results[key] or {}
+    sources = {}
+    for key, result in results.items():
+        result = result or {}
         if result.get("sourceName") and result.get("sourceUrl"):
-            sources.append({"title": result["sourceName"], "url": result["sourceUrl"]})
+            sources[str(key)] = {"title": html.unescape(result["sourceName"]), "url": result["sourceUrl"]}
     return sources
+
+
+def cited_result_numbers(text: str) -> list[str]:
+    """Return the search result numbers that the answer cites, in order of first citation.
+
+    A citation marker such as `turn1search3L2` points to entry "3" of the
+    searchResultsMap of the same turn.
+    """
+    numbers: list[str] = []
+    for marker in _INLINE_MARKER.findall(text):
+        for number in _CITED_RESULT.findall(marker):
+            if number not in numbers:
+                numbers.append(number)
+    return numbers
 
 
 class AnswerCollector:
@@ -332,8 +387,10 @@ class AnswerCollector:
         self.done = False
         self.chat_name: str | None = None
         self.progress: str | None = None
-        self.sources: list[dict[str, str]] = []
+        self._search_results: dict[str, dict[str, str]] = {}
         self.errors: list[str] = []
+        self.tool_calls: list[dict[str, Any]] = []
+        self.pending_confirmations: list[dict[str, Any]] = []
         self._raw_text = ""
         self._emitted = ""
         self._seen_request = False
@@ -341,6 +398,11 @@ class AnswerCollector:
     @property
     def text(self) -> str:
         return clean_answer_text(self._raw_text)
+
+    @property
+    def sources(self) -> list[dict[str, str]]:
+        """The search results that the answer cites. Copilot also returns results that it does not cite."""
+        return [self._search_results[n] for n in cited_result_numbers(self._raw_text) if n in self._search_results]
 
     def feed(self, frame: dict[str, Any]) -> str:
         """Process one frame. Return the new answer text to show, if any."""
@@ -369,7 +431,13 @@ class AnswerCollector:
             return
         message_type = message.get("messageType")
         text = message.get("text") or ""
-        if message_type == "EndOfRequest":
+        if message_type != "HintInvocation":
+            self._record_tool_calls(message.get("invocation"))
+        if message_type in CONFIRMATION_MESSAGE_TYPES:
+            # Copilot waits for the user here. Stop, and do not confirm.
+            self.pending_confirmations.append({"type": message_type, "text": text})
+            self.done = True
+        elif message_type == "EndOfRequest":
             self.done = True
         elif message_type == "ChatName":
             self.chat_name = text or self.chat_name
@@ -378,9 +446,16 @@ class AnswerCollector:
         elif message_type in ("AuthError", "Disengaged"):
             self.errors.append(text or message_type)
         elif message_type == "Internal" and "searchResultsMap" in text:
-            self.sources = _sources_from_citation_message(text) or self.sources
+            self._search_results = _search_results_from_citation_message(text) or self._search_results
         elif message_type is None and message.get("author") == "bot" and text:
             self._raw_text = text
+
+    def _record_tool_calls(self, invocation: Any) -> None:
+        known = {call["id"] for call in self.tool_calls if call.get("id")}
+        for call in _tool_calls_from_invocation(invocation):
+            if call["id"] and call["id"] in known:
+                continue
+            self.tool_calls.append(call)
 
     def _delta(self) -> str:
         visible = clean_answer_text(self._raw_text, final=False)
@@ -482,7 +557,7 @@ class CopilotClient:
             }))
             self._read_answer(ws, collector, timeout, on_text, on_progress)
 
-        if collector.errors and not collector.text:
+        if collector.errors and not collector.text and not collector.pending_confirmations:
             raise CopilotError("; ".join(collector.errors))
         return CopilotAnswer(
             text=collector.text,
@@ -490,7 +565,9 @@ class CopilotClient:
             request_id=request_id,
             chat_name=collector.chat_name,
             sources=collector.sources,
-            complete=collector.done and not collector.errors,
+            complete=collector.done and not collector.errors and not collector.pending_confirmations,
+            tool_calls=collector.tool_calls,
+            pending_confirmations=collector.pending_confirmations,
         )
 
     @staticmethod

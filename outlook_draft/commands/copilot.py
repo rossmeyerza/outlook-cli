@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 from .. import cache
@@ -71,14 +72,27 @@ def _resolve_files(args: argparse.Namespace) -> list[CopilotFile]:
         gc.close()
 
 
+def _short_arguments(arguments: object, limit: int = 120) -> str:
+    text = json.dumps(arguments, ensure_ascii=False) if not isinstance(arguments, str) else arguments
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def _print_answer_footer(answer: CopilotAnswer, files: list[CopilotFile]) -> None:
+    if answer.tool_calls:
+        console.print("\n[bold]Copilot tool calls[/]")
+        for call in answer.tool_calls:
+            console.print(f"  - {call['tool']} [dim]{_short_arguments(call['arguments'])}[/]", soft_wrap=True, markup=True)
+    for pending in answer.pending_confirmations:
+        console.print(f"\n[yellow]Copilot asked for {pending['type']}. The CLI did not confirm it.[/]")
+        if pending.get("text"):
+            console.print(f"[dim]{pending['text'][:500]}[/]", soft_wrap=True)
     if answer.sources:
         console.print("\n[bold]Sources[/]")
         for number, source in enumerate(answer.sources, start=1):
             console.print(f"  {number}. {source['title']}\n     [dim]{source['url']}[/]", soft_wrap=True)
     elif files:
         console.print(f"\n[dim]Files: {', '.join(f.name for f in files)}[/]")
-    if not answer.complete:
+    if not answer.complete and not answer.pending_confirmations:
         console.print("[yellow]The answer may be incomplete: Copilot did not finish in time.[/]")
     console.print(f"[dim]Conversation: {answer.conversation_id} (continue with --continue)[/]")
 

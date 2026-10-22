@@ -328,3 +328,102 @@ def test_mcp_copilot_ask_resolves_files_and_returns_answer(monkeypatch):
     assert result["files"] == [{"name": "Plan.pptx", "id": DRIVE_ITEM["id"], "driveId": "b!drive", "webUrl": DRIVE_ITEM["webUrl"]}]
     assert result["sources"][0]["title"] == "Plan"
     assert config.COPILOT_TOKEN_DOMAIN == "substrate.office.com/sydney"
+
+
+def _invocation(*calls: tuple[str, str, dict]) -> str:
+    return json.dumps([
+        {"function": {"name": name, "arguments": json.dumps(arguments)}, "id": call_id, "type": "function"}
+        for call_id, name, arguments in calls
+    ])
+
+
+def test_collector_records_tool_calls_once_and_skips_discovery_and_hints():
+    draft = ("call_1", "outlook_mail_draft_message", {"toRecipients": ["ross@example.com"], "subject": "Hi"})
+    collector = AnswerCollector("req-1")
+    frames = [
+        _part({"author": "user", "text": "Draft it", "requestId": "req-1"}),
+        _part({"author": "system", "messageType": "Internal", "requestId": "req-1",
+               "invocation": _invocation(("call_0", "api_tool_list_resources", {"path": "outlook"}))}),
+        _part({"author": "bot", "messageType": "Internal", "contentOrigin": "McpHttpToolExecutor",
+               "requestId": "req-1", "invocation": _invocation(draft)}),
+        _part({"author": "bot", "messageType": "Internal", "contentOrigin": "McpHttpToolExecutor",
+               "requestId": "req-1", "invocation": _invocation(draft)}),
+        _part({"author": "bot", "messageType": "HintInvocation", "requestId": "req-1",
+               "invocation": 'respond_language(language="English")'}),
+        _part({"author": None, "messageType": "EndOfRequest"}),
+    ]
+    for frame in frames:
+        collector.feed(frame)
+
+    assert collector.tool_calls == [{
+        "id": "call_1",
+        "tool": "outlook_mail_draft_message",
+        "arguments": {"toRecipients": ["ross@example.com"], "subject": "Hi"},
+    }]
+
+
+def test_collector_stops_at_confirmation_request_without_confirming():
+    collector = AnswerCollector("req-1")
+    collector.feed(_part({"author": "user", "text": "Delete the file", "requestId": "req-1"}))
+    collector.feed(_part({"author": "bot", "messageType": "ConfirmationCard", "requestId": "req-1",
+                          "text": "Delete Plan.pptx?"}))
+
+    assert collector.done is True
+    assert collector.pending_confirmations == [{"type": "ConfirmationCard", "text": "Delete Plan.pptx?"}]
+
+
+def test_ask_reports_pending_confirmation_as_incomplete():
+    class ConfirmSocket(FakeSocket):
+        def send(self, text):
+            self.sent.append(json.loads(text[:-1]))
+            request = self.chat_request()
+            if request and not getattr(self, "_answered", False):
+                self._answered = True
+                frames = [
+                    _part({"author": "user", "text": "x", "requestId": request["requestId"]}),
+                    _part({"author": "bot", "messageType": "TriggerConfirmation",
+                           "requestId": request["requestId"], "text": "Send the message?"}),
+                ]
+                self.replies.extend(json.dumps(f) + RECORD_SEPARATOR for f in frames)
+
+    socket = ConfirmSocket(["{}" + RECORD_SEPARATOR])
+    answer = CopilotClient(FakeTokenManager(), connector=lambda url, **kw: socket).ask("Send it")
+
+    assert answer.complete is False
+    assert answer.pending_confirmations[0]["type"] == "TriggerConfirmation"
+    assert answer.to_dict()["pendingConfirmations"] == answer.pending_confirmations
+    # The client sent the prompt and nothing after it.
+    assert socket.sent[-1]["item"]["type"] == "chat_request"
+
+
+def test_mcp_copilot_ask_is_not_marked_read_only():
+    import asyncio
+
+    from outlook_draft.mcp.server import build_server
+
+    tool = next(t for t in asyncio.run(build_server().list_tools()) if t.name == "copilot_ask")
+
+    assert "NOT read-only" in tool.description
+    assert tool.annotations.readOnlyHint is False
+    assert tool.annotations.destructiveHint is True
+
+
+def test_sources_are_only_the_cited_results_in_citation_order():
+    results = {"searchResultsMap": {
+        "1": {"sourceName": "Re: Ford &#124; Framework", "sourceUrl": "https://example.com/1"},
+        "2": {"sourceName": "Not cited", "sourceUrl": "https://example.com/2"},
+        "3": {"sourceName": "Budget.xlsx", "sourceUrl": "https://example.com/3"},
+        "4": {"sourceUrl": "Page_1_thumbnail"},
+    }}
+    collector = AnswerCollector("req-1")
+    collector.feed(_part({"author": "user", "text": "q", "requestId": "req-1"}))
+    collector.feed(_part({"author": "bot", "contentOrigin": "DeepLeo", "requestId": "req-1",
+                          "text": "A citeturn1search3L2 B citeturn1search1 "
+                                  "C citeturn1search3 imageturn1search4"}))
+    collector.feed(_part({"author": "bot", "messageType": "Internal", "contentOrigin": "citation-formatter",
+                          "requestId": "req-1", "text": json.dumps(results)}))
+
+    assert collector.sources == [
+        {"title": "Budget.xlsx", "url": "https://example.com/3"},
+        {"title": "Re: Ford | Framework", "url": "https://example.com/1"},
+    ]

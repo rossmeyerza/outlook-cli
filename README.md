@@ -292,6 +292,8 @@ outlook-cli copilot ask "Summarise this deck" --file <url> --json
 
 `copilot ask` sends a prompt to Microsoft 365 Copilot (the work chat at `m365.cloud.microsoft/chat`). `--file` attaches a OneDrive or SharePoint file as context. It is repeatable. A URL can be the `webUrl` from `files search --json`. Paths and drive item IDs are in your OneDrive, unless you give `--site`. The answer streams to the terminal, then the sources and the conversation ID show. `--continue` uses the last conversation of the active account. Copilot keeps the files of earlier turns, so a follow-up does not need `--file` again.
 
+Caution: Copilot is not read-only. It can create drafts, post Teams messages, change calendars and delete or share SharePoint files. A prompt can cause these actions. After the answer, the CLI lists each tool that Copilot called (`toolCalls` in `--json`). If Copilot asks for a confirmation, the CLI stops and does not confirm it (`pendingConfirmations`). Copilot's document tools write edits to a new file, not to the original SharePoint file. For the full list of tools and the test results, see [docs/copilot-tools.md](docs/copilot-tools.md).
+
 Warning: Microsoft has no public API for this access. The command uses the internal WebSocket protocol of the Copilot web app. Microsoft can change this protocol without notice, and then the command stops working.
 
 The command needs a Microsoft 365 Copilot licence. `outlook-cli auth` captures the Copilot token after the normal login. The token is valid for about an hour. When it expires, the CLI gets a new token from the saved browser session, with no password or MFA step.
@@ -392,7 +394,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Tasks: `task_list`, `task_create`, `task_complete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
-- Copilot: `copilot_ask` (prompt with optional `files`; pass `conversation_id` for a follow-up)
+- Copilot: `copilot_ask` (prompt with optional `files`; pass `conversation_id` for a follow-up). Not read-only: Copilot can take actions with its own tools. The result lists `toolCalls` and `pendingConfirmations`. The tool never confirms an action.
 - Auth: `auth_status` (read-only)
 - Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
 

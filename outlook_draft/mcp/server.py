@@ -31,7 +31,7 @@ def build_server() -> FastMCP:
     server = FastMCP("outlook", instructions=INSTRUCTIONS)
     for module in MODULES:
         for tool in module.TOOLS:
-            if module is sending:
+            if module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(
                     readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True,
                 ))(tool)
