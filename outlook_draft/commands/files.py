@@ -115,6 +115,16 @@ def _looks_like_drive_item_id(value: str) -> bool:
     return bool(value) and "/" not in value and len(value) >= 20 and value.upper() == value
 
 
+def _find_od_item(gc: _GraphClient, ref: str) -> dict:
+    """Resolve a OneDrive drive item ID or a path relative to the OneDrive root."""
+    if _looks_like_drive_item_id(ref):
+        try:
+            return gc.od_item_by_id(ref.strip())
+        except OutlookAPIError:
+            pass
+    return gc.od_item_by_path(ref)
+
+
 def _resolve_site(gc: _GraphClient, site_hint: str, library_hint: str | None = None) -> tuple[str, str, str]:
     """Resolve a site hint to (group_id, site_id, drive_id)."""
     group, site_id, drives = _resolve_site_drives(gc, site_hint)
@@ -540,7 +550,7 @@ def cmd_files_download(args) -> None:
                     raise ValueError("Download currently supports files, not folders.")
                 data = gc.sp_download(drive_id, item["id"])
             else:
-                item = gc.od_item_by_path(remote_path)
+                item = _find_od_item(gc, remote_path)
                 if "folder" in item:
                     raise ValueError("Download currently supports files, not folders.")
                 data = gc.od_download(item["id"])

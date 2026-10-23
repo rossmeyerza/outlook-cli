@@ -6,6 +6,7 @@ import pytest
 
 from outlook_draft.commands.files import (
     _download_destination,
+    _find_od_item,
     _find_sp_item_by_path,
     _GraphClient,
     _item_summary,
@@ -194,3 +195,42 @@ def test_graph_client_converts_token_failure_to_api_error() -> None:
 
     assert excinfo.value.status == 401
     assert "outlook-cli auth" in str(excinfo.value)
+
+
+class FakeOneDriveClient:
+    def __init__(self, by_id: dict[str, dict], by_path: dict[str, dict]):
+        self.by_id = by_id
+        self.by_path = by_path
+
+    def od_item_by_id(self, item_id: str) -> dict:
+        try:
+            return self.by_id[item_id]
+        except KeyError as exc:
+            raise OutlookAPIError(404, "not found") from exc
+
+    def od_item_by_path(self, path: str) -> dict:
+        try:
+            return self.by_path[path]
+        except KeyError as exc:
+            raise OutlookAPIError(404, "not found") from exc
+
+
+def test_find_onedrive_item_accepts_drive_item_id() -> None:
+    item = {"id": "01LT2YGQYBBGUCIETYMVA2PBZIDTQ5ZQMH", "name": "dummy_document.docx"}
+    gc = FakeOneDriveClient({item["id"]: item}, {})
+
+    assert _find_od_item(gc, item["id"]) is item
+
+
+def test_find_onedrive_item_falls_back_to_path() -> None:
+    item = {"id": "item-1", "name": "README2026ARCHIVEDNOTES"}
+    gc = FakeOneDriveClient({}, {"README2026ARCHIVEDNOTES": item})
+
+    assert _find_od_item(gc, "README2026ARCHIVEDNOTES") is item
+
+
+def test_find_onedrive_item_uses_path_for_normal_names() -> None:
+    item = {"id": "item-2", "name": "report.pdf"}
+    gc = FakeOneDriveClient({}, {"Documents/report.pdf": item})
+
+    assert _find_od_item(gc, "Documents/report.pdf") is item

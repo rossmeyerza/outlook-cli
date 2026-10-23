@@ -152,6 +152,11 @@ class OutlookClient:
                                  params={"$select": ITEM_SELECT})
         return resp.json()
 
+    def od_item_by_id(self, item_id: str) -> dict[str, Any]:
+        resp = self._request("GET", f"{GRAPH_BASE}/me/drive/items/{item_id}",
+                             params={"$select": ITEM_SELECT})
+        return resp.json()
+
     def od_list_children(self, item_id: str) -> list[dict]:
         url = f"{GRAPH_BASE}/me/drive/items/{item_id}/children"
         params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
