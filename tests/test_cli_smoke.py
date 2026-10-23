@@ -179,3 +179,20 @@ def test_send_guard_does_not_build_a_client(monkeypatch, capsys, isolated_cli, a
 def test_confirmed_send_calls_only_the_fake_client(monkeypatch, capsys, isolated_cli, argv, method):
     assert run_command(monkeypatch, capsys, argv)["exit"] == 0
     getattr(isolated_cli, method).assert_called_once()
+
+
+def test_cli_error_goes_to_stderr_in_json_mode(monkeypatch, capsys, isolated_cli):
+    from outlook_draft.errors import CliError
+
+    isolated_cli.list_unread.side_effect = CliError("Expected failure", 1)
+    result = run_command(monkeypatch, capsys, ["mail", "unread", "--json"])
+    assert result == {"stdout": "", "stderr": "Expected failure\n", "exit": 1}
+
+
+def test_auth_progress_goes_to_stderr(capsys):
+    from outlook_draft import auth
+
+    auth.console.print("MFA Verification: tap 12")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "tap 12" in captured.err

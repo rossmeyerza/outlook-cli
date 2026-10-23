@@ -22,7 +22,7 @@ from .commands import (
 )
 from .errors import CliError, OutlookDraftError
 from .parser import add_output_args
-from .runtime import console
+from .runtime import console, error_console
 
 
 def _extract_account_arg(argv: list[str]) -> tuple[list[str], str | None]:
@@ -106,7 +106,9 @@ def main() -> None:
         _dispatch(args, parser)
     except (CliError, OutlookDraftError) as error:
         if str(error):
-            console.print(str(error) if isinstance(error, CliError) else f"[red]{error}[/]")
+            # In JSON mode, stdout carries only JSON.
+            out = error_console if args.json else console
+            out.print(str(error) if isinstance(error, CliError) else f"[red]{error}[/]")
         raise SystemExit(getattr(error, "exit_code", 1)) from error
 
 

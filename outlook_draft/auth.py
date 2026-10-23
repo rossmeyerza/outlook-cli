@@ -29,7 +29,9 @@ from rich.console import Console
 
 from . import config
 
-console = Console()
+# Login progress and the MFA number go to stderr. Then automatic reauth cannot
+# break JSON output or the MCP stdio channel.
+console = Console(stderr=True)
 
 config.ensure_dirs()
 

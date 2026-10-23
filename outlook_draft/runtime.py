@@ -12,6 +12,7 @@ from .outlook_client import OutlookClient
 from .token_manager import TokenManager
 
 console = Console()
+error_console = Console(stderr=True)
 
 def get_client(
     *,
