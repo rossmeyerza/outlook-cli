@@ -24,7 +24,7 @@ EXPECTED_TOOLS = {
     "contact_search", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
-    "copilot_ask", "auth_status", "mail_send", "draft_send", "teams_send",
+    "copilot_ask", "copilot_app", "auth_status", "mail_send", "draft_send", "teams_send",
 }
 
 
@@ -35,7 +35,7 @@ def _tool_names() -> set[str]:
 def test_full_tool_contract_matches_pre_refactor_snapshot():
     tools = asyncio.run(build_server().list_tools())
     expected = json.loads(Path(__file__).with_name("mcp_tool_contracts.json").read_text())
-    assert [tool.model_dump(mode="json") for tool in tools if tool.name not in {"mail_send", "draft_send", "teams_send"}] == expected
+    assert [tool.model_dump(mode="json") for tool in tools if tool.name not in {"mail_send", "draft_send", "teams_send", "copilot_app"}] == expected
 
 
 def test_registers_exactly_the_phase_one_tools():

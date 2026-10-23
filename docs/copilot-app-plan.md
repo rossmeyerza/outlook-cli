@@ -1,6 +1,46 @@
 # Plan: Copilot in Excel, PowerPoint and Word through a browser extension
 
-Status: not built. This plan is kept for reference (2026-10-22).
+Status: experimental implementation added (2026-10-22). Live tab discovery passed on 2026-10-23. Excel read-only and single-cell edit checks passed. PowerPoint read-only, title-edit and slide-insertion checks passed after manual pane opening. Saved files were independently checked. Unit and local pipe/socket integration tests pass. Do not treat the spike results below as release verification.
+
+## Implementation status
+
+- Bridge, installer, tab status, Excel and PowerPoint adapters, CLI and MCP entry points: implemented. CLI live reads and edits passed for Excel and PowerPoint. PowerPoint automatic pane opening passed with extension 0.2.0 after a refreshed tab was left closed. Earlier opening attempts failed, so cold-start reliability still needs more checks. MCP has fake-client tests, not live acceptance.
+- Version 0.3.1 corrects drawer readiness: a mounted pane frame can report a locally visible input even when its parent drawer is closed. Ross confirmed this after the first automated Word send failed. Parent-side iframe geometry, CSS, clipping and hidden ancestor checks now gate pane selection and pre-send readiness. A complete visible embedding chain to the top frame is required. Synthetic tests pass; live validation remains pending. Controller version 3 is reinjected on extension reload; the Word hook remains revision 3.
+- `--open`, `--new-chat`, `--wait-saved`: implemented, needs live checks. Save evidence is a later Graph modification timestamp. Other writers can change it.
+- Approvals: the controller has a fixed click allowlist. It never clicks approval controls. Version 0.2.0 adds pre-send checks and a 250 ms observer for visible permission dialogs in editor/pane frames. This returns `approval_required` without clicking. Synthetic tests pass; live UI checks are still needed. Inline cards and backend annotation formats remain unverified. Excel pending-action detection still uses an unverified annotation shape. An unrecognised approval can time out.
+- Word: experimental support added in extension 0.3.0 after Ross sent a manual read-only prompt in `dummy_document.docx`. The actual chat turn uses `OfficeAgentSignal`, `OfficeAgentAnnotation`, `OfficeAgentAssistantMessage`, progress and function-invocation schemas, shared with Excel. The earlier `WordCopilotOutputAnnotation` messages were observed before this turn and are not used for its parser. The shared adapter tags actions as Word and exports no function arguments. Word returns `applied: null`. Extension 0.3.2 passed automated read and edit checks on 2026-10-23. Hook revision 3 requires a refreshed Word tab after loading extension 0.3.0.
+- Version 0.2.0 adds `copilot app inspect --tab-id ID`. It exports an allowlisted set of control labels/states and AugLoop schema/property names with counts. It never exports document text, prompt values, tokens, scripts or raw frames. A missing hook revision causes `ask` to require an Office tab refresh. This diagnostic build needs a Chrome extension reload before further live investigation.
+- The native launcher runs `python -m outlook_draft.copilot_bridge`, not the general CLI dispatcher. This keeps CLI output off Chrome's stdout protocol channel.
+- The worker also uses `alarms` for reconnects. A missing host is retried once per minute.
+- Timed-out, interrupted and approval-pending tabs remain blocked until the user checks the document and reloads the tab. Cancellation stops collection, not the Office agent.
+- Excel and Word return `applied: null`. Script source patterns are exported as `mayWrite`, not proof of a write. Generated helper functions caused a false positive during a read-only live check. PowerPoint uses explicit slide activity and client action responses. Independent saved-deck checks confirmed the live title and insertion tests.
+
+### Release checklist (new implementation)
+
+- [x] Load the installed extension in Chrome and list real Office tabs with `app status` (2026-10-23).
+- [x] Excel single-cell edit in the disposable workbook; independently verify the saved E1 marker, all 12 existing cells and unchanged workbook styles (2026-10-23).
+- [ ] Excel new-table generation check.
+- [x] PowerPoint title edit and title-and-content slide insertion. Independently check saved OOXML and inspect rendered slides (2026-10-23). Manual pane opening was required.
+- [x] Follow-up edit in the same Excel conversation after a read-only prompt (2026-10-23). A later read prompt was blocked by an unsent draft, which was not cleared.
+- [ ] Record approvals in each app, implement missing detection, verify no approval is clicked.
+- [ ] Reload the extension while Office tabs are open.
+- [x] `--open` finds/opens disposable test files; `--wait-saved` returns timestamp evidence. PowerPoint automatic pane opening passed once after a refreshed tab was left closed (extension 0.2.0); cold-start reliability remains under test.
+- [x] Background PowerPoint tab: automatic pane opening and read-only answer passed (2026-10-23).
+- [ ] Test `--new-chat`.
+- [ ] Test Chrome closed and disconnected host errors.
+- [x] Word pane/protocol spike and adapter. Extension 0.3.2: read-only prompts with the drawer open and closed, and a single-paragraph edit with saved-file checks (2026-10-23).
+
+Live checks (2026-10-23): after readiness and exact-prompt correlation changes, Excel returned the correct sample-table description. A follow-up set only Sheet1!E1 to `Bridge live check 2026-10-23`. The saved workbook was downloaded and checked: the marker is present, all 12 original cells are unchanged, and `xl/styles.xml` is unchanged. Graph reported a newer modification time before downloads contained the edit, so timestamp evidence is not sufficient. A later read was refused because the prompt box contained a draft; it was not cleared. Evidence files are in `/tmp/copilot-live-checks/`.
+
+PowerPoint initially opened the disposable `Presentation 4.pptx`, but its Copilot pane did not become ready within 30 seconds. After Ross opened the pane manually, the CLI read the two slide titles, changed only slide 1's title to `Copilot bridge live check`, and appended slide 3, `Bridge verification`, with Read/Edit/Saved bullets in the same conversation. The saved title edit matched the original slide XML with only its title replaced; slide 2 was byte-identical. Office also refreshed date fields in the master/layouts from 2026-10-22 to 2026-10-23. After insertion, both existing slide XML files were byte-identical to their prior versions. Slide 3 uses the existing `slideLayout2.xml`. All three final slides were rendered through LibreOffice and visually checked. No Office lock files were present. Evidence is in `/tmp/copilot-live-checks/ppt-*`.
+
+Extension 0.2.0 diagnostics confirmed the closed PowerPoint pane was mounted but lacked a visible prompt. A subsequent CLI request opened it automatically and returned slide 1's correct title, with no action events. Word's dummy document has a ready prompt and an **Allow editing** menu; its protocol differs from Excel. No Word prompt was sent by the CLI.
+
+Word checks (2026-10-23, extension 0.3.2, controller v5): with the drawer open, the CLI sent a read-only prompt to `dummy_document.docx`. Copilot returned a one-sentence summary and called only `get_active_document_html`. With the drawer closed, the bridge opened the drawer and the same prompt completed. A third prompt added one paragraph at the end. The actions were `get_active_document_html`, `begin_edit_session`, `run_js_code` and `end_edit_session`. No approval came up. The saved `.docx` was downloaded and compared with a copy from before the edit. The new last paragraph is `Bridge live check 2026-10-23.` (Copilot added the full stop). All 17 original paragraphs keep their text and order. Word Online wrote the bold run of the previous last paragraph again as `<w:b w:val="1"/><w:bCs w:val="1"/>`, with the same meaning. Only `word/settings.xml` (one new rsid) and `docProps/core.xml` changed in the other parts. Evidence is in `/tmp/copilot-live-checks/word-v5-*` and `/tmp/copilot-live-checks/word-edit/`.
+
+Chrome reload initially raced the previous native host's socket lock. A bounded lock wait and regression test now cover that case.
+
+Local checks: `.venv/bin/python -m pytest -q` (315 passed, 1 skipped) and `node --test extension/tests/*.test.js` (32 passed). The JS fixtures are synthetic and contain no real document or tenant data.
 
 ## Context
 
@@ -125,7 +165,7 @@ outlook-cli copilot native-host           # started by Chrome only (hidden)
 - Get the app from the file extension: `.xlsx` and `.xlsm` are Excel, `.pptx` is PowerPoint and `.docx` is Word. `--app` overrides this.
 - `--open` lets the extension open the file in a new tab when no tab has it. Without `--open`, the command fails with "Open the file in Chrome first."
 - Stream `text` events to stdout. Print `action` and `approval_required` events to stderr as they happen.
-- Return the result: the answer, the actions, any pending approval, and `applied: true`.
+- Return the answer, the actions and any pending approval. Do not infer `applied: true` from Excel script source. The current implementation reports `applied: null` for Excel.
 - `--wait-saved` polls the Graph `lastModifiedDateTime` of the file until it is later than the start time, or until the time limit. The result then reports `saved: true` or `saved: false`.
 - Exit codes: 0 for completed, 3 for approval required, and 1 for errors.
 - `extension install` writes `~/.config/google-chrome/NativeMessagingHosts/com.outlook_cli.copilot.json`. The file has `allowed_origins` set to the fixed extension ID and a launcher in `~/.local/share/outlook-cli/`. The command prints the folder to load with **Load unpacked**.

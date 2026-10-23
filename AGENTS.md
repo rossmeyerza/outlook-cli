@@ -111,6 +111,12 @@ outlook-cli copilot ask "Summarise" --file "General/Plan.docx" --site "Tesco" --
 outlook-cli copilot ask "And the budget?" --continue      # follow-up in the last conversation
 outlook-cli copilot ask "..." --conversation <id> --json  # JSON: text, sources, conversationId
 
+# Copilot in the live Office web editor (experimental, edits the real file)
+outlook-cli copilot extension install      # native host + unpacked extension folder
+outlook-cli copilot app status --json      # host, extension version, Office tabs
+outlook-cli copilot app inspect --tab-id <id> --json  # read-only UI/frame diagnostics
+outlook-cli copilot app ask "<prompt>" --file <url|id|path> --json [--open] [--new-chat] [--wait-saved] [--timeout 300]
+
 # MCP server (stdio, confirmed sending)
 outlook-cli mcp
 outlook-cli --account wpp mcp
@@ -219,6 +225,44 @@ Implementation notes:
 - Ruff uses the rules in `pyproject.toml`. Long literal lines are allowed. The gateway module is excluded because the refactor plan prohibits edits.
 - Do not run `uv run`, `uv sync` or `uv lock` in this repo. They replace `.venv` and break the global `outlook-cli`. Use `uv pip install --python .venv/bin/python <pkg>` and `.venv/bin/python -m pytest -q`.
 
+## Experimental Office-app Copilot bridge
+
+- `copilot extension install` copies `extension/` to the user data directory and writes the Chrome native host manifest and launcher. The user loads the folder in `chrome://extensions`. The fixed extension ID is `lijjlmfmgilgjikalapbblbadhabmnae`.
+- `copilot app status` lists Office editor tabs. `copilot app ask` takes one resolved file and can edit it in place. Excel and PowerPoint have live acceptance checks. Word support is experimental. Extension 0.3.2 passed read-only and single-paragraph edit checks on a disposable document. CLI handlers are in `commands/copilot_app.py`; shared logic and the native host are in `copilot_bridge/`.
+- `--file` accepts a full SharePoint/OneDrive browser URL, a drive item ID or a path. Bare paths resolve in the user's own OneDrive only. For shared files (SharePoint or another person's OneDrive), pass the browser URL. The tab is matched by `listItemUniqueId` (the `sourcedoc` GUID), not by title.
+- Pane readiness: the pane is "presented" only when the frame that embeds it reports the iframe visible (`framePresented` in `sw.js`). Word keeps the pane iframe mounted, with a ready input, while the drawer is closed, so the pane cannot judge this itself. Do not require a visible chain to the top frame: the SharePoint host page reports the Word editor iframe as hidden while it is on screen. `diagnostics.visibilityReason` uses computed CSS and geometry only; `aria-hidden` and `inert` are not visual hiding. Parent frames learn child URLs through a `frame_probe`/`frame_identity` postMessage handshake, because navigated iframes do not expose their URL in `src`.
+- Reload rules: after changing `sw.js`, `controller.js` or `diagnostics.js`, reload the extension; the worker reinjects controllers into open tabs. After changing `hook.js` or `adapters/`, also refresh the Office tab, because the main-world hook loads at `document_start`. Check `controllerVersion` and `hookRevision` in `app status` before trusting a live test. The worker reads `chrome.runtime.lastError` on host disconnect and reconnects the transport; it never resends a prompt.
+- The browser-wide socket is `config.DATA_DIR/copilot-bridge.sock`, not the active account directory. It uses 0600 permissions, a 0700 parent and Linux `SO_PEERCRED`. The host starts through `python -m outlook_draft.copilot_bridge`. stdout is Chrome's length-framed protocol channel. Logs contain no prompts, document frames or tokens.
+- The extension hook runs in the editor's main world. Adapters export only answer text and short action events. Never export raw AugLoop frames: PowerPoint sends the whole document model. Never tag or change the editor DOM. Only the pane prompt control receives text.
+- The controller clicks only Copilot, Send and New chat controls. Never add approval controls to its allowlist. Version 0.2.0 has pre-send checks and a passive observer for visible permission dialogs. Live verification and inline/backend approval formats are still incomplete. A pending approval can time out. Timeout/cancel stops collection, not the Office agent. Never retry automatically. Check the document, then reload the tab to clear its uncertain state.
+- `copilot_app` is a destructive, non-idempotent MCP tool. Shared-file edits are visible to others. Excel and Word `applied` is null; script source only supplies a `mayWrite` hint. PowerPoint `applied` uses slide activity and client responses, not independent verification. `--wait-saved` uses a later Graph timestamp; other writers can cause it.
+- `copilot app inspect --tab-id ID` is read-only. It returns allowlisted UI control states and schema/property names with counts, not document/prompt values, tokens or raw frames. Use it for pane-opening and Word protocol investigation. Word requires hook revision 3 and a refreshed tab after loading extension 0.3.0. Word uses the shared OfficeAgent adapter in `adapters/excel.js`, not startup WordCopilotOutput messages. Never export Word function arguments.
+- Verify with `.venv/bin/python -m pytest -q` and `node --test extension/tests/*.test.js`. These use synthetic fixtures. Complete the live checklist in `docs/copilot-app-plan.md` before claiming release acceptance. The spike's checks do not verify this implementation.
+
+### Handoff state (2026-10-23, second session)
+
+The bridge work and the two fixes below are committed on `main` and are not pushed. Last local run: 320 Python passed (1 skipped), 35 JS passed, Ruff clean.
+
+Chrome runs extension 0.3.2 (controller v5, hook revision 3). All Office tabs show controller v5.
+
+Verified live on disposable files:
+- Excel `Book 1.xlsx`: read-only summary, then a single-cell edit (Sheet1!E1). The saved file matched. A Graph timestamp advanced before the download contained the edit, so `--wait-saved` alone is not proof.
+- PowerPoint `Presentation 4.pptx`: read titles, title-only edit, slide insertion. Saved OOXML compared and slides rendered.
+- Word `dummy_document.docx` (item ID `01LT2YGQYBBGUCIETYMVA2PBZIDTQ5ZQMH`): read-only prompt with the drawer open, read-only prompt with the drawer closed (automatic opening worked), and an edit that added the paragraph `Bridge live check 2026-10-23.` at the end. The saved `.docx` was compared with a copy from before the edit; see `docs/copilot-app-plan.md`.
+
+Fixed in this session:
+- `auth.py` writes login progress and the MFA number to stderr. Automatic reauth no longer breaks `--json` output or the MCP stdio channel. With `--json`, `cli.py` writes errors to stderr.
+- `files download <drive-item-id>` without `--site` now resolves the OneDrive item by ID, then falls back to the path.
+
+Next steps:
+1. Live approval detection (no real approval recorded in any app).
+2. The `--new-chat` live check.
+3. Excel new-table generation.
+4. Cold-start reliability of PowerPoint pane opening.
+5. A live `copilot_app` MCP call.
+
+Test rules: use only disposable files. Never test on the open working documents (`Innovative-Consulting-David-Update.pptx`, the DELL deck, the Infosum document). A failed or timed-out request marks the tab uncertain; ask Ross to check the document and refresh the tab instead of retrying. Live evidence files are in `/tmp/copilot-live-checks/`. Chrome's `--remote-debugging-port=9222` flag is set but nothing listens on it, so the extension's `inspect` is the only page diagnostic channel.
+
 ## File Layout
 
 ```
@@ -250,6 +294,7 @@ Implementation notes:
     errors.py                   # Exceptions
     links.py                    # SharePoint/OneDrive URL extraction and Graph share encoding
     copilot.py                  # Copilot StreamHub client, file annotations, answer parsing
+    copilot_bridge/             # Office-app bridge: protocol, native_host, client, app, install, __main__
     outlook_client.py           # Outlook REST API v2.0 client
     token_manager.py            # Token management + reauth trigger
     commands/
@@ -261,12 +306,14 @@ Implementation notes:
       calendar.py               # Calendar subcommands
       contacts.py               # Contacts subcommands
       copilot.py                # Copilot ask command and file resolution
+      copilot_app.py            # copilot app status/inspect/ask and copilot extension install
       files.py                  # OneDrive and SharePoint file operations via Graph
       mail.py                   # Mail subcommands
       signature.py              # Signature fetch via OWA API interception
       tasks.py                  # Tasks subcommands
       teams.py                  # Teams read subcommands
     mcp/                        # MCP server: server.py, clients.py, one module per tool area
+  extension/                    # Chrome MV3 bridge: sw.js, controller.js, diagnostics.js, hook.js, adapters/, tests/
 ```
 
 ## Caveats

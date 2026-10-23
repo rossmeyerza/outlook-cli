@@ -13,6 +13,14 @@ Source: Copilot gave this list itself, in the work chat, on 2026-10-22. The list
 - **The CLI returns only text.** `copilot ask` does not yet return or download the files that Copilot creates.
 - **Use the guarded CLI commands to send.** To send email or Teams messages, use `mail send`, `draft send` or `teams send`. These commands preview and need `--yes`. The MCP send tools need `confirm=true`.
 
+## Separate Office-app bridge (experimental)
+
+`copilot app ask` and the `copilot_app` MCP tool use the Copilot pane in the user's Chrome editor. Unlike the chat tools below, they can edit the live Excel workbook or PowerPoint deck. They do not capture Office tokens or export raw AugLoop traffic. Co-authors see edits at once.
+
+The controller never clicks **Done**, **Undo**, **Keep**, **Allow editing** or approval controls. Version 0.2.0 checks for visible permission dialogs before sending and while a request runs, then reports `approval_required` without clicking. This has synthetic tests only. Inline cards and app-specific approval messages still need live recordings. A pending request can time out instead of returning an approval result. Do not retry automatically after a timeout or disconnect. Edits can already have been applied.
+
+The result includes `status`, `text`, `actions`, `approval`, `applied` and `saved`. Excel reports `applied: null`: generated script helpers can contain unused write code, so source patterns are only a `mayWrite` hint. PowerPoint uses explicit slide activity plus client responses, not an independent file check. `saved` is null unless requested. A later Graph modification timestamp is not proof that the specific edit was saved. Word support is experimental in 0.3.0 and returns `applied: null`; automated Word acceptance checks remain pending. See [the release checklist](copilot-app-plan.md).
+
 ## Test results (2026-10-22)
 
 These tests used only Ross's own mailbox.

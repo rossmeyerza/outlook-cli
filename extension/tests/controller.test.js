@@ -1,0 +1,37 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+global.window = { addEventListener() {} };
+global.chrome = { runtime: { id: "extension" } };
+const controller = require("../controller.js");
+
+test("editor and pane frame detection", () => {
+  assert.deepEqual(controller.frameRole({ hostname: "eu.officeapps.live.com", pathname: "/x/_layouts/xlviewerinternal.aspx" }), { role: "editor", app: "excel" });
+  assert.deepEqual(controller.frameRole({ hostname: "eu.officeapps.live.com", pathname: "/pods/ppt.aspx" }), { role: "editor", app: "powerpoint" });
+  assert.deepEqual(controller.frameRole({ hostname: "x.resources.office.net", pathname: "/thing/taskpane.html" }), { role: "pane", app: null });
+  assert.equal(controller.frameRole({ hostname: "evil.test", pathname: "/pods/ppt.aspx" }).role, "other");
+});
+
+function fakeElement(label, opts = {}) {
+  return {
+    tagName: opts.editable ? "DIV" : "BUTTON", isContentEditable: opts.editable || false,
+    getAttribute: (name) => name === "aria-label" ? label : null,
+    getBoundingClientRect: () => ({ width: opts.hidden ? 0 : 10, height: 10 }),
+  };
+}
+
+test("prompt selectors find only labelled editable elements", () => {
+  const wrong = fakeElement("Chat input");
+  const hidden = fakeElement("Chat input", { editable: true, hidden: true });
+  const target = fakeElement("Chat input", { editable: true });
+  const nodes = [wrong, hidden, target];
+  let i = 0;
+  const root = { createTreeWalker: () => ({ currentNode: nodes[0], nextNode: () => nodes[++i] }) };
+  assert.equal(controller.findByLabel(controller.PROMPT_LABELS, { editable: true, root }), target);
+});
+
+test("the click allowlist cannot approve, keep, undo, or change editing", () => {
+  for (const label of ["Done", "Undo", "Keep", "Allow editing", "Approve", "Confirm", "Apply"])
+    assert.throws(() => controller.safeClick(fakeElement(label), [label]), /refused/);
+  assert.throws(() => controller.safeClick(fakeElement("Share"), controller.CLICKABLE.send), /refused/);
+});

@@ -36,6 +36,10 @@ Repository = "https://github.com/rossmeyerza/outlook-draft-cli"
 include = ["outlook_draft*"]
 exclude = ["session_state*", "tests*"]
 
+[tool.setuptools.data-files]
+"share/outlook-cli/extension" = ["extension/manifest.json", "extension/sw.js", "extension/hook.js", "extension/diagnostics.js", "extension/controller.js"]
+"share/outlook-cli/extension/adapters" = ["extension/adapters/common.js", "extension/adapters/excel.js", "extension/adapters/powerpoint.js"]
+
 [tool.pytest.ini_options]
 markers = [
     "live: tests that mutate live Outlook data and require OUTLOOK_CLI_LIVE=1",

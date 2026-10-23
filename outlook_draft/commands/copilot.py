@@ -145,6 +145,9 @@ def cmd_copilot_ask(args: argparse.Namespace) -> None:
 def register(sub) -> None:
     p_copilot = sub.add_parser("copilot", help="Ask Microsoft 365 Copilot (internal API, can change)")
     copilot_sub = p_copilot.add_subparsers(dest="copilot_command", required=True)
+    from . import copilot_app
+
+    copilot_app.register(copilot_sub)
 
     cmd_ask = copilot_sub.add_parser(
         "ask",

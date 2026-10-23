@@ -298,6 +298,25 @@ Warning: Microsoft has no public API for this access. The command uses the inter
 
 The command needs a Microsoft 365 Copilot licence. `outlook-cli auth` captures the Copilot token after the normal login. The token is valid for about an hour. When it expires, the CLI gets a new token from the saved browser session, with no password or MFA step.
 
+### Copilot in Office web apps (experimental)
+
+This bridge sends prompts to the Copilot pane in Excel or PowerPoint in your Chrome session. It can edit the live file, not a copy. Co-authors see changes at once. Word support is experimental in extension 0.3.0. Its OfficeAgent chat schemas were observed on a dummy document, but automated Word acceptance checks remain pending.
+
+```bash
+outlook-cli copilot extension install
+# Open chrome://extensions, enable Developer mode, then Load unpacked.
+# Select the folder printed by the install command.
+outlook-cli copilot app status --json
+outlook-cli copilot app ask "Add a sample table in A1:C4" --file "Documents/Test.xlsx" --json
+outlook-cli copilot app ask "Add an agenda slide" --file "Documents/Test.pptx" --open --wait-saved
+```
+
+Use disposable test files first. Excel read-only and single-cell edit checks passed. PowerPoint read-only, title-edit and slide-insertion checks passed after manual pane opening. Saved files were independently checked. Automatic PowerPoint pane opening also passed after a tab refresh, including a background-tab read; cold-start reliability still needs checks. Approval detection is not verified. It never clicks approval controls or changes **Allow editing**. An approval, timeout or lost connection does not undo edits. Inspect the document before retrying. Do not use the pane manually while a request runs.
+
+`--new-chat` starts a new pane conversation. Otherwise, the pane keeps its current conversation. `--open` permits a new tab. Without it, the file must already be open. `--wait-saved` checks Graph modification time. A changed timestamp is evidence of a file update, not proof that these specific edits were saved.
+
+The `copilot_app` MCP tool returns the same result. It is marked as destructive and non-idempotent. The bridge uses a same-user Unix socket and Chrome native messaging. It does not capture Office tokens. See [the implementation plan and release checklist](docs/copilot-app-plan.md).
+
 ### Auth and config
 
 ```bash

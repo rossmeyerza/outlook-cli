@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..commands.copilot import resolve_copilot_file
+from ..copilot_bridge.app import ask_app, resolve_app_file
 from .clients import copilot_client, files_client
 from .shaping import JsonDict
 
@@ -26,4 +27,23 @@ def copilot_ask(
     return result
 
 
-TOOLS = [copilot_ask]
+def copilot_app(
+    prompt: str,
+    file: str,
+    app: str | None = None,
+    site: str | None = None,
+    library: str | None = None,
+    new_chat: bool = False,
+    open_tab: bool = False,
+    wait_saved: bool = False,
+) -> JsonDict:
+    """EXPERIMENTAL: Send a prompt to Copilot in a live Excel, PowerPoint or Word web editor in the user's Chrome. This can edit the live document. Co-authors see edits at once. SharePoint version history can restore earlier versions. Use only when the user asks for this operation. The Chrome extension and native host must be installed. Never approves actions or changes the Allow editing setting. Approval detection still needs live verification. Word uses the observed OfficeAgent chat protocol, but automated Word reads and edits still need live acceptance. A timeout or disconnect does not undo edits: never retry automatically. `saved` uses Graph modification time, not proof that these specific edits were saved."""
+    with files_client() as gc:
+        resolved = resolve_app_file(gc, file, site=site, library=library, app=app)
+        result = ask_app(gc, prompt, resolved, new_chat=new_chat, open_tab=open_tab, wait_saved=wait_saved)
+    if resolved["shared"]:
+        result["warning"] = "This file is outside the user's own OneDrive. Other people can see edits at once."
+    return result
+
+
+TOOLS = [copilot_ask, copilot_app]
