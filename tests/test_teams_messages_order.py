@@ -81,3 +81,27 @@ def test_message_metadata_uses_same_order() -> None:
     client.list_teams_message_metadata("chat-1", top=1)
 
     assert client.calls[0]["params"] == {"$top": "1", "$orderby": "createdDateTime desc"}
+
+
+def test_cli_displays_newest_message_first(monkeypatch) -> None:
+    from argparse import Namespace
+    from io import StringIO
+
+    from mcp_fakes import FakeClient
+    from rich.console import Console
+
+    from outlook_draft.commands import teams
+
+    messages = [
+        {"createdDateTime": "2026-11-02T09:00:00Z", "body": {"content": "Earlier message"}},
+        {"createdDateTime": "2026-11-02T10:00:00Z", "body": {"content": "Latest message"}},
+    ]
+    fake = FakeClient(list_teams_messages=messages)
+    output = StringIO()
+    monkeypatch.setattr(teams.runtime, "get_graph_client", lambda: fake)
+    monkeypatch.setattr(teams.runtime, "console", Console(file=output, width=120))
+
+    teams.cmd_teams_messages(Namespace(chat_id=teams.SELF_CHAT_ID, count=20, full=False))
+
+    rendered = output.getvalue()
+    assert rendered.index("Latest message") < rendered.index("Earlier message")

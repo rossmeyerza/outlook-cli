@@ -111,7 +111,7 @@ def _message_text(message: JsonDict) -> str:
 
 
 def teams_messages(chat_id: str, count: int = 20) -> JsonDict:
-    """Read recent messages in a Teams chat by full chat ID, oldest first. Read-only."""
+    """Read recent messages in a Teams chat by full chat ID, newest first. Read-only."""
     with graph_client() as client:
         if chat_id == SELF_CHAT_ID:
             chat: JsonDict = {"id": SELF_CHAT_ID, "topic": "Self chat", "chatType": "oneOnOne"}
@@ -120,7 +120,7 @@ def teams_messages(chat_id: str, count: int = 20) -> JsonDict:
             chat = client.get_teams_chat(chat_id)
             members = client.list_teams_chat_members(chat_id, top=20)
         messages = client.list_teams_messages(chat_id, top=clamp(count, high=50))
-    messages.sort(key=lambda m: m.get("createdDateTime", ""))
+    messages.sort(key=lambda m: m.get("createdDateTime", ""), reverse=True)
     return {
         "chat": _chat_summary(chat, members),
         "messages": [

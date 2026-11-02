@@ -684,7 +684,7 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
         console.print("[dim]No messages found in this Teams chat.[/]")
         return
 
-    messages.sort(key=lambda item: item.get("createdDateTime", ""))
+    messages.sort(key=lambda item: item.get("createdDateTime", ""), reverse=True)
     table = Table(title=f"Messages, {_chat_title(chat, members)}")
     table.add_column("Time", style="dim", width=12)
     table.add_column("Sender", width=24)

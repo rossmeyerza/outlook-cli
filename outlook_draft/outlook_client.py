@@ -885,9 +885,8 @@ class OutlookClient:
     def _list_chat_messages_newest_first(self, chat_id: str, top: int) -> list[dict[str, Any]]:
         """Fetch the newest `top` messages in a chat, following Graph paging.
 
-        Graph returns at most 50 messages per page. Without an explicit
-        `$orderby` this tenant returned the oldest messages first, so long
-        chats never showed recent messages. Callers sort for display.
+        Graph returns at most 50 messages per page. Request creation-date
+        order explicitly to select the most recently created messages.
         """
         messages: list[dict[str, Any]] = []
         path = f"/chats/{chat_id}/messages"

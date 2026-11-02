@@ -58,8 +58,8 @@ def test_teams_messages_orders_and_strips_html(monkeypatch):
 
     result = teams.teams_messages(CHAT["id"], count=10)
 
-    assert [m["text"] for m in result["messages"]] == ["[system event]", "first", "second"]
-    assert result["messages"][2]["sender"] == "Dana"
+    assert [m["text"] for m in result["messages"]] == ["second", "first", "[system event]"]
+    assert result["messages"][0]["sender"] == "Dana"
     assert fake.call("list_teams_messages") == ((CHAT["id"],), {"top": 10})
 
 

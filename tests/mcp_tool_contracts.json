@@ -1152,7 +1152,7 @@
   },
   {
     "annotations": null,
-    "description": "Read recent messages in a Teams chat by full chat ID, oldest first. Read-only.",
+    "description": "Read recent messages in a Teams chat by full chat ID, newest first. Read-only.",
     "execution": null,
     "icons": null,
     "inputSchema": {
