@@ -19,8 +19,10 @@ Usage:
 import base64
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -40,6 +42,7 @@ KNOWN_DOMAINS = [
     "graph.microsoft.com",
     "outlook.office365.com",
     "outlook.office.com",
+    "outlook.cloud.microsoft",
 ]
 
 
@@ -84,7 +87,17 @@ def _save_tokens(tokens: dict[str, str]):
         "tokens": tokens,
         "captured_at": datetime.now().isoformat(),
     }
-    config.TOKENS_FILE.write_text(json.dumps(data, indent=2))
+    # Replace the complete file so readers cannot see a partial JSON document.
+    with NamedTemporaryFile(mode="w", dir=config.TOKENS_FILE.parent, delete=False) as temporary:
+        temporary_path = temporary.name
+        try:
+            temporary.write(json.dumps(data, indent=2))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            os.replace(temporary_path, config.TOKENS_FILE)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
 
 def _load_tokens() -> dict[str, str]:
@@ -97,6 +110,37 @@ def _load_tokens() -> dict[str, str]:
     except Exception:
         log.debug("Best-effort operation failed", exc_info=True)
         return {}
+
+
+def _save_tokens_partial(captured: dict[str, str]) -> None:
+    """Save new tokens without removing tokens for other services."""
+    try:
+        _save_tokens({**_load_tokens(), **captured})
+    except OSError:
+        console.print("[yellow]Could not save tokens during login. Login will continue.[/]")
+
+
+def _on_outlook(url: str) -> bool:
+    """Return True if the URL uses an Outlook Web host."""
+    try:
+        return urlsplit(url).hostname in {"outlook.office.com", "outlook.cloud.microsoft"}
+    except (ValueError, AttributeError):
+        return False
+
+
+def _token_domain(host: str, token: str) -> str | None:
+    """Return the cache key for a token captured on this host."""
+    if host != "outlook.cloud.microsoft":
+        return host
+    audience = _token_claims(token).get("aud", "")
+    audiences = audience if isinstance(audience, list) else [audience]
+    if any(
+        isinstance(value, str)
+        and value.rstrip("/") in {"https://outlook.office.com", "https://outlook.office365.com"}
+        for value in audiences
+    ):
+        return config.OUTLOOK_TOKEN_DOMAIN
+    return None
 
 
 def _test_token(token: str, url: str) -> bool:
@@ -120,20 +164,27 @@ def _make_request_interceptor(captured: dict[str, str]):
         auth = request.headers.get("authorization", "")
         if not auth.startswith("Bearer "):
             return
-        url = request.url
+        try:
+            host = urlsplit(request.url).hostname
+        except ValueError:
+            return
         for domain in KNOWN_DOMAINS:
-            if domain in url:
+            if domain == host:
                 new_token = auth.removeprefix("Bearer ")
-                token_domain = domain
+                token_domain = _token_domain(domain, new_token)
+                if token_domain is None:
+                    return
                 if token_domain not in captured:
                     captured[token_domain] = new_token
                     console.print(f"[dim]  Captured token for {token_domain}[/]")
+                    _save_tokens_partial(captured)
                 else:
                     new_scopes = _token_scopes(new_token)
                     old_scopes = _token_scopes(captured[token_domain])
                     if len(new_scopes) > len(old_scopes):
                         captured[token_domain] = new_token
                         console.print(f"[dim]  Updated token for {token_domain} (broader scopes)[/]")
+                        _save_tokens_partial(captured)
                 break
     return on_request
 
@@ -269,7 +320,7 @@ def _wait_for_mfa(page) -> None:
         # Check if we already got through (no MFA needed)
         try:
             url = page.url
-            if "outlook.office.com" in url and "login" not in url and "authn" not in url:
+            if _on_outlook(url):
                 return
         except Exception:
             log.debug("Best-effort operation failed", exc_info=True)
@@ -287,7 +338,7 @@ def _wait_for_mfa(page) -> None:
     # Wait for approval and redirect
     console.print("[dim]Waiting for MFA approval (up to 3 minutes)...[/]")
     try:
-        page.wait_for_url("**/outlook.office.com/**", timeout=180000)
+        page.wait_for_url(_on_outlook, timeout=180000)
         page.wait_for_timeout(8000)
     except Exception as e:
         log.debug("Best-effort operation failed", exc_info=True)
@@ -322,7 +373,9 @@ def _extract_storage_tokens(page, captured: dict[str, str]) -> None:
                 secret = t.get("secret", "")
                 for domain in KNOWN_DOMAINS:
                     if domain in target:
-                        captured[domain] = secret
+                        token_domain = _token_domain(domain, secret)
+                        if token_domain is not None:
+                            captured[token_domain] = secret
                         break
                 else:
                     if secret and "graph.microsoft.com" not in captured:
@@ -380,7 +433,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         page.on("request", _make_request_interceptor(captured))
 
         # Navigate to Outlook calendar (triggers SSO + lots of API calls)
-        page.goto("https://outlook.office.com/calendar", wait_until="domcontentloaded")
+        page.goto("https://outlook.cloud.microsoft/calendar", wait_until="domcontentloaded")
         on_login_page = _wait_for_login_or_tokens(page, captured)
 
         if on_login_page and config.MS_EMAIL:
@@ -397,7 +450,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
             console.print("[dim]Navigating to capture tokens...[/]")
             try:
                 page.goto(
-                    "https://outlook.office.com/calendar/view/week",
+                    "https://outlook.cloud.microsoft/calendar/view/week",
                     wait_until="domcontentloaded",
                 )
                 page.wait_for_timeout(8000)
@@ -408,12 +461,15 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         # Fallback: extract MSAL tokens from browser storage
         if not captured:
             _extract_storage_tokens(page, captured)
+            if captured:
+                _save_tokens_partial(captured)
 
         if captured:
             copilot_token = _capture_copilot_in_context(context)
             if copilot_token:
                 captured[config.COPILOT_TOKEN_DOMAIN] = copilot_token
                 console.print(f"[dim]  Captured token for {config.COPILOT_TOKEN_DOMAIN}[/]")
+                _save_tokens_partial(captured)
             else:
                 console.print("[yellow]No Microsoft 365 Copilot token captured. 'copilot' commands will not work.[/]")
 
@@ -430,7 +486,7 @@ def capture_tokens_via_browser(headless: bool = False) -> dict[str, str]:
         browser.close()
 
     if captured:
-        _save_tokens(captured)
+        _save_tokens({**_load_tokens(), **captured})
         console.print(f"[green]Captured tokens for: {', '.join(captured.keys())}[/]")
     else:
         console.print("[red]Could not capture any bearer tokens.[/]")

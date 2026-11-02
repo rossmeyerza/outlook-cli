@@ -348,6 +348,8 @@ Account profiles are separate `.env` files in `~/.config/outlook-cli/accounts/<n
 
 `outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from the active account env file, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to the active account's `session_state/tokens.json`.
 
+Login opens `outlook.cloud.microsoft` directly. It accepts both `outlook.office.com` and `outlook.cloud.microsoft` after sign-in. Outlook tokens from the new host use the existing `outlook.office.com` cache key. Each captured token is saved during login. Existing tokens for other services are kept. The cache file is replaced only after the new contents are written. If a later login step fails, tokens already saved remain available.
+
 Use a visible browser instead:
 
 ```bash
