@@ -38,6 +38,9 @@ KNOWN_DOMAINS = [
     "outlook.office365.com",
     "outlook.office.com",
     "substrate.office.com",
+    # Outlook Web moved here (seen 2 Nov 2026). Its tokens are kept under
+    # outlook.office.com when issued for Outlook, see _make_request_interceptor.
+    "outlook.cloud.microsoft",
 ]
 PREFERRED_GRAPH_SCOPES = {"Notes.Read", "Notes.ReadWrite"}
 
@@ -61,6 +64,37 @@ def _save_tokens(tokens: dict[str, str]):
         "captured_at": datetime.now().isoformat(),
     }
     config.TOKENS_FILE.write_text(json.dumps(data, indent=2))
+
+
+def _token_aud(token) -> str:
+    """Decode the JWT audience without verification ('' if unreadable)."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (4 - len(payload) % 4)
+        aud = json.loads(base64.urlsafe_b64decode(payload)).get("aud", "")
+        return aud if isinstance(aud, str) else " ".join(aud)
+    except Exception:
+        return ""
+
+
+def _on_outlook(url) -> bool:
+    """True once the browser is on Outlook Web itself (old or new address), not a login page."""
+    try:
+        host = url.split("/")[2]
+    except (IndexError, AttributeError):
+        return False
+    return host in ("outlook.office.com", "outlook.cloud.microsoft")
+
+
+def _save_tokens_partial(captured) -> None:
+    """Save as soon as a token is captured, merged with what is on disk,
+    so a stalled or killed login keeps what was approved (2 Nov 2026)."""
+    try:
+        merged = _load_tokens()
+        merged.update(captured)
+        _save_tokens(merged)
+    except Exception as e:
+        console.print(f"[dim]  Could not save token early: {e}[/]")
 
 
 def _load_tokens() -> dict[str, str]:
@@ -98,9 +132,16 @@ def _make_request_interceptor(captured: dict[str, str]):
             if domain in url:
                 new_token = auth.removeprefix("Bearer ")
                 token_domain = "www.onenote.com" if domain == "onenote.com" else domain
+                if domain == "outlook.cloud.microsoft":
+                    # New Outlook Web host still calls with outlook.office.com tokens.
+                    # Keep only those, under the key the CLI reads.
+                    if "outlook.office" not in _token_aud(new_token):
+                        break
+                    token_domain = "outlook.office.com"
                 if token_domain not in captured:
                     captured[token_domain] = new_token
                     console.print(f"[dim]  Captured token for {token_domain}[/]")
+                    _save_tokens_partial(captured)
                 else:
                     new_scopes = _token_scopes(new_token)
                     old_scopes = _token_scopes(captured[token_domain])
@@ -117,6 +158,7 @@ def _make_request_interceptor(captured: dict[str, str]):
                     if len(new_scopes) > len(old_scopes) or has_preferred_graph_scope or has_preferred_onenote_scope:
                         captured[token_domain] = new_token
                         console.print(f"[dim]  Updated token for {token_domain} (broader scopes)[/]")
+                        _save_tokens_partial(captured)
                 break
     return on_request
 
@@ -247,7 +289,7 @@ def _wait_for_mfa(page) -> None:
         # Check if we already got through (no MFA needed)
         try:
             url = page.url
-            if "outlook.office.com" in url and "login" not in url and "authn" not in url:
+            if _on_outlook(url):
                 return
         except Exception:
             pass
@@ -264,7 +306,7 @@ def _wait_for_mfa(page) -> None:
     # Wait for approval and redirect
     console.print("[dim]Waiting for MFA approval (up to 3 minutes)...[/]")
     try:
-        page.wait_for_url("**/outlook.office.com/**", timeout=180000)
+        page.wait_for_url(_on_outlook, timeout=180000)
         page.wait_for_timeout(8000)
     except Exception as e:
         console.print(f"[yellow]Timeout waiting for Outlook: {e}[/]")

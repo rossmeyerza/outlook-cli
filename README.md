@@ -302,7 +302,7 @@ Account profiles are separate `.env` files in `~/.config/outlook-cli/accounts/<n
 
 `outlook-cli signature fetch` opens a headless browser using your saved OWA session, intercepts the signature API responses that OWA fires on load, and saves the active new-message and reply signatures to the active account's signature files. No MFA required after the first `auth`. On a fresh install, `auth` and `signature fetch` run automatically.
 
-`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from the active account env file, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to the active account's `session_state/tokens.json`.
+`outlook-cli auth` runs the built-in headless auth flow: headless Chromium, enters credentials from the active account env file, prints the MFA challenge number to the console (works with Okta Verify, Microsoft Authenticator, and similar push-based MFA), waits for approval, and saves tokens to the active account's `session_state/tokens.json`. After MFA it accepts Outlook Web on either `outlook.office.com` or Microsoft's newer `outlook.cloud.microsoft` address, and it writes each token to disk as soon as it is captured, so a login that stalls later still keeps what was approved.
 
 Use a visible browser instead:
 
