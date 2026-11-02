@@ -882,29 +882,48 @@ class OutlookClient:
 
         return members[:top]
 
+    def _list_chat_messages_newest_first(self, chat_id: str, top: int) -> list[dict[str, Any]]:
+        """Fetch the newest `top` messages in a chat, following Graph paging.
+
+        Graph returns at most 50 messages per page. Without an explicit
+        `$orderby` this tenant returned the oldest messages first, so long
+        chats never showed recent messages. Callers sort for display.
+        """
+        messages: list[dict[str, Any]] = []
+        path = f"/chats/{chat_id}/messages"
+        params: dict[str, str] | None = {
+            "$top": str(min(max(top, 1), 50)),
+            "$orderby": "createdDateTime desc",
+        }
+
+        while len(messages) < top and path:
+            resp = self._request(
+                "GET",
+                path,
+                params=params,
+                extra_headers={"Prefer": "include-unknown-enum-members"},
+            )
+            data = resp.json()
+            messages.extend(data.get("value", []))
+            next_link = data.get("@odata.nextLink")
+            if not next_link:
+                break
+            path = next_link
+            params = None
+
+        return messages[:top]
+
     def list_teams_messages(self, chat_id: str, top: int = 20) -> list[dict[str, Any]]:
-        """List messages for a Teams chat."""
-        resp = self._request(
-            "GET",
-            f"/chats/{chat_id}/messages",
-            params={"$top": str(top)},
-            extra_headers={"Prefer": "include-unknown-enum-members"},
-        )
-        return resp.json().get("value", [])
+        """List the newest messages for a Teams chat."""
+        return self._list_chat_messages_newest_first(chat_id, top)
 
     def list_teams_message_metadata(self, chat_id: str, top: int = 10) -> list[dict[str, Any]]:
-        """List Teams message metadata for sorting.
+        """List Teams message metadata for sorting, newest first.
 
         Graph does not allow `$select` on this endpoint in this tenant, so this
         fetches the normal message objects and callers only inspect metadata.
         """
-        resp = self._request(
-            "GET",
-            f"/chats/{chat_id}/messages",
-            params={"$top": str(top)},
-            extra_headers={"Prefer": "include-unknown-enum-members"},
-        )
-        return resp.json().get("value", [])
+        return self._list_chat_messages_newest_first(chat_id, top)
 
     def send_teams_message(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
         """Send a message to a Teams chat without automatic retries."""
