@@ -62,7 +62,8 @@ function hook(pathname = "/x/xlviewerinternal.aspx", prompt = "Read the table") 
   }
   return { signal, pptSignal, recv, sending, reply, diagnostics,
     // Plain copies: objects from the vm context have another realm's prototypes.
-    events: () => JSON.parse(JSON.stringify(emitted.filter((m) => m.kind === "event").map((m) => m.event))) };
+    events: () => JSON.parse(JSON.stringify(emitted.filter((m) => m.kind === "event" && m.event.type !== "signal").map((m) => m.event))),
+    signals: () => emitted.filter((m) => m.kind === "event" && m.event.type === "signal").map((m) => m.event.kind) };
 }
 
 test("startup signals do not bind the active request", () => {
@@ -156,4 +157,16 @@ test("task status names reach the worker after binding", () => {
   h.pptSignal("q1", "Fix slide 2");
   h.recv(task);
   assert.deepEqual(h.events().at(-1), { type: "task_status", value: "Completed" });
+});
+
+test("each prompt signal is counted by class, so a double send is visible", () => {
+  const h = hook("/pods/ppt.aspx", "Fix slide 2");
+  h.pptSignal("startup", "");
+  h.pptSignal("q1", "Fix slide 2");
+  h.pptSignal("q1", "Fix slide 2");
+  h.pptSignal("op", "", { taskOperationParams: { operation: "resume" } });
+  h.pptSignal("q9", "Fix slide 2");
+  assert.deepEqual([...h.signals()], ["ignored", "bound", "same", "related", "repeated"]);
+  const stats = h.diagnostics().request;
+  assert.deepEqual({ ...stats }, { bound: "exact", signals: 5, ignored: 1, same: 1, related: 1, repeated: 1 });
 });

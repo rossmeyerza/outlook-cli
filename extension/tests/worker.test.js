@@ -37,6 +37,9 @@ function worker(ui = {}) {
           promptBox: ui.editorReady && ui.paneOpen, stopButton: ui.stopButton } });
         return frames;
       }
+      if (cmd.action === "send_prompt" && ui.sendResult) {
+        return [{ frameId: target.frameIds[0], result: ui.sendResult }];
+      }
       if (cmd.action === "new_chat") {
         ui.newChatCalls = (ui.newChatCalls || 0) + 1;
         return [{ frameId: target.frameIds[0], result: ui.newChatResult || { ok: true, newChat: "clicked" } }];
@@ -342,4 +345,36 @@ test("--new-chat fails before typing when the pane cannot start a new chat", asy
   assert.equal(result.sent, false);
   assert(!calls.some((c) => c.action === "send_prompt"));
   assert.equal(api.uncertainTabs.has(7), false);
+});
+
+test("a send that the pane refused before clicking leaves the tab usable", async () => {
+  const { api, sent } = worker({ sendResult: { ok: false, typed: true, error: "The Send button did not become active. The prompt remains unsent in the box." } });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.sent, false);
+  assert.equal(result.phase, "send");
+  assert.equal(api.uncertainTabs.has(7), false);
+});
+
+test("a lost reply after the send call marks the tab uncertain", async () => {
+  const { api, sent, chrome } = worker();
+  const original = chrome.scripting.executeScript;
+  chrome.scripting.executeScript = async (opts) => {
+    if (opts.args && opts.args[0].action === "send_prompt") throw new Error("Frame removed");
+    return original(opts);
+  };
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.sent, true);
+  assert.equal(result.applied, null);
+  assert.equal(api.uncertainTabs.get(7).reason, "error");
+});
+
+test("signal counts reach the result", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  for (const kind of ["bound", "related", "related"]) api.onEvent(req, { type: "signal", kind });
+  api.onEvent(req, { type: "completed", text: "Hi" });
+  assert.deepEqual({ ...sent.find((s) => s.done).result.signals }, { bound: 1, related: 2 });
 });

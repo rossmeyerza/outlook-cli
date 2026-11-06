@@ -291,6 +291,7 @@ function finish(req, status, extra = {}) {
     phase: req.phase,
     sent: req.sent === true,
     newChat: req.newChat || null,
+    signals: req.signals,
     binding: req.binding || null,
     statuses: req.statuses,
   };
@@ -314,7 +315,11 @@ function onEvent(req, event) {
   if (req.done) return;
   req.lastEventAt = Date.now();
   req.hookEvents += 1;
-  if (event.type === "bound") {
+  if (event.type === "signal") {
+    // Prompt signals seen while armed: bound, same, related, repeated or ignored.
+    const kind = ["bound", "same", "related", "repeated", "ignored"].includes(event.kind) ? event.kind : "other";
+    req.signals[kind] = (req.signals[kind] || 0) + 1;
+  } else if (event.type === "bound") {
     req.binding = event.mode || "unknown";
   } else if (event.type === "status" || event.type === "task_status") {
     const name = `${event.source || "task"}:${event.value}`;
@@ -385,7 +390,7 @@ async function ask(msg) {
   const req = {
     id: msg.id, tabId: tab.id, app: null, text: "", progress: [], actions: [], armedFrames: [], done: false,
     startedAt, deadline: startedAt + timeoutMs, phase: "find_tab",
-    statuses: [], binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
+    statuses: [], signals: {}, sendCalls: 0, binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
   };
   requests.set(tab.id, req);
   // One timer for every phase. The waits below also stop at this deadline.
@@ -431,11 +436,17 @@ async function ask(msg) {
       if (!marked.ok) throw new Error(marked.error);
     }
     if (req.done) return;
-    req.sent = true; // Sending can have side effects even if the response is lost.
+    // At most one send per request. Nothing below retries it.
+    if (req.sendCalls++ > 0) throw new Error("This request already sent its prompt.");
+    req.sent = true; // Until the pane says otherwise: a lost reply can follow a real click.
     req.sentAt = Date.now();
     req.lastEventAt = req.sentAt;
     const sent = await runIn(tab.id, p.pane.frameId, { action: "send_prompt", text: msg.prompt, requestId: req.id });
-    if (!sent.ok) throw new Error(sent.error);
+    if (!sent.ok) {
+      // The pane answered and did not click Send, so Copilot did not start.
+      if (!sent.clicked) req.sent = false;
+      throw new Error(sent.error);
+    }
     send({ id: req.id, event: { type: "sent" } });
     setPhase(req, "wait_answer");
     watchSettle(req);

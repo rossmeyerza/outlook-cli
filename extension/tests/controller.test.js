@@ -64,3 +64,27 @@ test("New chat is skipped on a fresh pane and refused while Copilot works", asyn
   pane(["Stop generating"]);
   assert.equal((await run({ action: "new_chat" })).ok, false);
 });
+
+test("a request types its prompt at most once", async () => {
+  const box = fakeElement("Chat input", { editable: true });
+  box.innerText = "";
+  box.focus = () => {};
+  const send = fakeElement("Send");
+  send.disabled = false;
+  send.click = () => { send.clicks = (send.clicks || 0) + 1; };
+  const nodes = [box, send];
+  let typed = 0;
+  globalThis.document = {
+    createTreeWalker: () => { let i = 0; return { currentNode: nodes[0], nextNode: () => nodes[++i] }; },
+    querySelectorAll: () => [],
+    execCommand: () => { typed += 1; return true; },
+  };
+  controller.setArmed("r1");
+  assert.deepEqual(await controller.sendPrompt("Hello", "r1"), { ok: true, typed: true, clicked: true });
+  const again = await controller.sendPrompt("Hello", "r1");
+  assert.equal(again.ok, false);
+  assert.match(again.error, /never sent twice/);
+  assert.equal(typed, 1);
+  assert.equal(send.clicks, 1);
+  controller.setArmed(null);
+});

@@ -91,6 +91,9 @@
     post({ kind: "event", event: { type: "bound", mode } });
   }
 
+  // One event per prompt signal while armed, with its class only.
+  const noteSignal = (kind) => post({ kind: "event", event: { type: "signal", kind } });
+
   // Returns an error message, or null. Only the exact prompt of this request,
   // or the first prompt after Send, binds the request.
   function classify(signal) {
@@ -104,20 +107,32 @@
     if (!binding) {
       if (match) bind(id, query, exact ? "exact" : "normalised");
       else if (query && sendingAt && Date.now() - sendingAt < FALLBACK_WINDOW_MS && !isOperation(signal)) bind(id, query, "after_send");
-      else stats.ignored += 1;
+      else {
+        stats.ignored += 1;
+        noteSignal("ignored");
+        return null;
+      }
+      noteSignal("bound");
       return null;
     }
-    if (id === binding.id) return null;
+    if (id === binding.id) {
+      stats.same += 1;
+      noteSignal("same");
+      return null;
+    }
     if (!query || isOperation(signal)) {
       related.add(id);
       stats.related += 1;
+      noteSignal("related");
       return null;
     }
     if (match || query === binding.query) {
       stats.repeated += 1;
+      noteSignal("repeated");
       return "Another prompt was sent in this pane. Do not retry automatically.";
     }
     stats.ignored += 1;
+    noteSignal("ignored");
     return null;
   }
 
@@ -184,7 +199,7 @@
       binding = null;
       related = new Set();
       sendingAt = 0;
-      stats = { signals: 0, ignored: 0, related: 0, repeated: 0 };
+      stats = { signals: 0, ignored: 0, same: 0, related: 0, repeated: 0 };
       expectedRaw = typeof msg.prompt === "string" ? msg.prompt.replace(/\r\n/g, "\n").trim() : "";
       expected = adapters.common.normalisePrompt(expectedRaw);
       for (const key of Object.keys(pptState)) delete pptState[key];

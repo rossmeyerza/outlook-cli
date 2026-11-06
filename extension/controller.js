@@ -98,6 +98,8 @@
   const hook = { seen: false, armed: false, sockets: 0, revision: null, schemas: [], request: null };
   let armedRequest = null;
   let approvalTimer = null;
+  // Request ids that already typed a prompt in this frame. One send per request, ever.
+  const typedRequests = new Set();
 
   function relay(event) {
     if (!armedRequest) return;
@@ -214,8 +216,11 @@
     return { ok: true, newChat: "skipped" };
   }
 
+  // Every result says how far it got: typed (text is in the box) and
+  // clicked (Send was activated). Only a click can start Copilot.
   async function sendPrompt(text, requestId) {
     if (!requestId || armedRequest !== requestId) return { ok: false, error: "Request was cancelled before typing." };
+    if (typedRequests.has(requestId)) return { ok: false, error: "This request already sent its prompt. It is never sent twice." };
     const pending = diagnostics.approval(document, visible);
     if (pending) {
       relay({ type: "approval_required", ...pending });
@@ -226,20 +231,21 @@
     if ((box.innerText || "").trim()) return { ok: false, error: "The prompt box has an unsent draft. Clear it first." };
     if (findByPattern(STOP_LABEL)) return { ok: false, error: "Copilot is already running in this pane." };
     box.focus();
+    typedRequests.add(requestId);
     if (!document.execCommand("insertText", false, text)) return { ok: false, error: "Could not type the prompt." };
     const send = await waitFor(() => {
       const el = findByLabel(CLICKABLE.send);
       return el && enabled(el) ? el : null;
     }, 5000);
-    if (!send) return { ok: false, error: "The Send button did not become active." };
-    if (armedRequest !== requestId) return { ok: false, error: "Request was cancelled before sending. The prompt remains unsent." };
+    if (!send) return { ok: false, typed: true, error: "The Send button did not become active. The prompt remains unsent in the box." };
+    if (armedRequest !== requestId) return { ok: false, typed: true, error: "Request was cancelled before sending. The prompt remains unsent." };
     const approval = diagnostics.approval(document, visible);
     if (approval) {
       relay({ type: "approval_required", ...approval });
-      return { ok: false, error: "Permission dialog appeared before sending. Nothing was approved." };
+      return { ok: false, typed: true, error: "Permission dialog appeared before sending. Nothing was approved." };
     }
     safeClick(send, CLICKABLE.send);
-    return { ok: true };
+    return { ok: true, typed: true, clicked: true };
   }
 
   function readPane() {
@@ -305,6 +311,7 @@
   });
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { frameRole, findByLabel, findByPattern, safeClick, CLICKABLE, PROMPT_LABELS, FORBIDDEN, STOP_LABEL };
+    module.exports = { frameRole, findByLabel, findByPattern, safeClick, sendPrompt, CLICKABLE, PROMPT_LABELS, FORBIDDEN, STOP_LABEL,
+      setArmed: (id) => { armedRequest = id; } };
   }
 })();
