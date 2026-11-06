@@ -37,6 +37,10 @@ function worker(ui = {}) {
           promptBox: ui.editorReady && ui.paneOpen, stopButton: ui.stopButton } });
         return frames;
       }
+      if (cmd.action === "new_chat") {
+        ui.newChatCalls = (ui.newChatCalls || 0) + 1;
+        return [{ frameId: target.frameIds[0], result: ui.newChatResult || { ok: true, newChat: "clicked" } }];
+      }
       if (cmd.action === "open_pane") {
         ui.clicks += 1;
         if (ui.clicks >= ui.opensAfter) ui.paneOpen = ui.paneMounted = true;
@@ -319,4 +323,23 @@ test("an editor without a Copilot button times out in wait_editor", async () => 
   await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, timeout: 0.1 });
   const result = sent.find((s) => s.done).result;
   assert.equal(result.phase, "wait_editor");
+});
+
+test("--new-chat on a fresh pane skips the click and still sends once", async () => {
+  const { api, sent, calls, ui } = worker({ newChatResult: { ok: true, newChat: "skipped" } });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, newChat: true });
+  assert.equal(ui.newChatCalls, 1);
+  assert.equal(calls.filter((c) => c.action === "send_prompt").length, 1);
+  api.onEvent(api.requests.get(7), { type: "completed", text: "Hi" });
+  assert.equal(sent.find((s) => s.done).result.newChat, "skipped");
+});
+
+test("--new-chat fails before typing when the pane cannot start a new chat", async () => {
+  const { api, sent, calls } = worker({ newChatResult: { ok: false, error: "Copilot is working in this pane and there is no New chat button." } });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, newChat: true });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.phase, "new_chat");
+  assert.equal(result.sent, false);
+  assert(!calls.some((c) => c.action === "send_prompt"));
+  assert.equal(api.uncertainTabs.has(7), false);
 });

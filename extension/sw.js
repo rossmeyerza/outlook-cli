@@ -290,6 +290,7 @@ function finish(req, status, extra = {}) {
     completion: extra.completion || null,
     phase: req.phase,
     sent: req.sent === true,
+    newChat: req.newChat || null,
     binding: req.binding || null,
     statuses: req.statuses,
   };
@@ -403,8 +404,11 @@ async function ask(msg) {
       setPhase(req, "new_chat");
       const fresh = await runIn(tab.id, p.pane.frameId, { action: "new_chat" });
       if (!fresh.ok) throw new Error(fresh.error);
-      await sleep(1500);
-      p = await waitForPane(tab.id, 15000, req);
+      req.newChat = fresh.newChat || "clicked";
+      if (req.newChat === "clicked") {
+        await sleep(TIMING.inputSettleMs);
+        p = await waitForPane(tab.id, 15000, req);
+      }
     }
     if (req.done) return;
     setPhase(req, "arm");

@@ -46,3 +46,21 @@ test("the Stop control is detected for status only and is never clickable", () =
   const root = { createTreeWalker: () => ({ currentNode: nodes[0], nextNode: () => nodes[++i] }) };
   assert.equal(controller.findByPattern(controller.STOP_LABEL, root), nodes[1]);
 });
+
+test("New chat is skipped on a fresh pane and refused while Copilot works", async () => {
+  const pane = (labels) => {
+    const nodes = labels.map((label) => fakeElement(label));
+    nodes.forEach((n) => { n.clicked = 0; n.click = () => { n.clicked += 1; }; });
+    let i = 0;
+    globalThis.document = { createTreeWalker: () => ({ currentNode: nodes[0], nextNode: () => nodes[++i] }) };
+    return nodes;
+  };
+  const run = (cmd) => globalThis.__ocliController.run(cmd);
+  pane(["Close Copilot chat"]);
+  assert.deepEqual(await run({ action: "new_chat" }), { ok: true, newChat: "skipped" });
+  const [button] = pane(["New chat"]);
+  assert.deepEqual(await run({ action: "new_chat" }), { ok: true, newChat: "clicked" });
+  assert.equal(button.clicked, 1);
+  pane(["Stop generating"]);
+  assert.equal((await run({ action: "new_chat" })).ok, false);
+});

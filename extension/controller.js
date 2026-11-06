@@ -201,11 +201,17 @@
     return { ok: true };
   }
 
+  // Office shows New chat only after a conversation starts (PowerPoint,
+  // 2026-11-06). No button means the pane is already a new chat, unless
+  // Copilot is still working in it.
   async function newChat() {
     const button = findByLabel(CLICKABLE.newChat);
-    if (!button) return { ok: false, error: "The pane has no New chat button." };
-    safeClick(button, CLICKABLE.newChat);
-    return { ok: true };
+    if (button) {
+      safeClick(button, CLICKABLE.newChat);
+      return { ok: true, newChat: "clicked" };
+    }
+    if (findByPattern(STOP_LABEL)) return { ok: false, error: "Copilot is working in this pane and there is no New chat button." };
+    return { ok: true, newChat: "skipped" };
   }
 
   async function sendPrompt(text, requestId) {
