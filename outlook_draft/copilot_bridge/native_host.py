@@ -178,7 +178,7 @@ class NativeHost:
         kind = message.get("type")
         if kind == "status":
             return 30
-        if kind == "inspect":
+        if kind in {"inspect", "reset"}:
             tab_id = message.get("tabId")
             if type(tab_id) is not int or tab_id < 0:
                 raise CopilotError("A non-negative Chrome tab ID is required.")
@@ -192,7 +192,8 @@ class NativeHost:
             raise CopilotError("Choose Excel, PowerPoint or Word.")
         if not isinstance(message.get("file"), dict):
             raise CopilotError("A resolved file is required.")
-        return timeout_seconds(message.get("timeout", 300)) + 150
+        # Longer than the client's own deadline, so the client stops first.
+        return timeout_seconds(message.get("timeout", 300)) + 60
 
     @staticmethod
     def _wait_client(connection: socket.socket, done: threading.Event, timeout: float) -> None:

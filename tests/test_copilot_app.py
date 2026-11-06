@@ -90,3 +90,30 @@ def test_wait_saved_false_when_no_later_modification(monkeypatch):
     from datetime import UTC, datetime
     monkeypatch.setattr(app, "_modified_at", lambda *args: None)
     assert app.wait_for_save(None, {}, datetime.now(UTC), 0) is False
+
+
+def test_status_text_shows_busy_age_and_uncertain_state():
+    assert command._busy_text({"busy": False, "uncertain": False}) == "busy: False"
+    assert command._busy_text({"busy": True, "busyAgeSeconds": 42, "phase": "wait_answer"}) == "busy: True (wait_answer, 42 s)"
+    text = command._busy_text({"busy": False, "uncertain": True, "uncertainReason": "timeout", "uncertainAgeSeconds": 300})
+    assert text == "busy: False | uncertain: True (timeout, 300 s ago)"
+
+
+def test_cli_warns_when_a_failed_request_was_sent(monkeypatch, capsys):
+    monkeypatch.setattr(command, "_ask", lambda args: {"status": "timeout", "sent": True, "phase": "wait_answer", "text": ""})
+    with pytest.raises(CliError):
+        command.cmd_ask(argparse.Namespace(json=False))
+    err = capsys.readouterr().err
+    assert "Last phase: wait_answer." in err
+    assert "can already have changed the document" in err
+
+
+def test_cli_reset(monkeypatch, capsys):
+    class Client:
+        def reset(self, tab_id):
+            return {"tabId": tab_id, "cleared": {"request": False, "uncertain": True}}
+    monkeypatch.setattr(command, "BridgeClient", Client)
+    command.cmd_reset(argparse.Namespace(tab_id=7, json=False))
+    out = capsys.readouterr()
+    assert "cleared uncertain state" in out.out
+    assert "Check it" in out.err

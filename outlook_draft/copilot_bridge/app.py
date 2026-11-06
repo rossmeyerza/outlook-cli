@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 from ..commands.copilot import resolve_copilot_file
 from ..errors import CopilotError
 from ..outlook_client import OutlookClient
-from .client import BridgeClient
+from .client import BridgeClient, BridgeTimeout
 from .protocol import timeout_seconds
 
 APPS = {"xlsx": "excel", "xlsm": "excel", "pptx": "powerpoint", "docx": "word"}
@@ -87,6 +87,17 @@ def _normalise_result(result: dict, file: dict) -> None:
         result["appliedEvidence"] = "Not verified. Function execution and source-text patterns do not prove document changes."
 
 
+def _interrupted(exc: CopilotError, progress: dict) -> dict:
+    sent = progress["sent"]
+    return {
+        "status": "timeout" if isinstance(exc, BridgeTimeout) else "error",
+        "message": str(exc), "phase": progress["phase"], "sent": sent,
+        "text": "", "actions": [], "progress": [], "approval": None,
+        "applied": None if sent else False,
+        "appliedEvidence": "Not known. The prompt was sent; check the document." if sent else "Nothing was sent.",
+    }
+
+
 def ask_app(gc: OutlookClient, prompt: str, file: dict, *, new_chat: bool = False,
             open_tab: bool = False, wait_saved: bool = False, timeout: float = 300,
             on_event: Callable[[dict], None] | None = None, bridge: BridgeClient | None = None) -> dict:
@@ -96,12 +107,26 @@ def ask_app(gc: OutlookClient, prompt: str, file: dict, *, new_chat: bool = Fals
     started = datetime.now(UTC)
     deadline = time.monotonic() + timeout
     result = None
+    progress = {"phase": None, "sent": False}
     client = bridge or BridgeClient()
-    for event in client.ask(prompt, file=file, app=file["app"], new_chat=new_chat, open_tab=open_tab, timeout=timeout):
-        if event.get("type") == "result":
-            result = event["result"]
-        elif on_event:
-            on_event(_action_evidence(event))
+    try:
+        for event in client.ask(prompt, file=file, app=file["app"], new_chat=new_chat, open_tab=open_tab, timeout=timeout):
+            kind = event.get("type")
+            if kind == "result":
+                result = event["result"]
+                continue
+            if kind == "phase":
+                progress["phase"] = event.get("phase")
+            elif kind == "sent":
+                progress["sent"] = True
+            if on_event:
+                on_event(_action_evidence(event))
+    except CopilotError as exc:
+        # Before the browser started work, an error is a plain failure.
+        # After that, return the phase and whether the prompt was sent.
+        if not isinstance(exc, BridgeTimeout) and progress["phase"] is None:
+            raise
+        result = _interrupted(exc, progress)
     if result is None:
         raise CopilotError("The bridge did not return a result.")
     _normalise_result(result, file)

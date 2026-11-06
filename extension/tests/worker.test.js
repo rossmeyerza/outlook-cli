@@ -8,7 +8,7 @@ function worker(ui = {}) {
   const sent = [];
   const calls = [];
   // Live UI state for the fake frames. Tests change it while a request runs.
-  ui = { stopButton: false, revision: 4, ...ui };
+  ui = { stopButton: false, revision: 4, editorReady: true, ...ui };
   const listeners = {};
   const event = (name) => ({ addListener: (fn) => { listeners[name] = fn; } });
   const tab = { id: 7, url: "https://tenant.sharepoint.com/_layouts/15/Doc.aspx?sourcedoc=%7Btest-guid%7D", title: "Test.xlsx" };
@@ -27,8 +27,8 @@ function worker(ui = {}) {
       const cmd = args[0];
       calls.push(cmd);
       if (cmd.action === "describe") return [
-        { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: true, hook: { seen: true, revision: ui.revision }, embeddedFrames: [{ url: "https://pane.resources.office.net/taskpane.html", visible: true }] } },
-        { frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html", promptBox: true, stopButton: ui.stopButton } },
+        { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: ui.editorReady, hook: { seen: true, revision: ui.revision }, embeddedFrames: [{ url: "https://pane.resources.office.net/taskpane.html", visible: true }] } },
+        { frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html", promptBox: ui.editorReady, stopButton: ui.stopButton } },
       ];
       return [{ frameId: target.frameIds[0], result: { ok: true, hook: { seen: true, revision: ui.revision } } }];
     } },
@@ -36,9 +36,9 @@ function worker(ui = {}) {
   };
   const context = vm.createContext({ chrome, console, setTimeout, clearTimeout, URL });
   const code = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
-  vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented };", context);
+  vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented, reset, status };", context);
   // Fast settle polling for tests.
-  vm.runInContext("Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30 });", context);
+  vm.runInContext("Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30, minTimeoutMs: 0 });", context);
   return { api: context.testApi, sent, calls, listeners, tab, chrome, ui, context };
 }
 
@@ -216,4 +216,51 @@ test("PowerPoint edit batches with successful responses count as applied", async
   const result = sent.find((s) => s.done).result;
   assert.equal(result.completion, "event");
   assert.equal(result.applied, true);
+});
+
+test("the time limit ends a request in any phase and names the phase", async () => {
+  const { api, sent, calls } = worker({ editorReady: false });
+  const started = Date.now();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, timeout: 0.2 });
+  assert(Date.now() - started < 3000);
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "timeout");
+  assert.equal(result.phase, "wait_editor");
+  assert.equal(result.sent, false);
+  assert.match(result.message, /phase wait_editor/);
+  assert.equal(api.requests.size, 0);
+  assert.equal(api.uncertainTabs.has(7), false); // Nothing was sent.
+  assert(!calls.some((c) => c.action === "send_prompt"));
+  assert.deepEqual(sent.filter((s) => s.event && s.event.type === "phase").map((s) => s.event.phase), ["wait_editor"]);
+});
+
+test("status shows busy and uncertain separately, with ages", async () => {
+  const { api } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  let tab = (await api.status()).tabs[0];
+  assert.equal(tab.busy, true);
+  assert.equal(tab.phase, "wait_answer");
+  assert.equal(typeof tab.busyAgeSeconds, "number");
+  api.finish(api.requests.get(7), "timeout");
+  tab = (await api.status()).tabs[0];
+  assert.equal(tab.busy, false);
+  assert.equal(tab.uncertain, true);
+  assert.equal(tab.uncertainReason, "timeout");
+  assert.equal(typeof tab.uncertainAgeSeconds, "number");
+});
+
+test("reset clears an uncertain tab, refuses a live request and clears a stale one", async () => {
+  const { api } = worker();
+  const msg = { id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } };
+  await api.ask(msg);
+  assert.throws(() => api.reset({ tabId: 7 }), /running in this tab/);
+  api.finish(api.requests.get(7), "timeout");
+  assert.deepEqual(JSON.parse(JSON.stringify(api.reset({ tabId: 7 }))), { tabId: 7, cleared: { request: false, uncertain: true } });
+  await api.ask({ ...msg, id: "second" });
+  const req = api.requests.get(7);
+  req.deadline = Date.now() - 60000; // Stuck past its time limit and the grace period.
+  const result = JSON.parse(JSON.stringify(api.reset({ tabId: 7 })));
+  assert.deepEqual(result.cleared, { request: true, uncertain: true });
+  assert.equal(api.requests.size, 0);
+  assert.equal(api.uncertainTabs.size, 0);
 });

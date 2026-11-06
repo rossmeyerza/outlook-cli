@@ -23,9 +23,38 @@ def cmd_status(args: argparse.Namespace) -> None:
     else:
         print(f"Host: protocol {result['host']}. Extension: {result.get('extension', 'unknown')}.")
         for tab in result.get("tabs", []):
-            print(f"  {tab['tabId']}: {tab['app']} | {tab['title']} | pane open: {tab['paneOpen']} | busy: {tab['busy']}")
+            print(f"  {tab['tabId']}: {tab['app']} | {tab['title']} | pane open: {tab['paneOpen']} | {_busy_text(tab)}")
         if not result.get("tabs"):
             print("No Office editor tabs found.")
+
+
+def _busy_text(tab: dict) -> str:
+    busy = "busy: True"
+    if tab.get("busy") and tab.get("busyAgeSeconds") is not None:
+        busy += f" ({tab.get('phase')}, {tab['busyAgeSeconds']} s)"
+    elif not tab.get("busy"):
+        busy = "busy: False"
+    if tab.get("uncertain"):
+        age = tab.get("uncertainAgeSeconds")
+        detail = ", ".join(str(part) for part in (tab.get("uncertainReason"), f"{age} s ago" if age is not None else None) if part)
+        busy += f" | uncertain: True ({detail})" if detail else " | uncertain: True"
+    return busy
+
+
+def cmd_reset(args: argparse.Namespace) -> None:
+    try:
+        result = BridgeClient().reset(args.tab_id)
+    except CopilotError as exc:
+        raise CliError(str(exc)) from exc
+    if args.json:
+        print_json(result)
+        return
+    cleared = result.get("cleared") or {}
+    if not any(cleared.values()):
+        print(f"Tab {args.tab_id} had no busy or uncertain state.")
+        return
+    print(f"Tab {args.tab_id}: cleared {', '.join(k for k, v in cleared.items() if v)} state.")
+    print("Copilot can still have changed the document. Check it before you send another prompt.", file=sys.stderr)
 
 
 def cmd_inspect(args: argparse.Namespace) -> None:
@@ -57,6 +86,8 @@ def _event_printer(event: dict) -> None:
         print(json.dumps(event, ensure_ascii=False), file=sys.stderr)
     elif kind == "progress":
         print(event["text"], file=sys.stderr)
+    elif kind == "phase":
+        print(f"[{event.get('phase')}]", file=sys.stderr)
 
 
 def _ask(args: argparse.Namespace) -> dict:
@@ -88,10 +119,16 @@ def cmd_ask(args: argparse.Namespace) -> None:
         if result.get("message"):
             print(result["message"], file=sys.stderr)
         print(f"Status: {result.get('status')}. Applied: {result.get('applied')}. Saved: {result.get('saved')}.", file=sys.stderr)
+        if result.get("completion") == "settled":
+            print("Completion: the pane went idle without a final answer event.", file=sys.stderr)
+        if result.get("status") != "completed" and result.get("phase"):
+            print(f"Last phase: {result['phase']}.", file=sys.stderr)
     if result.get("status") == "approval_required":
         print("Copilot asked for approval. Nothing was approved by the bridge.", file=sys.stderr)
         raise CliError("", exit_code=3)
     if result.get("status") != "completed":
+        if result.get("sent"):
+            print("The prompt was sent. Copilot can already have changed the document. Check it first.", file=sys.stderr)
         print("The request did not complete. Do not retry automatically.", file=sys.stderr)
         raise CliError("")
 
@@ -106,6 +143,10 @@ def register(sub) -> None:
     add_output_args(inspect)
     inspect.add_argument("--tab-id", type=int, required=True)
     inspect.set_defaults(func=cmd_inspect)
+    reset = commands.add_parser("reset", help="Clear a stale busy or uncertain tab state after you check the document")
+    add_output_args(reset)
+    reset.add_argument("--tab-id", type=int, required=True)
+    reset.set_defaults(func=cmd_reset)
     ask = commands.add_parser("ask", help="Send a prompt to Excel or PowerPoint Copilot in Chrome")
     add_output_args(ask)
     ask.add_argument("prompt")

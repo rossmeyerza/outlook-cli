@@ -14,13 +14,16 @@ const HOOK_FILES = ["adapters/common.js", "adapters/excel.js", "adapters/powerpo
 const HOOK_REVISION = 4;
 // Fallback end of a turn when no final answer event arrives: the pane shows no
 // Stop control for several polls, and the hook has been quiet for a while.
-const TIMING = { settlePollMs: 2000, settleIdlePolls: 3, settleQuietMs: 10000 };
+const TIMING = { settlePollMs: 2000, settleIdlePolls: 3, settleQuietMs: 10000, staleGraceMs: 30000, minTimeoutMs: 10000 };
 const TASK_DONE = /^(complete|completed|success|succeeded|done|finished)$/i;
 
 let port = null;
 let lastHostError = null;
 const requests = new Map(); // tab id -> active request
-const uncertainTabs = new Set(); // A timeout does not stop the Office agent.
+// tab id -> { since, reason }. A request ended after Send without a final
+// answer. A timeout does not stop the Office agent, so the document can still
+// change. A new request waits until the user checks the document and resets.
+const uncertainTabs = new Map();
 const cancelledRequests = new Set();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -117,9 +120,13 @@ function appOf(probeResult) {
   return editor ? editor.app : null;
 }
 
+const ageSeconds = (since) => (since ? Math.round((Date.now() - since) / 1000) : null);
+
 async function describeTab(tab) {
   const p = await probe(tab.id);
   const editor = p.editors[0] || null;
+  const req = requests.get(tab.id);
+  const uncertain = uncertainTabs.get(tab.id);
   return {
     tabId: tab.id,
     title: tab.title,
@@ -132,8 +139,12 @@ async function describeTab(tab) {
     augloopSockets: editor && editor.hook ? editor.hook.sockets : 0,
     paneOpen: Boolean(p.pane && p.pane.promptBox),
     allowEditing: p.pane ? p.pane.allowEditing : null,
-    busy: requests.has(tab.id) || uncertainTabs.has(tab.id),
-    uncertain: uncertainTabs.has(tab.id),
+    busy: Boolean(req),
+    busyAgeSeconds: req ? ageSeconds(req.startedAt) : null,
+    phase: req ? req.phase : null,
+    uncertain: Boolean(uncertain),
+    uncertainReason: uncertain ? uncertain.reason : null,
+    uncertainAgeSeconds: uncertain ? ageSeconds(uncertain.since) : null,
   };
 }
 
@@ -165,9 +176,21 @@ async function findTab(file, open) {
   return chrome.tabs.create({ url: file.webUrl, active: true });
 }
 
-async function waitForEditor(tabId, timeoutMs) {
-  const end = Date.now() + timeoutMs;
+// Thrown by a wait when its request already ended (timeout, cancel, disconnect).
+class Stopped extends Error {}
+
+function untilDone(req, timeoutMs) {
+  return Math.min(Date.now() + timeoutMs, req ? req.deadline : Infinity);
+}
+
+function checkActive(req) {
+  if (req && req.done) throw new Stopped("The request already ended.");
+}
+
+async function waitForEditor(tabId, timeoutMs, req) {
+  const end = untilDone(req, timeoutMs);
   while (Date.now() < end) {
+    checkActive(req);
     const p = await probe(tabId);
     if (p.editors.some((e) => e.paneButton) || (p.editors.length && p.pane && p.pane.promptBox)) return p;
     await sleep(1000);
@@ -175,9 +198,10 @@ async function waitForEditor(tabId, timeoutMs) {
   throw new Error("The Office editor did not load in time.");
 }
 
-async function waitForPane(tabId, timeoutMs) {
-  const end = Date.now() + timeoutMs;
+async function waitForPane(tabId, timeoutMs, req) {
+  const end = untilDone(req, timeoutMs);
   while (Date.now() < end) {
+    checkActive(req);
     const p = await probe(tabId);
     if (p.pane && p.pane.promptBox) return p;
     await sleep(500);
@@ -192,8 +216,8 @@ function finish(req, status, extra = {}) {
   req.done = true;
   clearTimeout(req.timer);
   clearTimeout(req.settleTimer);
-  requests.delete(req.tabId);
-  if (req.sent && status !== "completed") uncertainTabs.add(req.tabId);
+  if (requests.get(req.tabId) === req) requests.delete(req.tabId);
+  if (req.sent && status !== "completed") uncertainTabs.set(req.tabId, { since: Date.now(), reason: status });
   for (const frameId of req.armedFrames || []) {
     runIn(req.tabId, frameId, { action: "arm", on: false }).catch(() => {});
   }
@@ -209,6 +233,8 @@ function finish(req, status, extra = {}) {
     approval: extra.approval || null,
     message: extra.message || null,
     completion: extra.completion || null,
+    phase: req.phase,
+    sent: req.sent === true,
     binding: req.binding || null,
     statuses: req.statuses,
   };
@@ -284,40 +310,59 @@ function watchSettle(req) {
   req.settleTimer = setTimeout(tick, TIMING.settlePollMs);
 }
 
+function setPhase(req, phase) {
+  checkActive(req);
+  req.phase = phase;
+  send({ id: req.id, event: { type: "phase", phase } });
+}
+
 async function ask(msg) {
   const file = msg.file || {};
+  const startedAt = Date.now();
+  const timeoutMs = Math.max(TIMING.minTimeoutMs, (Number(msg.timeout) || 300) * 1000);
   const tab = await findTab(file, msg.open === true);
   if (cancelledRequests.delete(msg.id) || !port) return;
-  if (requests.has(tab.id)) throw new Error("busy: another request is running in this tab.");
-  if (uncertainTabs.has(tab.id)) throw new Error("The previous request ended without a final answer. Check the document, then reload the tab before retrying.");
+  const running = requests.get(tab.id);
+  if (running) throw new Error(`busy: another request is running in this tab (phase ${running.phase}, ${ageSeconds(running.startedAt)} s).`);
+  const uncertain = uncertainTabs.get(tab.id);
+  if (uncertain) throw new Error(`The previous request ended without a final answer (${uncertain.reason}, ${ageSeconds(uncertain.since)} s ago). Copilot can still have changed the document. Check it, then reload the tab or run 'outlook-cli copilot app reset --tab-id ${tab.id}'.`);
   const req = {
     id: msg.id, tabId: tab.id, app: null, text: "", progress: [], actions: [], armedFrames: [], done: false,
+    startedAt, deadline: startedAt + timeoutMs, phase: "find_tab",
     statuses: [], binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
   };
   requests.set(tab.id, req);
+  // One timer for every phase. The waits below also stop at this deadline.
+  req.timer = setTimeout(() => finish(req, "timeout", {
+    message: `Copilot did not finish in time. Stopped in phase ${req.phase}.` }), Math.max(0, req.deadline - Date.now()));
   try {
-    let p = await waitForEditor(tab.id, msg.open ? 90000 : 30000);
+    setPhase(req, "wait_editor");
+    let p = await waitForEditor(tab.id, msg.open ? 90000 : 30000, req);
     if (req.done) return;
     req.app = appOf(p);
     if (msg.app && req.app && msg.app !== req.app) throw new Error(`The tab is ${req.app}, not ${msg.app}.`);
     send({ id: req.id, event: { type: "tab", tabId: tab.id, app: req.app, title: tab.title } });
     if (!(p.pane && p.pane.promptBox)) {
+      setPhase(req, "open_pane");
       const editor = p.editors.find((e) => e.paneButton) || p.editors[0];
       const opened = await runIn(tab.id, editor.frameId, { action: "open_pane" });
       if (!opened.ok) throw new Error(opened.error);
-      p = await waitForPane(tab.id, 30000);
+      setPhase(req, "wait_pane");
+      p = await waitForPane(tab.id, 30000, req);
       // The input can be on screen before it accepts typing.
       await sleep(1500);
-      p = await waitForPane(tab.id, 5000);
+      p = await waitForPane(tab.id, 5000, req);
     }
     if (req.done) return;
     if (msg.newChat) {
+      setPhase(req, "new_chat");
       const fresh = await runIn(tab.id, p.pane.frameId, { action: "new_chat" });
       if (!fresh.ok) throw new Error(fresh.error);
       await sleep(1500);
-      p = await waitForPane(tab.id, 15000);
+      p = await waitForPane(tab.id, 15000, req);
     }
     if (req.done) return;
+    setPhase(req, "arm");
     for (const editor of p.editors) {
       req.armedFrames.push(editor.frameId);
       const armed = await runIn(tab.id, editor.frameId, { action: "arm", on: true, requestId: req.id, prompt: msg.prompt });
@@ -325,15 +370,13 @@ async function ask(msg) {
         throw new Error("The AugLoop hook is missing or out of date. Reload the Office tab.");
     }
     if (req.done) return;
-    req.timer = setTimeout(() => finish(req, "timeout", { message: "Copilot did not finish in time." }),
-      Math.max(10, Number(msg.timeout) || 300) * 1000);
     req.armedFrames.push(p.pane.frameId);
     await runIn(tab.id, p.pane.frameId, { action: "arm", on: true, requestId: req.id });
     if (!tabMatches(await chrome.tabs.get(tab.id), file)) throw new Error("The tab no longer matches the requested file.");
     const ready = await probe(tab.id);
     if (!ready.pane || ready.pane.frameId !== p.pane.frameId || !ready.pane.promptBox)
       throw new Error("The Copilot drawer is not visibly open. Nothing was sent.");
-    if (req.done) return;
+    setPhase(req, "send");
     for (const editor of p.editors) {
       const marked = await runIn(tab.id, editor.frameId, { action: "sending", requestId: req.id });
       if (!marked.ok) throw new Error(marked.error);
@@ -345,10 +388,29 @@ async function ask(msg) {
     const sent = await runIn(tab.id, p.pane.frameId, { action: "send_prompt", text: msg.prompt, requestId: req.id });
     if (!sent.ok) throw new Error(sent.error);
     send({ id: req.id, event: { type: "sent" } });
+    setPhase(req, "wait_answer");
     watchSettle(req);
   } catch (e) {
-    finish(req, "error", { message: String((e && e.message) || e) });
+    if (e instanceof Stopped) return;
+    finish(req, "error", { message: `${String((e && e.message) || e)} (phase ${req.phase})` });
   }
+}
+
+// Clears a stale state for one tab after the user has checked the document.
+// A request inside its time limit is never cleared: wait for it, or for its timeout.
+function reset(msg) {
+  const tabId = msg.tabId;
+  const cleared = { request: false, uncertain: false };
+  const req = requests.get(tabId);
+  if (req) {
+    if (Date.now() < req.deadline + TIMING.staleGraceMs)
+      throw new Error(`A request is running in this tab (phase ${req.phase}, ${ageSeconds(req.startedAt)} s). Wait for it to finish or time out.`);
+    finish(req, "error", { message: "The user reset a stale request." });
+    requests.delete(tabId);
+    cleared.request = true;
+  }
+  cleared.uncertain = uncertainTabs.delete(tabId);
+  return { tabId, cleared };
 }
 
 function cancel(msg) {
@@ -374,6 +436,8 @@ async function onHostMessage(msg) {
       send({ id: msg.id, done: true, result: await status() });
     } else if (msg.type === "inspect") {
       send({ id: msg.id, done: true, result: await inspectTab(msg.tabId) });
+    } else if (msg.type === "reset") {
+      send({ id: msg.id, done: true, result: reset(msg) });
     } else if (msg.type === "ask") {
       await ask(msg);
     } else if (msg.type === "cancel") {

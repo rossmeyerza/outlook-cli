@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import pytest
 
 from outlook_draft.copilot_bridge import app, install, native_host, protocol
-from outlook_draft.copilot_bridge.client import BridgeClient
+from outlook_draft.copilot_bridge.client import ASK_GRACE_SECONDS, BridgeClient, BridgeTimeout
 from outlook_draft.errors import CopilotError
 
 
@@ -111,7 +111,7 @@ def test_unsafe_socket_and_directory_refused(tmp_path):
 
 
 @contextmanager
-def fake_bridge(tmp_path, messages):
+def fake_bridge(tmp_path, messages, hold=None):
     path = tmp_path / "host.sock"
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(path))
@@ -125,6 +125,8 @@ def fake_bridge(tmp_path, messages):
             requests.append(protocol.decode_message(stream.readline()))
             for message in messages:
                 connection.sendall(protocol.encode_message(message) + b"\n")
+            if hold:
+                hold.wait(5)  # A stuck bridge: the connection stays open with no result.
         server.close()
 
     thread = threading.Thread(target=serve)
@@ -275,7 +277,68 @@ def test_inspect_is_read_only_and_validates_tab_id(tmp_path):
 
 def test_host_request_validation():
     valid = {"v": 1, "type": "ask", "prompt": "Hello", "app": "excel", "file": {}}
-    assert native_host.NativeHost.validate_request(valid) == 450
+    # The host waits longer than the client, so the client deadline ends a stuck request first.
+    assert native_host.NativeHost.validate_request(valid) == 360
+    assert native_host.NativeHost.validate_request(valid) > 300 + ASK_GRACE_SECONDS
+    assert native_host.NativeHost.validate_request({"type": "reset", "tabId": 7}) == 30
     for extra in [{"prompt": ""}, {"app": "pdf"}, {"file": "x"}, {"timeout": float("nan")}]:
         with pytest.raises(CopilotError):
             native_host.NativeHost.validate_request({**valid, **extra})
+
+
+def test_client_deadline_ends_a_silent_bridge(tmp_path):
+    import time
+    hold = threading.Event()
+    with fake_bridge(tmp_path, [HELLO, {"event": {"type": "phase", "phase": "wait_answer"}}], hold) as (client, _):
+        started = time.monotonic()
+        events = []
+        try:
+            with pytest.raises(BridgeTimeout, match="time limit"):
+                for event in client.request({"type": "status"}, timeout=5, deadline=time.monotonic() + 0.3):
+                    events.append(event)
+        finally:
+            hold.set()
+        assert time.monotonic() - started < 3
+        assert events == [{"type": "phase", "phase": "wait_answer"}]
+
+
+def test_client_reset(tmp_path):
+    result = {"tabId": 7, "cleared": {"request": False, "uncertain": True}}
+    with fake_bridge(tmp_path, [HELLO, {"done": True, "result": result}]) as (client, requests):
+        assert client.reset(7) == result
+        assert requests[0] == {"v": 1, "type": "reset", "tabId": 7}
+    for bad in [True, -1, "7"]:
+        with pytest.raises(CopilotError):
+            BridgeClient(tmp_path / "missing").reset(bad)
+
+
+class _InterruptedBridge:
+    def __init__(self, events, error):
+        self.events, self.error = events, error
+
+    def ask(self, *args, **kwargs):
+        yield from self.events
+        raise self.error
+
+
+def test_timeout_after_send_reports_phase_and_unknown_edits():
+    bridge = _InterruptedBridge([{"type": "phase", "phase": "send"}, {"type": "sent"},
+                                 {"type": "phase", "phase": "wait_answer"}], BridgeTimeout("no result"))
+    seen = []
+    result = app.ask_app(None, "prompt", {"app": "powerpoint"}, bridge=bridge, on_event=seen.append)
+    assert result["status"] == "timeout"
+    assert result["phase"] == "wait_answer"
+    assert result["sent"] is True
+    assert result["applied"] is None
+    assert [e["type"] for e in seen] == ["phase", "sent", "phase"]
+
+
+def test_error_before_send_reports_phase_and_no_edits():
+    bridge = _InterruptedBridge([{"type": "phase", "phase": "wait_pane"}], CopilotError("disconnected"))
+    result = app.ask_app(None, "prompt", {"app": "powerpoint"}, bridge=bridge)
+    assert (result["status"], result["phase"], result["sent"], result["applied"]) == ("error", "wait_pane", False, False)
+
+
+def test_error_before_any_phase_is_raised():
+    with pytest.raises(CopilotError, match="Open the file"):
+        app.ask_app(None, "prompt", {"app": "excel"}, bridge=_InterruptedBridge([], CopilotError("Open the file in Chrome first")))
