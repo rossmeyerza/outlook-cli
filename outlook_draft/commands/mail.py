@@ -450,8 +450,7 @@ def cmd_download_links(args: argparse.Namespace) -> None:
     out_dir = Path(args.dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    from ..cli import _get_graph_client  # avoid circular import at module load
-    graph = _get_graph_client()
+    graph = runtime.get_graph_client()
     downloaded: list[Path] = []
     try:
         with spinner(args, "Downloading linked files..."):
