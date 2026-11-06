@@ -99,6 +99,8 @@ outlook-cli files search budget --site "Tesco" --json # machine-readable paths +
 outlook-cli files upload ./file.pdf "Documents"            # upload to OneDrive
 outlook-cli files upload ./file.pdf "General" --site "Tesco" --library "Documents" # upload to SharePoint
 outlook-cli files download <drive-item-id> --site "Tesco" --library "Documents" # download by search/list ID
+outlook-cli files download "<sharepoint-or-onedrive-url>" ./out/  # download by browser or sharing URL
+outlook-cli files list --site "https://<tenant>.sharepoint.com/sites/<name>" # site URL, or a site you are not a member of
 outlook-cli files mkdir "Documents/Q2"     # create OneDrive folder
 outlook-cli files mkdir "Q2" --site "Tesco" --library "Documents" # create SharePoint folder
 outlook-cli files rename "Documents/old.pdf" "new.pdf"    # rename
@@ -115,6 +117,7 @@ outlook-cli copilot ask "..." --conversation <id> --json  # JSON: text, sources,
 outlook-cli copilot extension install      # native host + unpacked extension folder
 outlook-cli copilot app status --json      # host, extension version, Office tabs
 outlook-cli copilot app inspect --tab-id <id> --json  # read-only UI/frame diagnostics
+outlook-cli copilot app reset --tab-id <id>  # clear a stale busy/uncertain tab after you check the document
 outlook-cli copilot app ask "<prompt>" --file <url|id|path> --json [--open] [--new-chat] [--wait-saved] [--timeout 300]
 
 # MCP server (stdio, confirmed sending)
@@ -236,10 +239,21 @@ Implementation notes:
 - Reload rules: after changing `sw.js`, `controller.js` or `diagnostics.js`, reload the extension; the worker reinjects controllers into open tabs. After changing `hook.js` or `adapters/`, also refresh the Office tab, because the main-world hook loads at `document_start`. Check `controllerVersion` and `hookRevision` in `app status` before trusting a live test. The worker reads `chrome.runtime.lastError` on host disconnect and reconnects the transport; it never resends a prompt.
 - The browser-wide socket is `config.DATA_DIR/copilot-bridge.sock`, not the active account directory. It uses 0600 permissions, a 0700 parent and Linux `SO_PEERCRED`. The host starts through `python -m outlook_draft.copilot_bridge`. stdout is Chrome's length-framed protocol channel. Logs contain no prompts, document frames or tokens.
 - The extension hook runs in the editor's main world. Adapters export only answer text and short action events. Never export raw AugLoop frames: PowerPoint sends the whole document model. Never tag or change the editor DOM. Only the pane prompt control receives text.
-- The controller clicks only Copilot, Send and New chat controls. Never add approval controls to its allowlist. Version 0.2.0 has pre-send checks and a passive observer for visible permission dialogs. Live verification and inline/backend approval formats are still incomplete. A pending approval can time out. Timeout/cancel stops collection, not the Office agent. Never retry automatically. Check the document, then reload the tab to clear its uncertain state.
+- The controller clicks only Copilot, Send and New chat controls. It reads a Stop control to know that Copilot is working, but never clicks it. Never add approval controls to its allowlist. Version 0.2.0 has pre-send checks and a passive observer for visible permission dialogs. Live verification and inline/backend approval formats are still incomplete. A pending approval can time out. Timeout/cancel stops collection, not the Office agent. Never retry automatically. Check the document, then reload the tab to clear its uncertain state.
 - `copilot_app` is a destructive, non-idempotent MCP tool. Shared-file edits are visible to others. Excel and Word `applied` is null; script source only supplies a `mayWrite` hint. PowerPoint `applied` uses slide activity and client responses, not independent verification. `--wait-saved` uses a later Graph timestamp; other writers can cause it.
 - `copilot app inspect --tab-id ID` is read-only. It returns allowlisted UI control states and schema/property names with counts, not document/prompt values, tokens or raw frames. Use it for pane-opening and Word protocol investigation. Word requires hook revision 3 and a refreshed tab after loading extension 0.3.0. Word uses the shared OfficeAgent adapter in `adapters/excel.js`, not startup WordCopilotOutput messages. Never export Word function arguments.
 - Verify with `.venv/bin/python -m pytest -q` and `node --test extension/tests/*.test.js`. These use synthetic fixtures. Complete the live checklist in `docs/copilot-app-plan.md` before claiming release acceptance. The spike's checks do not verify this implementation.
+
+### Change log
+
+- 2026-11-06, extension 0.4.0 (controller v6, hook revision 4). Fixes from a live run on a shared PowerPoint deck. See "Incident 2026-11-06" in `docs/copilot-app-plan.md`.
+  - Completion: the hook binds a request by a normal form of the prompt, or by the first prompt signal after Send. Before, a multi-line prompt never bound, so no events arrived and the command waited for its timeout. PowerPoint ends a turn on a final answer object or more status names. If no final event arrives, the worker settles the turn when the pane has no Stop control and the hook is quiet, but only after Copilot was seen working. The result has `completion` (`event` or `settled`), `binding`, `statuses` and `signals`.
+  - Time limit: one timer from the start of the request covers every phase. The result has `phase` and `sent`. The client stops at timeout + 30 s even if the bridge is silent.
+  - `busy` means only that a request runs. `uncertain` is separate, with reason and age. `copilot app reset --tab-id ID` clears it; a request inside its time limit is never cleared.
+  - `--open` waits for the Copilot button and a connected AugLoop socket, then clicks. It clicks once more only if no pane frame loads. `--new-chat` skips the click when the pane has no New chat button (a fresh pane).
+  - One send per request, guarded in the worker and the controller. A pane refusal before the click does not mark the tab uncertain.
+  - `mail download-links` used a removed import. `files download` accepts SharePoint/OneDrive URLs. `--site` falls back to a Graph site search and accepts a site URL.
+- Reload after this change: run `outlook-cli copilot extension install`, reload the extension in `chrome://extensions`, then refresh each Office tab. `ask` refuses a tab with an older hook revision.
 
 ### Handoff state (2026-10-23, second session)
 

@@ -4,6 +4,8 @@ Status: experimental implementation added (2026-10-22). Live tab discovery passe
 
 ## Implementation status
 
+- Version 0.4.0 (2026-11-06) fixes the problems in "Incident 2026-11-06" below. Synthetic tests pass. Live checks are still to do; see the release checklist.
+
 - Bridge, installer, tab status, Excel and PowerPoint adapters, CLI and MCP entry points: implemented. CLI live reads and edits passed for Excel and PowerPoint. PowerPoint automatic pane opening passed with extension 0.2.0 after a refreshed tab was left closed. Earlier opening attempts failed, so cold-start reliability still needs more checks. MCP has fake-client tests, not live acceptance.
 - Version 0.3.1 corrects drawer readiness: a mounted pane frame can report a locally visible input even when its parent drawer is closed. Ross confirmed this after the first automated Word send failed. Parent-side iframe geometry, CSS, clipping and hidden ancestor checks now gate pane selection and pre-send readiness. A complete visible embedding chain to the top frame is required. Synthetic tests pass; live validation remains pending. Controller version 3 is reinjected on extension reload; the Word hook remains revision 3.
 - `--open`, `--new-chat`, `--wait-saved`: implemented, needs live checks. Save evidence is a later Graph modification timestamp. Other writers can change it.
@@ -29,6 +31,11 @@ Status: experimental implementation added (2026-10-22). Live tab discovery passe
 - [ ] Test `--new-chat`.
 - [ ] Test Chrome closed and disconnected host errors.
 - [x] Word pane/protocol spike and adapter. Extension 0.3.2: read-only prompts with the drawer open and closed, and a single-paragraph edit with saved-file checks (2026-10-23).
+- [ ] 0.4.0: a multi-line PowerPoint prompt with bullets returns by itself, with `completion: event` and `binding` set. Record `statuses` and `signals`.
+- [ ] 0.4.0: `--open` on a closed disposable deck opens the pane by itself. Record the phases.
+- [ ] 0.4.0: `--new-chat` on a fresh pane (skipped) and on a pane with a conversation (clicked).
+- [ ] 0.4.0: a short `--timeout` ends with `status: timeout` and a phase; `app status` shows `uncertain`; `app reset` clears it.
+- [ ] 0.4.0: find the label of the PowerPoint Stop control with `inspect` while Copilot works. The settle fallback needs it, or a finished task status.
 
 Live checks (2026-10-23): after readiness and exact-prompt correlation changes, Excel returned the correct sample-table description. A follow-up set only Sheet1!E1 to `Bridge live check 2026-10-23`. The saved workbook was downloaded and checked: the marker is present, all 12 original cells are unchanged, and `xl/styles.xml` is unchanged. Graph reported a newer modification time before downloads contained the edit, so timestamp evidence is not sufficient. A later read was refused because the prompt box contained a draft; it was not cleared. Evidence files are in `/tmp/copilot-live-checks/`.
 
@@ -96,6 +103,20 @@ Lessons:
 - No automatic approval of agent actions or permission requests.
 - No support for browsers other than Chrome in the first version.
 
+## Incident 2026-11-06 (extension 0.3.2)
+
+Target: a shared SharePoint deck. The prompt had several paragraphs and a bulleted list. It asked Copilot to edit slide 6 only.
+
+1. `--open --new-chat`, tab not open: the tab opened, then "The Copilot pane did not open in time." The bridge clicked the Copilot button as soon as it appeared. The editor was probably not ready to handle the click.
+2. `--new-chat`, pane open from run 1: "The pane has no New chat button." A fresh pane has no New chat button. The button appears only after a conversation starts.
+3. No flags: Copilot edited only slide 6, and the file was saved. The command did not return. Ross stopped it after about six minutes (`--timeout 400`).
+
+Cause of run 3: the hook bound a request only when the signal `query` was exactly the typed prompt. The pane is a rich text editor, so typed newlines, list markers and spaces come back changed. The hook never bound, the adapters got no records, and the worker had only its timer. The 0.3.2 timer started after the pane opened. After the interrupt, the cancel marked the tab uncertain, and `status` showed that as `busy: True`.
+
+Signal count: `inspect` showed two `PptAgentExperimentalSignal` sends. These counts cover the life of the page, not one request. Runs 1 and 2 stopped before arm and before `send_prompt`, which is the only call that types. So the bridge did not send twice. The second signal is either a pane start signal or a task operation (the signal has `allowResume` and `taskOperationParams`). Version 0.4.0 reports per-request signal classes to settle this in the next live run.
+
+Observed PowerPoint schemas (names and keys only): `PptAgentExperimentalOutputAnnotation` (`finalResponse`, `responseStatus`, `queryId`, `taskId`, `sydneyConversationId`), `PptAgentExperimentalOutputAnnotationV1` (`pptEditsPayload`, `responseStatus`, `queryId`), `Core_TaskInformationAnnotation` (`taskStatus`, `ownerId`). Five V1 annotations matched five `CopilotActionResponseObject` sends, so V1 carries the edit batches.
+
 ## Architecture
 
 ```
@@ -132,6 +153,7 @@ Manifest V3, loaded unpacked. A `key` in the manifest gives a fixed extension ID
   - `approval_required` (the type and text of the request)
   - `completed` (the full text)
   - `error`
+- **Completion (0.4.0):** a `completed` event from the adapter ends a request. Without it, the worker polls the pane every 2 s. It settles the turn when Copilot was seen working (a Stop control, or a finished task status), the pane then shows no Stop control for 3 polls, and the hook has been quiet for 10 s. A settled result has `completion: settled`. If the hook saw nothing, `applied` is null.
 - **`controller.js` (isolated world, all Office frames):** it has these commands:
   - `status`: app, editor ready, pane open, edit mode.
   - `open_pane`
