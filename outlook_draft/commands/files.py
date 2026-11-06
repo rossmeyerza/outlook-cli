@@ -14,6 +14,7 @@ from rich.table import Table
 
 from .. import config
 from ..errors import OutlookAPIError
+from ..links import looks_like_share_url
 from ..outlook_client import OutlookClient
 from ..parser import add_output_args
 from ..progress import spinner
@@ -53,20 +54,49 @@ class _GraphClient(OutlookClient):
 
 # ── Site resolution helper ────────────────────────────────────────
 
+def _search_site(gc: _GraphClient, site_hint: str, groups: list[dict]) -> dict:
+    """Find a site that is not one of the user's groups, with a Graph site search."""
+    hint = site_hint.casefold()
+    found = gc.sp_search_sites(site_hint)
+
+    def names(site: dict) -> list[str]:
+        url_name = (site.get("webUrl") or "").rstrip("/").rsplit("/", 1)[-1]
+        return [n for n in (site.get("displayName"), site.get("name"), url_name) if n]
+
+    matches = [site for site in found if any(hint in n.casefold() for n in names(site))]
+    exact = [site for site in matches if any(hint == n.casefold() for n in names(site))]
+    matches = exact or matches
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        labels = [f"{s.get('displayName')} ({s.get('webUrl')})" for s in matches[:10]]
+        raise ValueError(f"Ambiguous site {site_hint!r}, matched: {', '.join(labels)}. Be more specific, or pass the site URL.")
+    group_names = [g["displayName"] for g in groups]
+    raise ValueError(
+        f"No site matching {site_hint!r} in your groups or in a site search. "
+        f"Pass the site URL instead. Your group sites: {', '.join(group_names)}"
+    )
+
+
 def _resolve_site_drives(gc: _GraphClient, site_hint: str) -> tuple[dict, str, list[dict]]:
     """Resolve a site hint to (group, site_id, drives).
 
-    site_hint is matched case-insensitively against group displayName.
+    site_hint is a site URL, or a name matched case-insensitively against
+    the user's group sites, then against a Graph site search. For a site
+    that is not a group, the returned group has no id.
     """
+    hint = site_hint.strip()
+    if hint.startswith("https://"):
+        site = gc.sp_site_by_url(hint)
+        return {"id": None, "displayName": site.get("displayName") or hint}, site["id"], gc.sp_list_drives(site["id"])
+
     groups = gc.sp_list_sites()
-    hint_lower = site_hint.lower()
+    hint_lower = hint.lower()
     matches = [g for g in groups if hint_lower in g["displayName"].lower()]
 
     if not matches:
-        names = [g["displayName"] for g in groups]
-        raise ValueError(
-            f"No site matching {site_hint!r}. Available: {', '.join(names)}"
-        )
+        site = _search_site(gc, hint, groups)
+        return {"id": None, "displayName": site.get("displayName") or hint}, site["id"], gc.sp_list_drives(site["id"])
     if len(matches) > 1:
         names = [g["displayName"] for g in matches]
         raise ValueError(
@@ -532,6 +562,16 @@ def cmd_files_upload(args) -> None:
         gc.close()
 
 
+def _download_share_url(gc: _GraphClient, url: str) -> tuple[dict, bytes]:
+    """Download a file from a SharePoint or OneDrive browser or sharing URL."""
+    if not looks_like_share_url(url):
+        raise ValueError("Only SharePoint and OneDrive URLs can be downloaded.")
+    item = gc.get_share_drive_item(url)
+    if "folder" in item:
+        raise ValueError("Download currently supports files, not folders.")
+    return item, gc.download_share_url(url)
+
+
 def cmd_files_download(args) -> None:
     """Download a file from OneDrive or SharePoint."""
     remote_path: str = args.path
@@ -542,7 +582,11 @@ def cmd_files_download(args) -> None:
     gc = _GraphClient()
     try:
         with spinner(args, "Downloading file..."):
-            if site:
+            if remote_path.strip().lower().startswith("https://"):
+                item, data = _download_share_url(gc, remote_path.strip())
+                if site:
+                    console.print("[yellow]--site and --library are not used with a URL.[/]")
+            elif site:
                 library: str | None = getattr(args, "library", None)
                 drive, item = _find_sp_item_by_path(gc, site, remote_path, library)
                 drive_id = drive["id"]
@@ -711,7 +755,7 @@ def _register_cmd_files_upload_p(files_sub) -> None:
 
 def _register_cmd_files_download_p(files_sub) -> None:
     cmd_files_download_p = files_sub.add_parser("download", help="Download a file")
-    cmd_files_download_p.add_argument("path", help="Remote file path")
+    cmd_files_download_p.add_argument("path", help="Remote file path, drive item ID, or SharePoint/OneDrive URL")
     cmd_files_download_p.add_argument("dest", nargs="?", default=".", help="Local output file or directory")
     cmd_files_download_p.add_argument("--site", metavar="NAME", help="SharePoint site name")
     cmd_files_download_p.add_argument("--library", metavar="NAME", help="SharePoint document library name")

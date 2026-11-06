@@ -234,3 +234,115 @@ def test_find_onedrive_item_uses_path_for_normal_names() -> None:
     gc = FakeOneDriveClient({}, {"Documents/report.pdf": item})
 
     assert _find_od_item(gc, "Documents/report.pdf") is item
+
+
+# ── Share URLs and sites outside the user's groups ───────────────
+
+SHARE_URL = "https://tenant.sharepoint.com/:p:/r/sites/Team/Shared%20Documents/Deck.pptx?d=w1&web=1"
+
+
+class ShareClient:
+    def __init__(self, item: dict):
+        self.item = item
+        self.calls: list[str] = []
+
+    def get_share_drive_item(self, url: str) -> dict:
+        self.calls.append(url)
+        return self.item
+
+    def download_share_url(self, url: str) -> bytes:
+        return b"deck"
+
+    def close(self) -> None:
+        pass
+
+
+def _download(monkeypatch, client, path, dest, **extra):
+    import argparse
+
+    from outlook_draft.commands import files
+
+    monkeypatch.setattr(files, "_GraphClient", lambda: client)
+    args = argparse.Namespace(path=path, dest=str(dest), site=extra.get("site"), library=None,
+                              overwrite=False, no_spinner=True)
+    files.cmd_files_download(args)
+
+
+def test_download_accepts_a_sharepoint_url(monkeypatch, tmp_path: Path, capsys) -> None:
+    client = ShareClient({"id": "item", "name": "Deck.pptx", "file": {}})
+    _download(monkeypatch, client, SHARE_URL, f"{tmp_path}/")
+    assert (tmp_path / "Deck.pptx").read_bytes() == b"deck"
+    assert client.calls == [SHARE_URL]
+    assert "Downloaded" in capsys.readouterr().out
+
+
+def test_download_url_refuses_folders_and_other_hosts(monkeypatch, tmp_path: Path, capsys) -> None:
+    _download(monkeypatch, ShareClient({"id": "f", "name": "Folder", "folder": {}}), SHARE_URL, f"{tmp_path}/")
+    assert "not folders" in capsys.readouterr().out
+    other = ShareClient({"id": "x", "name": "x.pptx"})
+    _download(monkeypatch, other, "https://example.com/x.pptx", f"{tmp_path}/")
+    assert "SharePoint and OneDrive URLs" in capsys.readouterr().out
+    assert other.calls == []
+    assert list(tmp_path.iterdir()) == []
+
+
+class SearchingGraphClient(FakeGraphClient):
+    def __init__(self, sites: list[dict]):
+        super().__init__({})
+        self.sites = sites
+        self.site_urls: list[str] = []
+
+    def sp_search_sites(self, query: str) -> list[dict]:
+        return self.sites
+
+    def sp_site_by_url(self, url: str) -> dict:
+        self.site_urls.append(url)
+        return {"id": "site-url", "displayName": "From URL"}
+
+
+AGENTIC = {"id": "site-9", "displayName": "WT-P-U-Consulting-AgenticLabs",
+           "webUrl": "https://tenant.sharepoint.com/sites/WT-P-U-Consulting-AgenticLabs"}
+
+
+def test_site_outside_the_users_groups_is_found_by_search() -> None:
+    from outlook_draft.commands.files import _resolve_site_drives
+
+    other = {"id": "site-8", "displayName": "AgenticLabs Archive", "webUrl": "https://tenant.sharepoint.com/sites/AgenticLabsArchive"}
+    group, site_id, drives = _resolve_site_drives(SearchingGraphClient([AGENTIC, other]), "WT-P-U-Consulting-AgenticLabs")
+    assert site_id == "site-9"
+    assert group["id"] is None
+    assert drives[0]["id"] == "drive-1"
+
+
+def test_site_search_reports_ambiguous_and_missing_sites() -> None:
+    from outlook_draft.commands.files import _resolve_site_drives
+
+    other = {"id": "site-8", "displayName": "AgenticLabs Archive", "webUrl": "https://tenant.sharepoint.com/sites/AgenticLabsArchive"}
+    with pytest.raises(ValueError, match="Ambiguous site"):
+        _resolve_site_drives(SearchingGraphClient([AGENTIC, other]), "AgenticLabs")
+    with pytest.raises(ValueError, match="Pass the site URL"):
+        _resolve_site_drives(SearchingGraphClient([]), "Nowhere")
+
+
+def test_site_url_resolves_directly() -> None:
+    from outlook_draft.commands.files import _resolve_site_drives
+
+    client = SearchingGraphClient([])
+    _, site_id, _ = _resolve_site_drives(client, "https://tenant.sharepoint.com/sites/WT-P-U-Consulting-AgenticLabs/Shared%20Documents")
+    assert site_id == "site-url"
+    assert client.site_urls == ["https://tenant.sharepoint.com/sites/WT-P-U-Consulting-AgenticLabs/Shared%20Documents"]
+
+
+def test_site_by_url_builds_the_graph_path() -> None:
+    from types import SimpleNamespace
+
+    from outlook_draft.outlook_client import OutlookClient
+
+    client = object.__new__(OutlookClient)
+    seen = []
+    client._request = lambda method, url, **kw: seen.append(url) or SimpleNamespace(json=lambda: {"id": "s"})
+    assert client.sp_site_by_url("https://tenant.sharepoint.com/sites/Team/Shared%20Documents/x")["id"] == "s"
+    assert seen == ["https://graph.microsoft.com/v1.0/sites/tenant.sharepoint.com:/sites/Team"]
+    for bad in ["http://tenant.sharepoint.com/sites/Team", "https://tenant.sharepoint.com/", "https://tenant.sharepoint.com/other/Team"]:
+        with pytest.raises(ValueError):
+            client.sp_site_by_url(bad)

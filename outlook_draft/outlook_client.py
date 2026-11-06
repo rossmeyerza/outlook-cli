@@ -7,7 +7,7 @@ from datetime import UTC
 from pathlib import Path
 from threading import RLock
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -233,6 +233,22 @@ class OutlookClient:
             g for g in groups
             if "Unified" in g.get("groupTypes", [])
         ]
+
+    def sp_search_sites(self, query: str) -> list[dict]:
+        """Search all SharePoint sites the user can read, not only group sites."""
+        resp = self._request("GET", f"{GRAPH_BASE}/sites",
+                             params={"search": query, "$select": "id,displayName,name,webUrl", "$top": "50"})
+        return resp.json().get("value", [])
+
+    def sp_site_by_url(self, site_url: str) -> dict:
+        """Resolve a site URL such as https://tenant.sharepoint.com/sites/Name."""
+        url = urlsplit(site_url)
+        parts = [part for part in url.path.split("/") if part]
+        if url.scheme != "https" or not url.hostname or len(parts) < 2 or parts[0].lower() not in {"sites", "teams"}:
+            raise ValueError("A site URL must look like https://<tenant>.sharepoint.com/sites/<name>.")
+        resp = self._request("GET", f"{GRAPH_BASE}/sites/{url.hostname}:/{parts[0]}/{parts[1]}",
+                             params={"$select": "id,displayName,name,webUrl"})
+        return resp.json()
 
     def sp_get_site(self, group_id: str) -> dict:
         resp = self._request("GET", f"{GRAPH_BASE}/groups/{group_id}/sites/root",
