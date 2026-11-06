@@ -14,7 +14,14 @@ const HOOK_FILES = ["adapters/common.js", "adapters/excel.js", "adapters/powerpo
 const HOOK_REVISION = 4;
 // Fallback end of a turn when no final answer event arrives: the pane shows no
 // Stop control for several polls, and the hook has been quiet for a while.
-const TIMING = { settlePollMs: 2000, settleIdlePolls: 3, settleQuietMs: 10000, staleGraceMs: 30000, minTimeoutMs: 10000 };
+const TIMING = {
+  settlePollMs: 2000, settleIdlePolls: 3, settleQuietMs: 10000, staleGraceMs: 30000, minTimeoutMs: 10000,
+  editorPollMs: 1000, panePollMs: 500,
+  // The ribbon button can render before the editor handles a click. Wait for
+  // the AugLoop socket, or this long after the button appears.
+  editorSettleMs: 10000, beforeOpenMs: 1000,
+  paneFirstWaitMs: 12000, paneWaitMs: 30000, inputSettleMs: 1500,
+};
 const TASK_DONE = /^(complete|completed|success|succeeded|done|finished)$/i;
 
 let port = null;
@@ -95,7 +102,8 @@ async function probe(tabId) {
   const frames = await runInFrames(tabId, { action: "describe" }).catch(() => []);
   const editors = frames.filter((f) => f.role === "editor");
   const panes = frames.filter((f) => f.role === "pane" && framePresented(f, frames));
-  return { frames, editors, pane: panes.find((p) => p.promptBox) || panes[0] || null };
+  const mounted = frames.filter((f) => f.role === "pane").length;
+  return { frames, editors, panesMounted: mounted, pane: panes.find((p) => p.promptBox) || panes[0] || null };
 }
 
 async function runIn(tabId, frameId, cmd) {
@@ -187,26 +195,73 @@ function checkActive(req) {
   if (req && req.done) throw new Stopped("The request already ended.");
 }
 
+// Ready means the pane is already open, or the Copilot button is on the page
+// and the editor's AugLoop socket is connected (or the button has been there
+// for a while). A new tab shows the button before the editor handles clicks.
 async function waitForEditor(tabId, timeoutMs, req) {
   const end = untilDone(req, timeoutMs);
+  let buttonSince = 0;
+  let last = null;
   while (Date.now() < end) {
     checkActive(req);
     const p = await probe(tabId);
-    if (p.editors.some((e) => e.paneButton) || (p.editors.length && p.pane && p.pane.promptBox)) return p;
-    await sleep(1000);
+    last = p;
+    if (p.editors.length && p.pane && p.pane.promptBox) return p;
+    const editor = p.editors.find((e) => e.paneButton);
+    if (editor) {
+      buttonSince = buttonSince || Date.now();
+      const connected = Boolean(editor.hook && editor.hook.seen && editor.hook.sockets > 0);
+      if (connected || Date.now() - buttonSince >= TIMING.editorSettleMs) return p;
+    } else {
+      buttonSince = 0;
+    }
+    await sleep(TIMING.editorPollMs);
   }
-  throw new Error("The Office editor did not load in time.");
+  const seen = !last || !last.editors.length ? "no editor frame" : buttonSince ? "Copilot button without an AugLoop connection" : "no Copilot button";
+  throw new Error(`The Office editor did not load in time (${seen}).`);
 }
 
 async function waitForPane(tabId, timeoutMs, req) {
   const end = untilDone(req, timeoutMs);
+  let mounted = 0;
   while (Date.now() < end) {
     checkActive(req);
     const p = await probe(tabId);
     if (p.pane && p.pane.promptBox) return p;
-    await sleep(500);
+    mounted = p.panesMounted || 0;
+    await sleep(TIMING.panePollMs);
   }
-  throw new Error("The Copilot pane did not open in time.");
+  throw new Error(`The Copilot pane did not open in time (pane frame ${mounted ? "loaded but not shown" : "not loaded"}).`);
+}
+
+// Click the Copilot button. If no pane frame loads at all, and the button
+// does not report itself as open, click once more. The button only toggles
+// the pane; it sends nothing.
+async function openPane(req, tabId, p) {
+  setPhase(req, "open_pane");
+  await sleep(TIMING.beforeOpenMs);
+  checkActive(req);
+  const editor = p.editors.find((e) => e.paneButton) || p.editors[0];
+  const opened = await runIn(tabId, editor.frameId, { action: "open_pane" });
+  if (!opened.ok) throw new Error(opened.error);
+  setPhase(req, "wait_pane");
+  try {
+    p = await waitForPane(tabId, TIMING.paneFirstWaitMs, req);
+  } catch (e) {
+    if (e instanceof Stopped) throw e;
+    const now = await probe(tabId);
+    const button = now.editors.find((x) => x.paneButton);
+    if (!(now.pane && now.pane.promptBox) && !now.panesMounted && button && button.paneButtonState !== "true") {
+      setPhase(req, "open_pane_retry");
+      const retry = await runIn(tabId, button.frameId, { action: "open_pane" });
+      if (!retry.ok) throw new Error(retry.error);
+      setPhase(req, "wait_pane");
+    }
+    p = await waitForPane(tabId, TIMING.paneWaitMs, req);
+  }
+  // The input can be on screen before it accepts typing.
+  await sleep(TIMING.inputSettleMs);
+  return waitForPane(tabId, 5000, req);
 }
 
 // ---- requests -----------------------------------------------------------
@@ -342,17 +397,7 @@ async function ask(msg) {
     req.app = appOf(p);
     if (msg.app && req.app && msg.app !== req.app) throw new Error(`The tab is ${req.app}, not ${msg.app}.`);
     send({ id: req.id, event: { type: "tab", tabId: tab.id, app: req.app, title: tab.title } });
-    if (!(p.pane && p.pane.promptBox)) {
-      setPhase(req, "open_pane");
-      const editor = p.editors.find((e) => e.paneButton) || p.editors[0];
-      const opened = await runIn(tab.id, editor.frameId, { action: "open_pane" });
-      if (!opened.ok) throw new Error(opened.error);
-      setPhase(req, "wait_pane");
-      p = await waitForPane(tab.id, 30000, req);
-      // The input can be on screen before it accepts typing.
-      await sleep(1500);
-      p = await waitForPane(tab.id, 5000, req);
-    }
+    if (!(p.pane && p.pane.promptBox)) p = await openPane(req, tab.id, p);
     if (req.done) return;
     if (msg.newChat) {
       setPhase(req, "new_chat");
@@ -392,7 +437,9 @@ async function ask(msg) {
     watchSettle(req);
   } catch (e) {
     if (e instanceof Stopped) return;
-    finish(req, "error", { message: `${String((e && e.message) || e)} (phase ${req.phase})` });
+    // A wait that ran out at the request deadline is a timeout, not an error.
+    const status = Date.now() >= req.deadline ? "timeout" : "error";
+    finish(req, status, { message: `${String((e && e.message) || e)} (phase ${req.phase})` });
   }
 }
 

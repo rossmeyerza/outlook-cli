@@ -170,7 +170,9 @@
       isTop: window === window.top, embeddedFrames: await embeddedFrames() };
     if (role === "editor") {
       info.hook = await pingHook();
-      info.paneButton = Boolean(findByLabel(CLICKABLE.openPane));
+      const button = findByLabel(CLICKABLE.openPane);
+      info.paneButton = Boolean(button);
+      info.paneButtonState = button ? (button.getAttribute("aria-expanded") || button.getAttribute("aria-pressed") || null) : null;
     } else if (role === "pane") {
       info.promptBox = Boolean(findByLabel(PROMPT_LABELS, { editable: true }));
       info.sendButton = Boolean(findByLabel(CLICKABLE.send));

@@ -8,7 +8,8 @@ function worker(ui = {}) {
   const sent = [];
   const calls = [];
   // Live UI state for the fake frames. Tests change it while a request runs.
-  ui = { stopButton: false, revision: 4, editorReady: true, ...ui };
+  ui = { stopButton: false, revision: 4, editorReady: true, sockets: 1, paneOpen: true, opensAfter: 1, clicks: 0, ...ui };
+  if (ui.paneMounted === undefined) ui.paneMounted = ui.paneOpen;
   const listeners = {};
   const event = (name) => ({ addListener: (fn) => { listeners[name] = fn; } });
   const tab = { id: 7, url: "https://tenant.sharepoint.com/_layouts/15/Doc.aspx?sourcedoc=%7Btest-guid%7D", title: "Test.xlsx" };
@@ -26,10 +27,20 @@ function worker(ui = {}) {
       if (files) return [];
       const cmd = args[0];
       calls.push(cmd);
-      if (cmd.action === "describe") return [
-        { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: ui.editorReady, hook: { seen: true, revision: ui.revision }, embeddedFrames: [{ url: "https://pane.resources.office.net/taskpane.html", visible: true }] } },
-        { frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html", promptBox: ui.editorReady, stopButton: ui.stopButton } },
-      ];
+      if (cmd.action === "describe") {
+        const frames = [
+          { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: ui.editorReady, paneButtonState: ui.paneOpen ? "true" : "false",
+            hook: { seen: true, revision: ui.revision, sockets: ui.sockets },
+            embeddedFrames: ui.paneMounted ? [{ url: "https://pane.resources.office.net/taskpane.html", visible: ui.paneOpen }] : [] } },
+        ];
+        if (ui.paneMounted) frames.push({ frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html",
+          promptBox: ui.editorReady && ui.paneOpen, stopButton: ui.stopButton } });
+        return frames;
+      }
+      if (cmd.action === "open_pane") {
+        ui.clicks += 1;
+        if (ui.clicks >= ui.opensAfter) ui.paneOpen = ui.paneMounted = true;
+      }
       return [{ frameId: target.frameIds[0], result: { ok: true, hook: { seen: true, revision: ui.revision } } }];
     } },
     alarms: { create() {}, onAlarm: event("alarm") },
@@ -38,7 +49,8 @@ function worker(ui = {}) {
   const code = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
   vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented, reset, status };", context);
   // Fast settle polling for tests.
-  vm.runInContext("Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30, minTimeoutMs: 0 });", context);
+  vm.runInContext(`Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30, minTimeoutMs: 0, editorPollMs: 5,
+    panePollMs: 5, editorSettleMs: 40, beforeOpenMs: 0, paneFirstWaitMs: 40, paneWaitMs: 200, inputSettleMs: 0 });`, context);
   return { api: context.testApi, sent, calls, listeners, tab, chrome, ui, context };
 }
 
@@ -263,4 +275,48 @@ test("reset clears an uncertain tab, refuses a live request and clears a stale o
   assert.deepEqual(result.cleared, { request: true, uncertain: true });
   assert.equal(api.requests.size, 0);
   assert.equal(api.uncertainTabs.size, 0);
+});
+
+test("a closed pane opens with one click after the editor connects", async () => {
+  const { api, sent, calls, ui } = worker({ paneOpen: false, sockets: 0 });
+  setTimeout(() => { ui.sockets = 1; }, 15);
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, open: true });
+  assert.equal(ui.clicks, 1);
+  const phases = sent.filter((s) => s.event && s.event.type === "phase").map((s) => s.event.phase);
+  assert.deepEqual(phases.slice(0, 3), ["wait_editor", "open_pane", "wait_pane"]);
+  assert(calls.some((c) => c.action === "send_prompt"));
+  api.finish(api.requests.get(7), "completed");
+});
+
+test("a click that loads no pane frame is repeated once", async () => {
+  const { api, sent, ui } = worker({ paneOpen: false, opensAfter: 2 });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  assert.equal(ui.clicks, 2);
+  assert(sent.some((s) => s.event && s.event.phase === "open_pane_retry"));
+  api.finish(api.requests.get(7), "completed");
+});
+
+test("a pane that never opens fails in wait_pane, with no third click and nothing sent", async () => {
+  const { api, sent, calls, ui } = worker({ paneOpen: false, opensAfter: 99 });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "error");
+  assert.equal(result.phase, "wait_pane");
+  assert.match(result.message, /pane frame not loaded/);
+  assert.equal(ui.clicks, 2);
+  assert(!calls.some((c) => c.action === "send_prompt"));
+});
+
+test("a mounted but hidden pane is not clicked again", async () => {
+  const { api, sent, ui } = worker({ paneOpen: false, paneMounted: true, opensAfter: 99 });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  assert.equal(ui.clicks, 1);
+  assert.match(sent.find((s) => s.done).result.message, /loaded but not shown/);
+});
+
+test("an editor without a Copilot button times out in wait_editor", async () => {
+  const { api, sent } = worker({ editorReady: false, paneOpen: false });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, timeout: 0.1 });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.phase, "wait_editor");
 });
