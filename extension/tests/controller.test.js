@@ -35,3 +35,14 @@ test("the click allowlist cannot approve, keep, undo, or change editing", () => 
     assert.throws(() => controller.safeClick(fakeElement(label), [label]), /refused/);
   assert.throws(() => controller.safeClick(fakeElement("Share"), controller.CLICKABLE.send), /refused/);
 });
+
+test("the Stop control is detected for status only and is never clickable", () => {
+  for (const label of ["Stop", "Stop generating", "Stop responding"]) assert.match(label, controller.STOP_LABEL);
+  assert.doesNotMatch("Stopwatch", controller.STOP_LABEL);
+  for (const labels of Object.values(controller.CLICKABLE))
+    assert(!labels.some((label) => controller.STOP_LABEL.test(label)));
+  const nodes = [fakeElement("Stop generating", { hidden: true }), fakeElement("Stop generating")];
+  let i = 0;
+  const root = { createTreeWalker: () => ({ currentNode: nodes[0], nextNode: () => nodes[++i] }) };
+  assert.equal(controller.findByPattern(controller.STOP_LABEL, root), nodes[1]);
+});

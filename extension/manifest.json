@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "outlook-cli Copilot bridge",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Lets outlook-cli send prompts to Copilot in Excel, PowerPoint and Word for the web, in your own browser session.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyyMS0qpz0xflA4NzKYCt57XxI0K9mO5cdfW8l7zijOO+0s7Iqla1I0qA/Dh405ciIXypRv466tvB++noNe8i9g+/yQIX13TYvlQWKMWotZDyq4hADhxWZwaeOM+8BSZpAdg1oquW7F0gv0EyBjH9VDpn9O68ASiDfcOYKKMCRd9m8MQyGp7AJxCotWWWzaLbD6W517YuSGxaIWRQqaF6Ylqqlvc7h1Y8YbKNSOFnoQxDkZbGJi3E68HYFWDZAycYH9QmW28F08oimWEvzqdKp/xoXJUNnrA68VDu/ANdzQlSY/CINpg700RXEj0f3xyg4AxsEVIKTeScpxR3Ve/RUwIDAQAB",
   "permissions": ["nativeMessaging", "tabs", "scripting", "alarms"],

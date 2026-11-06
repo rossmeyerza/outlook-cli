@@ -5,7 +5,7 @@
 (() => {
   "use strict";
 
-  const VERSION = 5;
+  const VERSION = 6;
   const childUrls = new WeakMap();
   const diagnostics = globalThis.OcliDiagnostics || (typeof require === "function" ? require("./diagnostics.js") : null);
   const CHANNEL = "__ocliCopilot";
@@ -15,6 +15,8 @@
     newChat: ["New chat", "New conversation", "Start new chat"],
   };
   const PROMPT_LABELS = ["Chat input", "Type your message"];
+  // Read only, never clicked: a visible Stop control means Copilot is still working.
+  const STOP_LABEL = /^stop\b/i;
   // Labels that must never be clicked, even if a page uses them for an allowed name.
   const FORBIDDEN = /\b(done|undo|keep|allow|approve|accept|confirm|apply|discard|delete|share)\b/i;
 
@@ -61,6 +63,14 @@
     return null;
   }
 
+  function findByPattern(pattern, root = document) {
+    for (const el of allElements(root)) {
+      if (!el.getAttribute || (el.tagName !== "BUTTON" && el.getAttribute("role") !== "button")) continue;
+      if (pattern.test(labelOf(el)) && visible(el)) return el;
+    }
+    return null;
+  }
+
   function enabled(el) {
     return !el.disabled && el.getAttribute("aria-disabled") !== "true";
   }
@@ -85,7 +95,7 @@
   }
 
   // Hook state, from the main world.
-  const hook = { seen: false, armed: false, sockets: 0, revision: null, schemas: [] };
+  const hook = { seen: false, armed: false, sockets: 0, revision: null, schemas: [], request: null };
   let armedRequest = null;
   let approvalTimer = null;
 
@@ -165,6 +175,7 @@
       info.promptBox = Boolean(findByLabel(PROMPT_LABELS, { editable: true }));
       info.sendButton = Boolean(findByLabel(CLICKABLE.send));
       info.newChatButton = Boolean(findByLabel(CLICKABLE.newChat));
+      info.stopButton = Boolean(findByPattern(STOP_LABEL));
       info.allowEditing = allowEditingState();
     }
     return info;
@@ -205,7 +216,7 @@
     const box = findByLabel(PROMPT_LABELS, { editable: true });
     if (!box) return { ok: false, error: "The Copilot prompt box is not open." };
     if ((box.innerText || "").trim()) return { ok: false, error: "The prompt box has an unsent draft. Clear it first." };
-    if (findByLabel(["Stop", "Stop generating", "Stop responding"])) return { ok: false, error: "Copilot is already running in this pane." };
+    if (findByPattern(STOP_LABEL)) return { ok: false, error: "Copilot is already running in this pane." };
     box.focus();
     if (!document.execCommand("insertText", false, text)) return { ok: false, error: "Could not type the prompt." };
     const send = await waitFor(() => {
@@ -236,6 +247,12 @@
       case "new_chat": return newChat();
       case "send_prompt": return sendPrompt(String(cmd.text || ""), cmd.requestId);
       case "read_pane": return readPane();
+      case "sending":
+        // Tells the hook that Send is about to be clicked for the armed request.
+        if (!cmd.requestId || armedRequest !== cmd.requestId) return { ok: false, error: "The frame is not armed for this request." };
+        toHook("sending");
+        await sleep(50);
+        return { ok: true };
       case "arm":
         armedRequest = cmd.on ? cmd.requestId : null;
         watchApprovals();
@@ -273,13 +290,13 @@
     if (ev.source !== window || !msg || msg[CHANNEL] !== "hook") return;
     if (msg.kind === "pong") {
       Object.assign(hook, { seen: true, armed: msg.armed, sockets: msg.sockets,
-        revision: msg.revision || null, schemas: msg.schemas || [] });
+        revision: msg.revision || null, schemas: msg.schemas || [], request: msg.request || null });
     } else if (msg.kind === "event" && armedRequest && msg.event && typeof msg.event.type === "string") {
       relay(msg.event);
     }
   });
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { frameRole, findByLabel, safeClick, CLICKABLE, PROMPT_LABELS, FORBIDDEN };
+    module.exports = { frameRole, findByLabel, findByPattern, safeClick, CLICKABLE, PROMPT_LABELS, FORBIDDEN, STOP_LABEL };
   }
 })();

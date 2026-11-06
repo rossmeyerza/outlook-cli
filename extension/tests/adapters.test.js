@@ -55,9 +55,15 @@ test("Excel invocation result exports only success", () => {
   assert.deepEqual(excel.adapt("send", body), [{ type: "action_result", app: "excel", ok: true }]);
 });
 
-test("PowerPoint ignores document and edit payloads", () => {
-  const raw = wrap(tagged(PP.output + "V1", { pptEditsPayload: "PRIVATE", basePresentation: "PRIVATE" }));
-  assert.deepEqual(ppt.adapt("recv", raw, {}), []);
+test("PowerPoint edit batches export a name and status, not the payload", () => {
+  const raw = wrap(tagged(PP.outputV1, { pptEditsPayload: "PRIVATE", basePresentation: "PRIVATE", responseStatus: "complete" }));
+  const events = ppt.adapt("recv", raw, {});
+  assert.deepEqual(events, [
+    { type: "status", source: "output_v1", value: "complete" },
+    { type: "action", app: "powerpoint", name: "ppt_edits", status: "complete" },
+  ]);
+  assert(!JSON.stringify(events).includes("PRIVATE"));
+  assert.deepEqual(ppt.adapt("recv", wrap(tagged(PP.output, { basePresentation: "PRIVATE" })), {}), []);
   assert.deepEqual(ppt.adapt("send", wrap(tagged("AugLoop_Powerpoint_PowerPointShape", { text: "PRIVATE" })), {}), []);
 });
 
@@ -73,7 +79,10 @@ test("PowerPoint plain chunks and full response", () => {
   assert.equal(ppt.responseDelta(state, "Hello"), "Hello");
   assert.equal(ppt.responseDelta(state, " world"), " world");
   const final = wrap(tagged(PP.output, { responseStatus: "complete", queryId: "r", sydneyConversationId: "c", finalResponse: '{"assistantResponse":"Hello world","thoughts":"PRIVATE"}', basePresentation: "PRIVATE" }));
-  assert.deepEqual(ppt.adapt("recv", final, state), [{ type: "completed", text: "Hello world", conversationId: "c" }]);
+  assert.deepEqual(ppt.adapt("recv", final, state), [
+    { type: "status", source: "output", value: "complete" },
+    { type: "completed", text: "Hello world", conversationId: "c" },
+  ]);
 });
 
 test("PowerPoint slide activity exports only target ids", () => {
@@ -96,4 +105,38 @@ test("Word actions contain only names and no arguments or Excel write claims", (
 test("PowerPoint action responses export no document data", () => {
   const response = tagged(PP.correlated, { content: tagged(PP.actionResponse, { actionResponse: { isSuccess: true, statusCode: "CompletedStatusCode", errorDetails: "PRIVATE" } }) });
   assert.deepEqual(ppt.adapt("send", response, {}), [{ type: "action_result", app: "powerpoint", ok: true, status: "CompletedStatusCode" }]);
+});
+
+test("PowerPoint completion: final answer object, status names and failures", () => {
+  const out = (extra) => wrap(tagged(PP.output, { queryId: "r", ...extra }));
+  const types = (events) => events.map((e) => e.type);
+  // Unknown status name, but a final answer object: the turn is over.
+  assert.deepEqual(types(ppt.adapt("recv", out({ responseStatus: "Finalised", finalResponse: '{"assistantResponse":"A"}' }), {})), ["status", "completed"]);
+  // No status at all, final answer present.
+  assert.deepEqual(types(ppt.adapt("recv", out({ finalResponse: '{"assistantResponse":"A"}' }), {})), ["completed"]);
+  // Still running: a partial final object is not the end.
+  assert.deepEqual(types(ppt.adapt("recv", out({ responseStatus: "inProgress", finalResponse: '{"assistantResponse":"A"}' }), {})), ["status"]);
+  // Other completion names.
+  assert.deepEqual(types(ppt.adapt("recv", out({ responseStatus: "Completed", finalResponse: "" }), {})), ["status", "completed"]);
+  assert.deepEqual(types(ppt.adapt("recv", out({ responseStatus: "failed" }), {})), ["status", "error"]);
+  // A status is exported once per change, and long or odd values never.
+  const state = {};
+  ppt.adapt("recv", out({ responseStatus: "streaming" }), state);
+  assert.deepEqual(ppt.adapt("recv", out({ responseStatus: "streaming" }), state), []);
+  assert.deepEqual(ppt.adapt("recv", out({ responseStatus: "PRIVATE text with: punctuation!" }), {}), []);
+});
+
+test("prompt normal form ignores editor changes, not wording", () => {
+  const a = common.normalisePrompt('Edit slide 6.\r\n\r\n- One  "two"\n1. Three');
+  assert.equal(a, 'Edit slide 6. One "two" Three');
+  assert.equal(common.normalisePrompt("Edit slide 6.\n\u2022 One\u00a0 \u201ctwo\u201d\n\u2022 Three"), a);
+  assert.notEqual(common.normalisePrompt("Edit slide 7. One two Three"), a);
+  assert.equal(common.normalisePrompt(undefined), "");
+});
+
+test("task status exports a status name only", () => {
+  const record = tagged(common.TASK_INFO, { ownerId: "PRIVATE", taskStatus: "Running" });
+  assert.deepEqual(common.taskEvents("recv", record), [{ type: "task_status", value: "Running" }]);
+  assert.deepEqual(common.taskEvents("send", record), []);
+  assert.deepEqual(common.taskEvents("recv", tagged(common.TASK_INFO, { taskStatus: { PRIVATE: 1 } })), [{ type: "task_status", value: "object" }]);
 });

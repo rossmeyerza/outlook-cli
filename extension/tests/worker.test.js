@@ -4,9 +4,11 @@ const vm = require("node:vm");
 const fs = require("node:fs");
 const path = require("node:path");
 
-function worker() {
+function worker(ui = {}) {
   const sent = [];
   const calls = [];
+  // Live UI state for the fake frames. Tests change it while a request runs.
+  ui = { stopButton: false, revision: 4, ...ui };
   const listeners = {};
   const event = (name) => ({ addListener: (fn) => { listeners[name] = fn; } });
   const tab = { id: 7, url: "https://tenant.sharepoint.com/_layouts/15/Doc.aspx?sourcedoc=%7Btest-guid%7D", title: "Test.xlsx" };
@@ -25,17 +27,19 @@ function worker() {
       const cmd = args[0];
       calls.push(cmd);
       if (cmd.action === "describe") return [
-        { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: true, hook: { seen: true, revision: 2 }, embeddedFrames: [{ url: "https://pane.resources.office.net/taskpane.html", visible: true }] } },
-        { frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html", promptBox: true } },
+        { frameId: 1, result: { role: "editor", isTop: true, app: "excel", paneButton: true, hook: { seen: true, revision: ui.revision }, embeddedFrames: [{ url: "https://pane.resources.office.net/taskpane.html", visible: true }] } },
+        { frameId: 2, result: { role: "pane", url: "https://pane.resources.office.net/taskpane.html", promptBox: true, stopButton: ui.stopButton } },
       ];
-      return [{ frameId: target.frameIds[0], result: { ok: true, hook: { seen: true, revision: 2 } } }];
+      return [{ frameId: target.frameIds[0], result: { ok: true, hook: { seen: true, revision: ui.revision } } }];
     } },
     alarms: { create() {}, onAlarm: event("alarm") },
   };
   const context = vm.createContext({ chrome, console, setTimeout, clearTimeout, URL });
   const code = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
   vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented };", context);
-  return { api: context.testApi, sent, calls, listeners, tab, chrome };
+  // Fast settle polling for tests.
+  vm.runInContext("Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30 });", context);
+  return { api: context.testApi, sent, calls, listeners, tab, chrome, ui, context };
 }
 
 test("host disconnect consumes lastError, reconnects transport and never replays prompts", async () => {
@@ -119,4 +123,97 @@ test("approval returns without issuing an approval command", async () => {
   assert.equal(result.status, "approval_required");
   assert.equal(result.approval.text, "Approve?");
   assert(!calls.some((c) => /approve|allow|keep/i.test(c.action)));
+});
+
+const until = async (fn, ms = 2000) => {
+  const end = Date.now() + ms;
+  while (!fn()) {
+    if (Date.now() > end) throw new Error("condition not met");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+};
+
+test("an old hook revision stops before anything is typed", async () => {
+  const { api, sent, calls } = worker({ revision: 3 });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "error");
+  assert.match(result.message, /Reload the Office tab/);
+  assert(!calls.some((c) => c.action === "send_prompt"));
+});
+
+test("Send is marked in the editor frames before the prompt is sent", async () => {
+  const { api, calls } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const order = calls.map((c) => c.action);
+  assert(order.indexOf("sending") < order.indexOf("send_prompt"));
+  api.finish(api.requests.get(7), "completed");
+});
+
+test("the pane going idle settles a turn that never sent a final event", async () => {
+  const { api, sent, ui } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "bound", mode: "normalised" });
+  api.onEvent(req, { type: "status", source: "output", value: "streaming" });
+  ui.stopButton = true;
+  await until(() => req.sawBusy);
+  // No final event: the stop control goes away and the hook stays quiet.
+  ui.stopButton = false;
+  await until(() => req.done);
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "completed");
+  assert.equal(result.completion, "settled");
+  assert.equal(result.binding, "normalised");
+  assert.deepEqual([...result.statuses], ["output:streaming"]);
+  assert.equal(api.uncertainTabs.has(7), false);
+});
+
+test("an idle pane alone does not settle a turn that never started", async () => {
+  const { api } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  await until(() => req.idlePolls >= 6);
+  assert.equal(req.done, false);
+  api.finish(req, "completed");
+});
+
+test("a finished task status plus an idle pane settles the turn", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "bound", mode: "exact" });
+  api.onEvent(req, { type: "task_status", value: "Completed" });
+  await until(() => req.done);
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.completion, "settled");
+  assert.equal(result.applied, false);
+  assert.deepEqual([...result.statuses], ["task:Completed"]);
+});
+
+test("a turn the hook never saw settles on the pane, with unknown edits", async () => {
+  const { api, sent, ui } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  ui.stopButton = true;
+  await until(() => req.sawBusy);
+  ui.stopButton = false;
+  await until(() => req.done);
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "completed");
+  assert.equal(result.applied, null);
+  assert.match(result.appliedEvidence, /did not see this request/);
+});
+
+test("PowerPoint edit batches with successful responses count as applied", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "bound", mode: "exact" });
+  api.onEvent(req, { type: "action", app: "powerpoint", name: "ppt_edits", status: null });
+  api.onEvent(req, { type: "action_result", app: "powerpoint", ok: true });
+  api.onEvent(req, { type: "completed", text: "Done" });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.completion, "event");
+  assert.equal(result.applied, true);
 });

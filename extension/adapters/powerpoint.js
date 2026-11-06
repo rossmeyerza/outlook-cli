@@ -5,11 +5,13 @@
   "use strict";
 
   const common = root.OcliAdapters ? root.OcliAdapters.common : require("./common.js");
-  const { typeOf, bodies, parseJson, cleanHeader, decodePartialJsonString } = common;
+  const { typeOf, bodies, parseJson, cleanHeader, decodePartialJsonString, token } = common;
 
   const T = {
     signal: "AugLoop_PptAgentExperimental_PptAgentExperimentalSignal",
     output: "AugLoop_PptAgentExperimental_PptAgentExperimentalOutputAnnotation",
+    // Seen 2026-11-06: one per edit batch, each followed by one client action response.
+    outputV1: "AugLoop_PptAgentExperimental_PptAgentExperimentalOutputAnnotationV1",
     actionResponse: "AugLoop_PptAgentExperimental_CopilotActionResponseObject",
     correlated: "AugLoop_Session_Protocol_ExecutionCorrelatedClientResponse",
   };
@@ -62,15 +64,37 @@
     }
   }
 
+  const DONE = /^(complete|completed|success|succeeded|done|finished)$/i;
+  const FAILED = /^(error|failed|failure|cancelled|canceled|aborted|timeout|timedout)$/i;
+  const RUNNING = /^(in[ _-]?progress|streaming|running|pending|started|partial|thinking|processing)$/i;
+
+  // Status names are exported once per change, so a live check shows the real values.
+  function noteStatus(state, source, value, events) {
+    const status = token(value);
+    if (!status || state[source] === status) return status;
+    state[source] = status;
+    events.push({ type: "status", source, value: status });
+    return status;
+  }
+
   function fromOutput(body, state, events) {
     if (body.chunkType !== undefined) fromChunk(body, state, events);
-    if (body.responseStatus === "complete") {
-      const final = parseJson(body.finalResponse) || {};
-      const text = typeof final.assistantResponse === "string" ? final.assistantResponse : (state.emitted || "");
-      events.push({ type: "completed", text, conversationId: conversationIdOf(body) });
-    } else if (body.responseStatus === "error" || body.responseStatus === "failed") {
-      events.push({ type: "error", message: "PowerPoint Copilot reported an error.", conversationId: conversationIdOf(body) });
+    const status = noteStatus(state, "output", body.responseStatus, events);
+    const final = parseJson(body.finalResponse);
+    const finalText = final && typeof final.assistantResponse === "string" ? final.assistantResponse : null;
+    const conversationId = conversationIdOf(body);
+    if (status && FAILED.test(status)) {
+      events.push({ type: "error", message: `PowerPoint Copilot reported ${status}.`, conversationId });
+    } else if ((status && DONE.test(status)) || (finalText !== null && !(status && RUNNING.test(status)))) {
+      // A final answer object is the end of the turn, whatever the status name is.
+      events.push({ type: "completed", text: finalText !== null ? finalText : (state.emitted || ""), conversationId });
     }
+  }
+
+  // Edit batches. Export that a batch arrived, never its payload.
+  function fromOutputV1(body, state, events) {
+    const status = noteStatus(state, "output_v1", body.responseStatus, events);
+    if (body.pptEditsPayload) events.push({ type: "action", app: "powerpoint", name: "ppt_edits", status });
   }
 
   function adapt(direction, record, state) {
@@ -81,9 +105,13 @@
       if (direction === "send" && kind === T.signal) {
         state.raw = "";
         state.emitted = "";
+        state.output = null;
+        state.output_v1 = null;
         events.push({ type: "started", app: "powerpoint", requestId: body.queryId, conversationId: conversationIdOf(body) });
       } else if (direction === "recv" && kind === T.output) {
         fromOutput(body, state, events);
+      } else if (direction === "recv" && kind === T.outputV1) {
+        fromOutputV1(body, state, events);
       } else if (direction === "send" && kind === T.correlated && typeOf(body.content) === T.actionResponse) {
         const response = body.content.actionResponse || {};
         events.push({ type: "action_result", app: "powerpoint", ok: response.isSuccess === true, status: response.statusCode });

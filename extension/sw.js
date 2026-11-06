@@ -11,6 +11,11 @@ const OFFICE_URLS = [
   "https://*.cloud.microsoft/*",
 ];
 const HOOK_FILES = ["adapters/common.js", "adapters/excel.js", "adapters/powerpoint.js", "hook.js"];
+const HOOK_REVISION = 4;
+// Fallback end of a turn when no final answer event arrives: the pane shows no
+// Stop control for several polls, and the hook has been quiet for a while.
+const TIMING = { settlePollMs: 2000, settleIdlePolls: 3, settleQuietMs: 10000 };
+const TASK_DONE = /^(complete|completed|success|succeeded|done|finished)$/i;
 
 let port = null;
 let lastHostError = null;
@@ -186,6 +191,7 @@ function finish(req, status, extra = {}) {
   if (req.done) return;
   req.done = true;
   clearTimeout(req.timer);
+  clearTimeout(req.settleTimer);
   requests.delete(req.tabId);
   if (req.sent && status !== "completed") uncertainTabs.add(req.tabId);
   for (const frameId of req.armedFrames || []) {
@@ -202,20 +208,37 @@ function finish(req, status, extra = {}) {
     actions: req.actions,
     approval: extra.approval || null,
     message: extra.message || null,
+    completion: extra.completion || null,
+    binding: req.binding || null,
+    statuses: req.statuses,
   };
   // A function invocation is not proof that edits were applied. Excel scripts
   // can be reads. Report only a successful client response after a write signal.
-  const writeObserved = req.actions.some((a) => a.writes === true || (a.name === "slide_activity" && a.status === "success"));
+  const writeObserved = req.actions.some((a) => a.writes === true || a.name === "ppt_edits"
+    || (a.name === "slide_activity" && a.status === "success"));
   const succeeded = req.actions.some((a) => a.type === "action_result" && a.ok === true);
   const failed = req.actions.some((a) => a.type === "action_result" && a.ok === false);
   result.applied = status === "completed" && writeObserved && succeeded && !failed;
   result.appliedEvidence = "Observed write signals and client action responses, not an independent document check.";
+  if (req.sent && !req.binding && !req.hookEvents) {
+    // The hook emits nothing before it binds, so it never matched this request.
+    result.applied = null;
+    result.appliedEvidence = "Not known. The hook did not see this request. Check the document.";
+  }
   send({ id: req.id, done: true, result });
 }
 
 function onEvent(req, event) {
   if (req.done) return;
-  if (event.type === "started") {
+  req.lastEventAt = Date.now();
+  req.hookEvents += 1;
+  if (event.type === "bound") {
+    req.binding = event.mode || "unknown";
+  } else if (event.type === "status" || event.type === "task_status") {
+    const name = `${event.source || "task"}:${event.value}`;
+    if (!req.statuses.includes(name) && req.statuses.length < 20) req.statuses.push(name);
+    if (event.type === "task_status" && TASK_DONE.test(String(event.value))) req.taskDone = true;
+  } else if (event.type === "started") {
     req.agentRequestId = event.requestId || req.agentRequestId;
     req.conversationId = event.conversationId || req.conversationId;
   } else if (event.type === "text") {
@@ -227,12 +250,38 @@ function onEvent(req, event) {
   }
   send({ id: req.id, event });
   if (event.type === "completed") {
-    finish(req, "completed", { text: event.text || req.text, conversationId: event.conversationId });
+    finish(req, "completed", { text: event.text || req.text, conversationId: event.conversationId, completion: "event" });
   } else if (event.type === "error") {
     finish(req, "error", { message: event.message });
   } else if (event.type === "approval_required") {
     finish(req, "approval_required", { approval: { kind: event.kind, text: event.text } });
   }
+}
+
+// The pane UI is the fallback for the end of a turn. A final answer event from
+// the hook always wins. Settle only after Copilot was seen working (a Stop
+// control or a finished task status), so a slow start is not taken as the end.
+function watchSettle(req) {
+  const tick = async () => {
+    if (req.done) return;
+    let pane = null;
+    try { pane = (await probe(req.tabId)).pane; } catch (e) { pane = null; }
+    if (req.done) return;
+    if (pane && pane.stopButton) {
+      req.sawBusy = true;
+      req.idlePolls = 0;
+    } else if (pane) {
+      req.idlePolls += 1;
+    }
+    const quiet = Date.now() - req.lastEventAt >= TIMING.settleQuietMs;
+    if ((req.sawBusy || req.taskDone) && req.idlePolls >= TIMING.settleIdlePolls && quiet) {
+      finish(req, "completed", { completion: "settled",
+        message: "Copilot stopped working, but no final answer event arrived. The text can be incomplete." });
+      return;
+    }
+    req.settleTimer = setTimeout(tick, TIMING.settlePollMs);
+  };
+  req.settleTimer = setTimeout(tick, TIMING.settlePollMs);
 }
 
 async function ask(msg) {
@@ -243,6 +292,7 @@ async function ask(msg) {
   if (uncertainTabs.has(tab.id)) throw new Error("The previous request ended without a final answer. Check the document, then reload the tab before retrying.");
   const req = {
     id: msg.id, tabId: tab.id, app: null, text: "", progress: [], actions: [], armedFrames: [], done: false,
+    statuses: [], binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
   };
   requests.set(tab.id, req);
   try {
@@ -271,7 +321,7 @@ async function ask(msg) {
     for (const editor of p.editors) {
       req.armedFrames.push(editor.frameId);
       const armed = await runIn(tab.id, editor.frameId, { action: "arm", on: true, requestId: req.id, prompt: msg.prompt });
-      if (!armed.hook || !armed.hook.seen || armed.hook.revision < (req.app === "word" ? 3 : 2))
+      if (!armed.hook || !armed.hook.seen || !(armed.hook.revision >= HOOK_REVISION))
         throw new Error("The AugLoop hook is missing or out of date. Reload the Office tab.");
     }
     if (req.done) return;
@@ -284,10 +334,18 @@ async function ask(msg) {
     if (!ready.pane || ready.pane.frameId !== p.pane.frameId || !ready.pane.promptBox)
       throw new Error("The Copilot drawer is not visibly open. Nothing was sent.");
     if (req.done) return;
+    for (const editor of p.editors) {
+      const marked = await runIn(tab.id, editor.frameId, { action: "sending", requestId: req.id });
+      if (!marked.ok) throw new Error(marked.error);
+    }
+    if (req.done) return;
     req.sent = true; // Sending can have side effects even if the response is lost.
+    req.sentAt = Date.now();
+    req.lastEventAt = req.sentAt;
     const sent = await runIn(tab.id, p.pane.frameId, { action: "send_prompt", text: msg.prompt, requestId: req.id });
     if (!sent.ok) throw new Error(sent.error);
     send({ id: req.id, event: { type: "sent" } });
+    watchSettle(req);
   } catch (e) {
     finish(req, "error", { message: String((e && e.message) || e) });
   }

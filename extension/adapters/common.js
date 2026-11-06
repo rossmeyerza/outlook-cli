@@ -67,7 +67,50 @@
     return raw.slice(1);
   }
 
-  const api = { parseFrame, typeOf, bodies, parseJson, cleanHeader, decodePartialJsonString };
+  // The pane is a rich text editor. Typed newlines, list markers, spaces and
+  // quotes can come back changed in the signal query. Compare a normal form.
+  const QUOTES = { "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"' };
+  const LIST_MARKER = /^(?:[-*+\u2022\u2023\u2043\u2219\u25aa\u25cf\u25e6]|\d{1,3}[.)])\s+/;
+
+  function normalisePrompt(text) {
+    if (typeof text !== "string") return "";
+    return text
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\u2018-\u201f]/g, (c) => QUOTES[c] || c)
+      .replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ")
+      .replace(/[\u200b-\u200d\ufeff]/g, "")
+      .split("\n")
+      .map((line) => line.trim().replace(LIST_MARKER, ""))
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // A short enum-like value (a status name). Anything else is not exported.
+  function token(value) {
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    return /^[A-Za-z][A-Za-z0-9_ -]{0,39}$/.test(text) ? text : null;
+  }
+
+  const TASK_INFO = "AugLoop_Core_TaskInformationAnnotation";
+
+  // Task state from the shared AugLoop core schema. Status names only.
+  function taskEvents(direction, record) {
+    if (direction !== "recv") return [];
+    const events = [];
+    for (const body of bodies(record)) {
+      if (typeOf(body) !== TASK_INFO) continue;
+      events.push({ type: "task_status", value: token(body.taskStatus) || typeof body.taskStatus });
+    }
+    return events;
+  }
+
+  const api = { parseFrame, typeOf, bodies, parseJson, cleanHeader, decodePartialJsonString,
+    normalisePrompt, token, taskEvents, TASK_INFO };
   root.OcliAdapters = Object.assign(root.OcliAdapters || {}, { common: api });
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
