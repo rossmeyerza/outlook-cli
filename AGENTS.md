@@ -266,7 +266,7 @@ Implementation notes:
 
 ### Handoff state (2026-10-23, second session)
 
-The bridge work and the two fixes below are committed on `main` and are not pushed. Last local run: 320 Python passed (1 skipped), 35 JS passed, Ruff clean.
+The bridge work and the two fixes below are on `main` and pushed to GitHub (2026-11-09, up to `af2e102`). Last local run (2026-11-09): 383 Python passed (1 skipped), 66 JS passed, Ruff clean.
 
 Chrome runs extension 0.3.2 (controller v5, hook revision 3). All Office tabs show controller v5.
 
