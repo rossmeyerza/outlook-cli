@@ -55,7 +55,7 @@ def test_cal_get_includes_attendees_and_body_text(monkeypatch):
     assert result["joinUrl"] == "https://teams/join"
 
 
-def test_cal_availability_parses_local_times(monkeypatch):
+def test_cal_availability_parses_local_times_and_decodes(monkeypatch):
     fake = FakeClient(get_schedule=[{"ScheduleId": "bob@example.com", "AvailabilityView": "0022"}])
     use_client(monkeypatch, calendar, "outlook_client", fake)
 
@@ -64,20 +64,39 @@ def test_cal_availability_parses_local_times(monkeypatch):
     kwargs = fake.call("get_schedule")[1]
     assert kwargs["start_dt"] == "2026-10-16T09:00:00"
     assert kwargs["end_dt"] == "2026-10-16T11:00:00"
-    assert result[0]["availabilityView"] == "0022"
+    assert result["attendees"][0]["ranges"][0]["start"] == "2026-10-16T10:00"
+    assert result["attendees"][0]["ranges"][0]["status"] == "busy"
+    assert "availabilityView" not in result["attendees"][0]
+    assert result["commonFree"][0]["label"] == "Fri 16 Oct 09:00-10:00"
 
 
-def test_cal_find_time_shapes_suggestions(monkeypatch):
-    suggestion = {
-        "MeetingTimeSlot": {"Start": {"DateTime": "a"}, "End": {"DateTime": "b"}},
-        "Confidence": "High",
-    }
-    fake = use_client(monkeypatch, calendar, "outlook_client", FakeClient(find_meeting_times=[suggestion]))
+def test_cal_availability_include_raw(monkeypatch):
+    fake = FakeClient(get_schedule=[{"ScheduleId": "bob@example.com", "AvailabilityView": "0022"}])
+    use_client(monkeypatch, calendar, "outlook_client", fake)
 
-    result = calendar.cal_find_time(["bob@example.com"], "2026-10-16 09:00", "2026-10-16 17:00", duration_minutes=45)
+    result = calendar.cal_availability(["bob@example.com"], "2026-10-16 09:00", "2026-10-16 11:00", include_raw=True)
 
-    assert fake.call("find_meeting_times")[1]["duration_minutes"] == 45
-    assert result == [{"start": "a", "end": "b", "confidence": "High"}]
+    assert result["attendees"][0]["availabilityView"] == "0022"
+
+
+def test_cal_find_time_uses_free_busy_and_ranks_slots(monkeypatch):
+    fake = FakeClient(get_schedule=[{"ScheduleId": "bob@example.com", "AvailabilityView": "1000000"}])
+    use_client(monkeypatch, calendar, "outlook_client", fake)
+
+    result = calendar.cal_find_time(["bob@example.com"], "2026-10-16 09:00", "2026-10-16 10:45", duration_minutes=45)
+
+    assert fake.call("get_schedule")[1]["interval_minutes"] == 15
+    assert "find_meeting_times" not in fake.names()
+    assert result["slots"][0]["start"] == "2026-10-16T09:15"
+    assert result["slots"][0]["clear"] is True
+    assert result["slots"][-1]["tentative"] == ["bob@example.com"]
+
+
+def test_cal_availability_rejects_end_before_start(monkeypatch):
+    use_client(monkeypatch, calendar, "outlook_client", FakeClient())
+
+    with pytest.raises(ValueError, match="later than start"):
+        calendar.cal_availability(["a@example.com"], "2026-10-16 11:00", "2026-10-16 09:00")
 
 
 def test_bad_dates_raise_value_error(monkeypatch):

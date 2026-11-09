@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Literal
 
+from ..availability import (
+    availability_report,
+    check_interval,
+    find_slots_report,
+    interval_for_duration,
+    make_options,
+)
 from ..calendar_time import outlook_datetime, parse_local_datetime
 from ..commands.calendar import _event_recurrence, _event_summary, _event_when
 from .clients import clamp, outlook_client
@@ -23,17 +31,32 @@ def _summary(event: JsonDict) -> JsonDict:
     return summary
 
 
-def _parse_range(start: str, end: str) -> tuple[str, str]:
+def _parse_local_range(start: str, end: str) -> tuple[datetime, datetime]:
     try:
-        return (
-            outlook_datetime(parse_local_datetime(start)),
-            outlook_datetime(parse_local_datetime(end)),
-        )
+        start_dt, end_dt = parse_local_datetime(start), parse_local_datetime(end)
     except Exception as exc:
         log.debug("Best-effort operation failed", exc_info=True)
         raise ValueError(
             f"Could not parse dates ({exc}). Use formats like '2026-04-10 14:00' or 'tomorrow 2pm'."
         ) from exc
+    if end_dt <= start_dt:
+        raise ValueError(f"end ({end}) must be later than start ({start})")
+    return start_dt, end_dt
+
+
+def _parse_range(start: str, end: str) -> tuple[str, str]:
+    start_dt, end_dt = _parse_local_range(start, end)
+    return outlook_datetime(start_dt), outlook_datetime(end_dt)
+
+
+def _free_busy(attendees: list[str], start_dt: datetime, end_dt: datetime, interval: int) -> list[JsonDict]:
+    with outlook_client() as client:
+        return client.get_schedule(
+            schedules=attendees,
+            start_dt=outlook_datetime(start_dt),
+            end_dt=outlook_datetime(end_dt),
+            interval_minutes=interval,
+        )
 
 
 def cal_agenda(days: int = 7, count: int = 50) -> list[JsonDict]:
@@ -67,25 +90,29 @@ def cal_get(event_id: str) -> JsonDict:
 
 
 def cal_availability(
-    attendees: list[str], start: str, end: str, interval_minutes: int = 30
-) -> list[JsonDict]:
-    """Get free/busy for people or rooms between two local times. Read-only. Times are in the configured local timezone."""
-    start_dt, end_dt = _parse_range(start, end)
-    with outlook_client() as client:
-        items = client.get_schedule(
-            schedules=attendees,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            interval_minutes=interval_minutes,
-        )
-    return [
-        {
-            "schedule": item.get("ScheduleId", ""),
-            "availabilityView": item.get("AvailabilityView", ""),
-            "error": (item.get("Error") or {}).get("Message", ""),
-        }
-        for item in items
-    ]
+    attendees: list[str],
+    start: str,
+    end: str,
+    interval_minutes: int = 30,
+    day_start: str = "08:00",
+    day_end: str = "18:00",
+    weekdays_only: bool = True,
+    tentative_is_free: bool = True,
+    include_raw: bool = False,
+) -> JsonDict:
+    """Get free/busy for people or rooms between two local times, decoded. Read-only.
+
+    Returns each attendee's non-free ranges (busy, tentative, outOfOffice, workingElsewhere)
+    and their Outlook working hours, plus commonFree windows between day_start and day_end
+    where no attendee is busy or out of office. Each window lists attendees who are
+    tentative or outside their own working hours; clear=true means neither.
+    Times are in the configured local timezone. include_raw adds Outlook's digit string.
+    """
+    start_dt, end_dt = _parse_local_range(start, end)
+    interval = check_interval(interval_minutes)
+    options = make_options(day_start, day_end, weekdays_only, tentative_is_free)
+    items = _free_busy(attendees, start_dt, end_dt, interval)
+    return availability_report(items, start_dt, interval, options, include_raw=include_raw)
 
 
 def cal_find_time(
@@ -94,25 +121,22 @@ def cal_find_time(
     end: str,
     duration_minutes: int = 30,
     count: int = 10,
-) -> list[JsonDict]:
-    """Ask Outlook to suggest meeting times for attendees within a window. Read-only. Does not create anything."""
-    start_dt, end_dt = _parse_range(start, end)
-    with outlook_client() as client:
-        suggestions = client.find_meeting_times(
-            attendees=attendees,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            duration_minutes=duration_minutes,
-            max_candidates=clamp(count, high=50),
-        )
-    return [
-        {
-            "start": (s.get("MeetingTimeSlot") or {}).get("Start", {}).get("DateTime", ""),
-            "end": (s.get("MeetingTimeSlot") or {}).get("End", {}).get("DateTime", ""),
-            "confidence": s.get("Confidence", ""),
-        }
-        for s in suggestions
-    ]
+    day_start: str = "08:00",
+    day_end: str = "18:00",
+    weekdays_only: bool = True,
+    tentative_is_free: bool = True,
+) -> JsonDict:
+    """Find meeting slots where no attendee is busy or out of office. Read-only. Creates nothing.
+
+    Computed from Outlook free/busy, between day_start and day_end local time.
+    Best slots first: clear slots, then slots with the fewest tentative attendees or
+    attendees outside their own working hours, then by start time.
+    """
+    start_dt, end_dt = _parse_local_range(start, end)
+    interval = interval_for_duration(duration_minutes)
+    options = make_options(day_start, day_end, weekdays_only, tentative_is_free)
+    items = _free_busy(attendees, start_dt, end_dt, interval)
+    return find_slots_report(items, start_dt, interval, duration_minutes, clamp(count, high=50), options)
 
 
 def cal_create(

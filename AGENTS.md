@@ -47,8 +47,10 @@ outlook-cli cal show <n>                   # show event details by index
 outlook-cli cal show <n> --json            # JSON event details with recurrence metadata
 outlook-cli cal create "Subj" "Start" "End" # create event (e.g. "2026-04-10 14:00")
 outlook-cli cal rooms                      # find rooms if supported by tenant/token
-outlook-cli cal availability --attendee <email> --start "..." --end "..."
-outlook-cli cal find-time --attendee <email> --start "..." --end "..."
+outlook-cli cal availability --attendee <email> --start "..." --end "..."  # decoded ranges + common free time
+outlook-cli cal availability --attendee <email> --start "..." --end "..." --raw  # Outlook's raw getSchedule JSON
+outlook-cli cal find-time --attendee <a> --attendee <b> --start "..." --end "..." --duration 30  # slots, best first
+outlook-cli cal find-time --attendee <email> --start "..." --end "..." --outlook  # Outlook's own suggestions
 outlook-cli cal update <n> --start "..." --end "..." # update event fields
 outlook-cli cal delete <n>                 # delete event by cached index or full ID
 outlook-cli cal accept <n>                 # accept event invitation
@@ -159,6 +161,13 @@ outlook-cli config check                   # validate local config without print
 - **Email search**: `mail unread` and `mail search` results are cached to disk so `mail read <n>` works in a separate invocation. Use `--json` for agent-readable summaries, `--table` for explicit human tables.
 - **Email reading**: `mail read` strips HTML to plain text for console display. Truncates at 3000 chars.
 - **Calendar**: `cal agenda` results are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work in a separate invocation. Supports table, plain, and JSON agenda output. `cal show --json` includes recurrence metadata. Calendar creation/update uses `LOCAL_TIMEZONE` and `OUTLOOK_TIMEZONE` from `.env`. Room discovery is tenant/token dependent; availability and find-time work with known room/user email addresses.
+- **Free/busy**: `outlook_draft/availability.py` decodes Outlook's `AvailabilityView` (one digit for each interval from the start time: 0 free, 1 tentative, 2 busy, 3 out of office, 4 working elsewhere). It has no HTTP code, so the CLI and the MCP server share it. `cal availability` and `cal_availability` return the non-free ranges for each attendee, their Outlook working hours, and `commonFree` windows. `cal find-time` and `cal_find_time` return meeting slots, best first. Both compute slots from `getSchedule`, not from Outlook's `findMeetingTimes`, because its `Confidence` number does not say who has a clash. `cal find-time --outlook` still gives Outlook's own suggestions. Rules:
+  - A slot is possible when no attendee is busy, out of office, or has an unknown digit. Tentative counts as free unless `--tentative-busy` or `tentative_is_free=false`. Working elsewhere counts as free.
+  - Each slot lists `tentative` attendees and `outsideWorkingHours` attendees. `clear` is true when both are empty. Slots are limited to `--day-start`/`--day-end` local time (default 08:00 to 18:00) and to weekdays unless `--weekends`.
+  - Working hours come in Windows time zone names. `WINDOWS_TIMEZONES` maps the common names to IANA names. An unmapped name gives `workingHours: "unknown"` and no working-hours flag for that person. Add the name to the map when this happens.
+  - An attendee with an error or no data goes in `unknown`, and the result has a `warning`. The slots then ignore that person.
+  - Interval steps use UTC arithmetic, so they stay correct across a DST change. `cal_find_time` picks an interval that divides the meeting length (for example 15 minutes for 45).
+  - `cal availability --json` prints the decoded report. `--raw` prints Outlook's raw `getSchedule` JSON. `cal_availability(include_raw=true)` adds the digit string to each attendee.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
 - **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
@@ -299,6 +308,7 @@ Test rules: use only disposable files. Never test on the open working documents 
   outlook_draft/
     auth.py                     # Playwright auth, token capture, browser session save
     calendar_time.py            # Calendar timezone parsing and Outlook headers
+    availability.py             # Decode free/busy views, working hours and common free slots
     cli.py                      # CLI entry point and dispatch
     runtime.py                  # CLI console and client factories
     references.py               # Cached CLI reference resolution

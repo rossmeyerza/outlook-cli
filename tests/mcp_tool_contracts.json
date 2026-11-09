@@ -674,7 +674,7 @@
   },
   {
     "annotations": null,
-    "description": "Get free/busy for people or rooms between two local times. Read-only. Times are in the configured local timezone.",
+    "description": "Get free/busy for people or rooms between two local times, decoded. Read-only.\n\nReturns each attendee's non-free ranges (busy, tentative, outOfOffice, workingElsewhere)\nand their Outlook working hours, plus commonFree windows between day_start and day_end\nwhere no attendee is busy or out of office. Each window lists attendees who are\ntentative or outside their own working hours; clear=true means neither.\nTimes are in the configured local timezone. include_raw adds Outlook's digit string.\n",
     "execution": null,
     "icons": null,
     "inputSchema": {
@@ -686,9 +686,24 @@
           "title": "Attendees",
           "type": "array"
         },
+        "day_end": {
+          "default": "18:00",
+          "title": "Day End",
+          "type": "string"
+        },
+        "day_start": {
+          "default": "08:00",
+          "title": "Day Start",
+          "type": "string"
+        },
         "end": {
           "title": "End",
           "type": "string"
+        },
+        "include_raw": {
+          "default": false,
+          "title": "Include Raw",
+          "type": "boolean"
         },
         "interval_minutes": {
           "default": 30,
@@ -698,6 +713,16 @@
         "start": {
           "title": "Start",
           "type": "string"
+        },
+        "tentative_is_free": {
+          "default": true,
+          "title": "Tentative Is Free",
+          "type": "boolean"
+        },
+        "weekdays_only": {
+          "default": true,
+          "title": "Weekdays Only",
+          "type": "boolean"
         }
       },
       "required": [
@@ -711,27 +736,15 @@
     "meta": null,
     "name": "cal_availability",
     "outputSchema": {
-      "properties": {
-        "result": {
-          "items": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "title": "Result",
-          "type": "array"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "title": "cal_availabilityOutput",
+      "additionalProperties": true,
+      "title": "cal_availabilityDictOutput",
       "type": "object"
     },
     "title": null
   },
   {
     "annotations": null,
-    "description": "Ask Outlook to suggest meeting times for attendees within a window. Read-only. Does not create anything.",
+    "description": "Find meeting slots where no attendee is busy or out of office. Read-only. Creates nothing.\n\nComputed from Outlook free/busy, between day_start and day_end local time.\nBest slots first: clear slots, then slots with the fewest tentative attendees or\nattendees outside their own working hours, then by start time.\n",
     "execution": null,
     "icons": null,
     "inputSchema": {
@@ -748,6 +761,16 @@
           "title": "Count",
           "type": "integer"
         },
+        "day_end": {
+          "default": "18:00",
+          "title": "Day End",
+          "type": "string"
+        },
+        "day_start": {
+          "default": "08:00",
+          "title": "Day Start",
+          "type": "string"
+        },
         "duration_minutes": {
           "default": 30,
           "title": "Duration Minutes",
@@ -760,6 +783,16 @@
         "start": {
           "title": "Start",
           "type": "string"
+        },
+        "tentative_is_free": {
+          "default": true,
+          "title": "Tentative Is Free",
+          "type": "boolean"
+        },
+        "weekdays_only": {
+          "default": true,
+          "title": "Weekdays Only",
+          "type": "boolean"
         }
       },
       "required": [
@@ -773,20 +806,8 @@
     "meta": null,
     "name": "cal_find_time",
     "outputSchema": {
-      "properties": {
-        "result": {
-          "items": {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          "title": "Result",
-          "type": "array"
-        }
-      },
-      "required": [
-        "result"
-      ],
-      "title": "cal_find_timeOutput",
+      "additionalProperties": true,
+      "title": "cal_find_timeDictOutput",
       "type": "object"
     },
     "title": null

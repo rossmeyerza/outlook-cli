@@ -118,8 +118,10 @@ outlook-cli cal show 1 --json           # machine-readable JSON with recurrence 
 
 outlook-cli cal create "Test event" "2026-04-10 14:00" "2026-04-10 15:00" -l "My Desk" --attendee "someone@example.com"
 outlook-cli cal rooms --json               # find rooms, if supported by tenant/token
-outlook-cli cal availability --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
-outlook-cli cal find-time --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"
+outlook-cli cal availability --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00"  # busy ranges + common free time
+outlook-cli cal availability --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00" --raw  # raw Outlook JSON
+outlook-cli cal find-time --attendee a@example.com --attendee b@example.com --start "2026-04-10 09:00" --end "2026-04-17 17:00" --duration 30  # slots, best first
+outlook-cli cal find-time --attendee someone@example.com --start "2026-04-10 09:00" --end "2026-04-10 17:00" --outlook  # Outlook's own suggestions
 outlook-cli cal update 1 --start "2026-04-10 15:00" --end "2026-04-10 15:30" --location "Teams"
 outlook-cli cal delete 1                # delete by index from agenda
 outlook-cli cal accept 1                # accept an invitation

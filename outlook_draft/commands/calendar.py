@@ -9,6 +9,13 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .. import runtime
+from ..availability import (
+    availability_report,
+    check_interval,
+    find_slots_report,
+    interval_for_duration,
+    make_options,
+)
 from ..cache import CAL_CACHE, save_cache
 from ..calendar_time import outlook_datetime, parse_local_datetime
 from ..errors import CliError, OutlookAPIError
@@ -223,14 +230,17 @@ def cmd_cal_show(args: argparse.Namespace) -> None:
     runtime.console.print(Panel("\n".join(lines), title="Event", border_style="magenta"))
 
 
-def _parse_event_datetimes(args: argparse.Namespace) -> tuple[str, str]:
+def _parse_local_datetimes(args: argparse.Namespace) -> tuple[datetime, datetime]:
     try:
-        start_dt = parse_local_datetime(args.start)
-        end_dt = parse_local_datetime(args.end)
+        return parse_local_datetime(args.start), parse_local_datetime(args.end)
     except Exception as e:
         log.debug("Best-effort operation failed", exc_info=True)
         runtime.console.print(f"[red]Failed to parse dates: {e}[/]")
         raise CliError("Try formats like: '2026-04-10 14:00' or 'tomorrow 2pm'") from e
+
+
+def _parse_event_datetimes(args: argparse.Namespace) -> tuple[str, str]:
+    start_dt, end_dt = _parse_local_datetimes(args)
     return outlook_datetime(start_dt), outlook_datetime(end_dt)
 
 
@@ -255,14 +265,6 @@ def cmd_cal_create(args: argparse.Namespace) -> None:
         raise CliError(f"[red]Failed to create event: {e}[/]") from e
     finally:
         client.close()
-
-
-def _availability_summary(item: JsonDict) -> str:
-    schedule = item.get("ScheduleId", "")
-    error = item.get("Error", {})
-    if error:
-        return f"{schedule}: ERROR {error.get('Message', error)}"
-    return f"{schedule}: {item.get('AvailabilityView', '')}"
 
 
 def cmd_cal_rooms(args: argparse.Namespace) -> None:
@@ -294,48 +296,83 @@ def cmd_cal_rooms(args: argparse.Namespace) -> None:
     runtime.console.print(table)
 
 
-def cmd_cal_availability(args: argparse.Namespace) -> None:
-    start_local, end_local = _parse_event_datetimes(args)
+def _slot_options(args: argparse.Namespace):
+    try:
+        return make_options(args.day_start, args.day_end, not args.weekends, not args.tentative_busy)
+    except ValueError as e:
+        raise CliError(f"[red]{e}[/]") from e
+
+
+def _fetch_free_busy(args: argparse.Namespace, start_dt: datetime, end_dt: datetime, interval: int) -> list[JsonDict]:
     client = runtime.get_client()
     try:
         with spinner(args, "Checking availability..."):
-            availability = client.get_schedule(
+            return client.get_schedule(
                 schedules=args.attendee,
-                start_dt=start_local,
-                end_dt=end_local,
-                interval_minutes=args.interval,
+                start_dt=outlook_datetime(start_dt),
+                end_dt=outlook_datetime(end_dt),
+                interval_minutes=interval,
             )
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to get availability: {e}[/]") from e
     finally:
         client.close()
-    if args.json:
-        runtime.print_json(availability)
-        return
-    for item in availability:
-        runtime.console.print(_availability_summary(item))
 
 
-def cmd_cal_find_time(args: argparse.Namespace) -> None:
-    start_local, end_local = _parse_event_datetimes(args)
-    client = runtime.get_client()
+def _flags(slot: JsonDict) -> tuple[str, str]:
+    """Short names for the table; JSON output keeps the full addresses."""
+
+    def names(addresses: list[str]) -> str:
+        return ", ".join(a.split("@")[0] for a in addresses) or "-"
+
+    return names(slot["tentative"]), names(slot["outsideWorkingHours"])
+
+
+def _print_report_header(report: JsonDict) -> None:
+    for item in report["unknown"]:
+        runtime.console.print(f"[yellow]{item['schedule']}: no data ({item['error']})[/]")
+    if report.get("warning"):
+        runtime.console.print(f"[yellow]{report['warning']}[/]")
+
+
+def _print_availability(report: JsonDict) -> None:
+    _print_report_header(report)
+    for attendee in report["attendees"]:
+        runtime.console.print(f"[bold]{attendee['schedule']}[/] (working hours: {attendee['workingHours']})")
+        for item in attendee["ranges"]:
+            runtime.console.print(f"  {item['status']:<16} {item['label']}")
+        if not attendee["ranges"]:
+            runtime.console.print("  free for the whole window")
+    table = Table(title=f"Common free time ({report['dayStart']}-{report['dayEnd']} {report['timezone']})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("When", ratio=2)
+    table.add_column("Tentative", ratio=1)
+    table.add_column("Outside working hours", ratio=1)
+    for i, window in enumerate(report["commonFree"], 1):
+        table.add_row(str(i), window["label"], *_flags(window))
+    runtime.console.print(table)
+
+
+def cmd_cal_availability(args: argparse.Namespace) -> None:
+    start_dt, end_dt = _parse_local_datetimes(args)
     try:
-        with spinner(args, "Finding meeting times..."):
-            suggestions = client.find_meeting_times(
-                attendees=args.attendee,
-                start_dt=start_local,
-                end_dt=end_local,
-                duration_minutes=args.duration,
-                max_candidates=args.count,
-            )
-    except OutlookAPIError as e:
-        raise CliError(f"[red]Failed to find meeting times: {e}[/]") from e
-    finally:
-        client.close()
-    if args.json:
-        runtime.print_json(suggestions)
+        interval = check_interval(args.interval)
+    except ValueError as e:
+        raise CliError(f"[red]{e}[/]") from e
+    options = _slot_options(args)
+    items = _fetch_free_busy(args, start_dt, end_dt, interval)
+    if args.raw:
+        runtime.print_json(items)
         return
-    table = Table(title=f"Meeting suggestions ({len(suggestions)})")
+    report = availability_report(items, start_dt, interval, options)
+    if args.json:
+        runtime.print_json(report)
+        return
+    _print_availability(report)
+
+
+def _print_outlook_suggestions(suggestions: list[JsonDict]) -> None:
+    table = Table(title=f"Outlook suggestions ({len(suggestions)})")
     table.add_column("#", style="dim", width=3)
     table.add_column("Start", ratio=1)
     table.add_column("End", ratio=1)
@@ -348,6 +385,54 @@ def cmd_cal_find_time(args: argparse.Namespace) -> None:
             slot.get("End", {}).get("DateTime", ""),
             str(suggestion.get("Confidence", "")),
         )
+    runtime.console.print(table)
+
+
+def _cmd_cal_find_time_outlook(args: argparse.Namespace, start_dt: datetime, end_dt: datetime) -> None:
+    client = runtime.get_client()
+    try:
+        with spinner(args, "Finding meeting times..."):
+            suggestions = client.find_meeting_times(
+                attendees=args.attendee,
+                start_dt=outlook_datetime(start_dt),
+                end_dt=outlook_datetime(end_dt),
+                duration_minutes=args.duration,
+                max_candidates=args.count,
+            )
+    except OutlookAPIError as e:
+        raise CliError(f"[red]Failed to find meeting times: {e}[/]") from e
+    finally:
+        client.close()
+    if args.json:
+        runtime.print_json(suggestions)
+        return
+    _print_outlook_suggestions(suggestions)
+
+
+def cmd_cal_find_time(args: argparse.Namespace) -> None:
+    start_dt, end_dt = _parse_local_datetimes(args)
+    if args.outlook:
+        _cmd_cal_find_time_outlook(args, start_dt, end_dt)
+        return
+    try:
+        interval = interval_for_duration(args.duration)
+    except ValueError as e:
+        raise CliError(f"[red]{e}[/]") from e
+    options = _slot_options(args)
+    items = _fetch_free_busy(args, start_dt, end_dt, interval)
+    report = find_slots_report(items, start_dt, interval, args.duration, args.count, options)
+    if args.json:
+        runtime.print_json(report)
+        return
+    _print_report_header(report)
+    table = Table(title=f"Meeting slots, best first ({report['timezone']})")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("When", ratio=2)
+    table.add_column("Clear", width=6)
+    table.add_column("Tentative", ratio=1)
+    table.add_column("Outside working hours", ratio=1)
+    for i, slot in enumerate(report["slots"], 1):
+        table.add_row(str(i), slot["label"], "yes" if slot["clear"] else "no", *_flags(slot))
     runtime.console.print(table)
 
 
@@ -513,25 +598,36 @@ def _register_cmd_cal_rooms_cmd(cal_sub) -> None:
     cmd_cal_rooms_cmd.set_defaults(func=cmd_cal_rooms)
 
 
+def _add_slot_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--day-start", default="08:00", help="Earliest local slot time (HH:MM)")
+    parser.add_argument("--day-end", default="18:00", help="Latest local slot end time (HH:MM)")
+    parser.add_argument("--weekends", action="store_true", help="Include Saturday and Sunday")
+    parser.add_argument("--tentative-busy", action="store_true", help="Treat tentative time as busy")
+
+
 def _register_cmd_cal_availability_cmd(cal_sub) -> None:
-    cmd_cal_availability_cmd = cal_sub.add_parser("availability", help="Get free/busy availability")
-    add_output_args(cmd_cal_availability_cmd)
-    cmd_cal_availability_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
-    cmd_cal_availability_cmd.add_argument("--start", required=True, help="Start time")
-    cmd_cal_availability_cmd.add_argument("--end", required=True, help="End time")
-    cmd_cal_availability_cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
-    cmd_cal_availability_cmd.set_defaults(func=cmd_cal_availability)
+    cmd = cal_sub.add_parser("availability", help="Get decoded free/busy and common free time")
+    add_output_args(cmd)
+    cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd.add_argument("--start", required=True, help="Start time")
+    cmd.add_argument("--end", required=True, help="End time")
+    cmd.add_argument("--interval", type=int, default=30, help="Availability interval minutes")
+    _add_slot_args(cmd)
+    cmd.add_argument("--raw", action="store_true", help="Print Outlook's raw getSchedule JSON")
+    cmd.set_defaults(func=cmd_cal_availability)
 
 
 def _register_cmd_cal_find_time_cmd(cal_sub) -> None:
-    cmd_cal_find_time_cmd = cal_sub.add_parser("find-time", help="Suggest meeting times")
-    add_output_args(cmd_cal_find_time_cmd)
-    cmd_cal_find_time_cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
-    cmd_cal_find_time_cmd.add_argument("--start", required=True, help="Window start time")
-    cmd_cal_find_time_cmd.add_argument("--end", required=True, help="Window end time")
-    cmd_cal_find_time_cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
-    cmd_cal_find_time_cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
-    cmd_cal_find_time_cmd.set_defaults(func=cmd_cal_find_time)
+    cmd = cal_sub.add_parser("find-time", help="Find meeting slots where nobody is busy")
+    add_output_args(cmd)
+    cmd.add_argument("--attendee", required=True, action="append", help="Attendee email (repeatable)")
+    cmd.add_argument("--start", required=True, help="Window start time")
+    cmd.add_argument("--end", required=True, help="Window end time")
+    cmd.add_argument("--duration", type=int, default=30, help="Meeting duration minutes")
+    cmd.add_argument("--count", "-n", type=int, default=10, help="Max suggestions")
+    _add_slot_args(cmd)
+    cmd.add_argument("--outlook", action="store_true", help="Use Outlook's own findMeetingTimes suggestions")
+    cmd.set_defaults(func=cmd_cal_find_time)
 
 
 def _register_cmd_cal_update_cmd(cal_sub) -> None:
