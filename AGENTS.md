@@ -72,12 +72,15 @@ outlook-cli contact search ross -n 20      # with result limit
 outlook-cli contact create --name <name> --email <email>
 outlook-cli contact update <n> --company <company>
 
-# Browse Teams chats (read-only)
+# Teams chats
 outlook-cli teams list -n 20               # list chats
 outlook-cli teams search <query> --scan 200 # search chat names/participants
 outlook-cli teams self                     # check access to Teams self-chat
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
+outlook-cli teams send <chat-ref> "Hi" --yes # send into an existing chat
+outlook-cli teams new --to <email|name> "Hi" --yes # start a 1:1 chat and send
+outlook-cli teams new --to a@x.com --to b@x.com --topic "Name" "Hi" --yes # new group chat
 
 # Teams gateway to Pi/Marlow
 outlook-cli gateway start --self-chat      # monitor Teams self-chat via 48:notes
@@ -176,6 +179,7 @@ outlook-cli config check                   # validate local config without print
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams search`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `list_teams_messages` asks Graph for `createdDateTime desc` and follows `@odata.nextLink`, so `--count` above 50 works; CLI and MCP results show the newest message first. MCP requests remain limited to 50 messages. `teams search <query>` scans a bounded set of chats, matches chat topics and participants, and caches the matching chats so numeric refs work in a separate invocation. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` and `teams send <chat> <msg>` print a preview and send nothing unless `--yes` is passed. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
+- **Teams new chat**: `teams new --to ... <message>` starts a chat and sends the first message (`outlook_draft/teams_new.py`, Graph `POST /chats` with `Chat.ReadWrite`). `--to` takes an email, UPN, user ID or a name. A name must match exactly one organisation user in `/me/people`; personal contacts are ignored, and an ambiguous name lists the candidates. Your own address and duplicates are dropped. One recipient makes a `oneOnOne` chat, and Graph returns the existing 1:1 chat if there is one. Two or more make a `group` chat, which is new on every run, so do not re-run a group send. `--topic` is for group chats only. Guests and external users are not supported. The preview (no `--yes`) resolves the recipients with Graph reads and creates nothing. Chat creation and the message send do not retry. If the chat is created but the send fails, the error gives the chat ID; use `teams send <chat-id>` and do not run `teams new` again.
 - **Teams self-chat**: `teams self` checks access to the Microsoft Graph special self-chat thread, `48:notes`. This is the real Teams "chat with yourself" stream and is different from normal one-person `/me/chats` entries.
 - **Teams gateway**: `gateway start --self-chat` watches `48:notes` for `@Marlow`, sends prompts to `pi --mode rpc`, and posts responses back into Teams. The gateway posts a short `...` receipt, soft-deletes it before the final response where Graph allows it, and can surface compact Pi tool progress. If the Graph token expires and headless reauth fails, the gateway records the auth error and exits instead of retrying every poll interval.
 - **Gateway state**: Runtime state is outside git under the active account's `session_state/` directory. For legacy/global config this is `~/.local/share/outlook-cli/session_state/`; for profiles this is `~/.local/share/outlook-cli/accounts/<name>/session_state/`. Pi sessions live under `session_state/gateway_sessions/<chat-hash>/`; per-chat workspaces live under the active account's `gateway_workspaces/<chat-hash>/`. These are local data/state, not tracked or pushed.
@@ -215,13 +219,13 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
 - Copilot: `copilot_ask` (prompt, optional `files`, `site`, `library`, `conversation_id`). Not read-only: registered with `readOnlyHint=false` and `destructiveHint=true`.
 - Auth: `auth_status` (read-only)
-- Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
+- Sending: `mail_send`, `draft_send`, `teams_send`, `teams_new` (preview by default; requires `confirm=true` to send). `teams_new` takes `to` (emails, UPNs, user IDs or unique names), `content`, optional `topic` and `html`; the preview returns the resolved members and chat type.
 
 Side effects to know about: `cal_create` with attendees emails invitations immediately, and `cal_respond` with `send_response` true emails the organizer.
 
 Rules:
 
-- Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
+- Send tools `mail_send`, `draft_send`, `teams_send` and `teams_new` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
 - Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
 - The server never runs the login. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
 - One exception: `copilot_ask` refreshes the Copilot token from the saved browser session (no password, no MFA, no stdout output). If the saved session has expired, the tool returns the auth message.
@@ -314,6 +318,7 @@ Test rules: use only disposable files. Never test on the open working documents 
     references.py               # Cached CLI reference resolution
     parser.py                   # Shared argparse options
     concurrency.py              # Bounded, ordered Graph reads
+    teams_new.py                # Recipient lookup and new Teams chat start (CLI and MCP)
     formatting.py               # Pure text/HTML/datetime/email helpers shared with the MCP server
     signatures.py               # Signature loading and HTML sanitization
     config.py                   # Config and local paths
@@ -337,7 +342,7 @@ Test rules: use only disposable files. Never test on the open working documents 
       mail.py                   # Mail subcommands
       signature.py              # Signature fetch via OWA API interception
       tasks.py                  # Tasks subcommands
-      teams.py                  # Teams read subcommands
+      teams.py                  # Teams subcommands, including send and new
     mcp/                        # MCP server: server.py, clients.py, one module per tool area
   extension/                    # Chrome MV3 bridge: sw.js, controller.js, diagnostics.js, hook.js, adapters/, tests/
 ```
@@ -347,5 +352,5 @@ Test rules: use only disposable files. Never test on the open working documents 
 - Uses the Outlook REST API v2.0, not Microsoft Graph.
 - `copilot` uses an undocumented internal Microsoft protocol. If it stops working, record a new HAR from `m365.cloud.microsoft/chat` with a file attached and compare the `chat_request` frame with `outlook_draft/copilot.py`.
 - Token validity is ~24 hours. If expired, the CLI auto-triggers headless reauth (prints MFA number to console).
-- Sending (`draft send`, `mail send`, `teams send`) requires an explicit `--yes` flag. Without it the command previews and exits with code 2.
+- Sending (`draft send`, `mail send`, `teams send`, `teams new`) requires an explicit `--yes` flag. Without it the command previews and exits with code 2.
 - Email bodies are HTML-to-text converted for console display, truncated at 3000 chars.

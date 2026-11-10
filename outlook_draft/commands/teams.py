@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .. import config, runtime
+from .. import config, runtime, teams_new
 from ..cache import TEAMS_CACHE, load_cache, save_cache
 from ..concurrency import ordered_map
 from ..errors import CliError, OutlookAPIError
@@ -522,6 +522,42 @@ def cmd_teams_send(args: argparse.Namespace) -> None:
         client.close()
 
 
+def cmd_teams_new(args: argparse.Namespace) -> None:
+    console = runtime.console
+    refs = teams_new.split_refs(args.to)
+    content_type = "html" if args.html else "text"
+    client = runtime.get_graph_client()
+    try:
+        with spinner(args, "Looking up recipients..."):
+            me, users = teams_new.resolve_recipients(client, refs)
+        teams_new.validate_new_chat(users, args.message, args.topic)
+        chat_type = teams_new.chat_type_for(users)
+        kind = "1:1 chat" if chat_type == "oneOnOne" else "new group chat"
+        names = ", ".join(teams_new.user_label(user) for user in users)
+        if not getattr(args, "yes", False):
+            console.print(f"[yellow]Not sent.[/] Would start a {kind} with {names}")
+            if args.topic:
+                console.print(f"Topic: {args.topic}")
+            console.print(f"Message: {args.message}")
+            if chat_type == "group":
+                console.print("[dim]Each run makes another group chat, even with the same people.[/]")
+            console.print("[dim]Re-run with --yes to send.[/]")
+            sys.exit(2)
+        chat, _ = teams_new.start_chat(
+            client, me, users, args.message, content_type=content_type, topic=args.topic,
+        )
+        console.print(f"[green]Teams message sent[/] in a {kind} with {names}.")
+        console.print(f"[dim]Chat ID: {chat.get('id', '')}[/]")
+    except ValueError as exc:
+        raise CliError(f"[red]{exc}[/]") from exc
+    except teams_new.ChatCreatedSendFailed as exc:
+        raise CliError(f"[red]{exc}[/]") from exc
+    except OutlookAPIError as exc:
+        raise CliError(f"[red]Failed to start the Teams chat: {exc}[/]") from exc
+    finally:
+        client.close()
+
+
 def _collect_message_links_and_attachments(messages: list[JsonDict]) -> list[JsonDict]:
     items: list[JsonDict] = []
     for message in messages:
@@ -714,6 +750,7 @@ def register(sub) -> None:
     _register_cmd_teams_attachments_cmd(teams_sub)
     _register_cmd_teams_download_attachments_cmd(teams_sub)
     _register_cmd_teams_send_cmd(teams_sub)
+    _register_cmd_teams_new_cmd(teams_sub)
 
 
 def _register_cmd_teams_list_cmd(teams_sub) -> None:
@@ -808,3 +845,23 @@ def _register_cmd_teams_send_cmd(teams_sub) -> None:
     cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
     _add_yes_arg(cmd_teams_send_cmd)
     cmd_teams_send_cmd.set_defaults(func=cmd_teams_send)
+
+
+def _register_cmd_teams_new_cmd(teams_sub) -> None:
+    command = teams_sub.add_parser(
+        "new",
+        help="Start a Teams chat with people and send the first message (requires --yes)",
+        description=(
+            "One recipient opens your 1:1 chat with that person (Graph reuses an existing one). "
+            "Two or more recipients make a new group chat on each run."
+        ),
+    )
+    command.add_argument(
+        "--to", required=True, action="append",
+        help="Email, UPN, user ID or a unique name (repeatable, comma-separated ok)",
+    )
+    command.add_argument("message", help="Message text or HTML")
+    command.add_argument("--topic", help="Group chat name (group chats only)")
+    command.add_argument("--html", action="store_true", help="Treat message as HTML")
+    _add_yes_arg(command)
+    command.set_defaults(func=cmd_teams_new)

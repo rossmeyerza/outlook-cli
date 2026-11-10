@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .. import config
+from .. import teams_new as teams_new_lib
 from ..formatting import compose_email_html, parse_recipients
 from ..signatures import load_signature
 from .clients import graph_client, outlook_client
@@ -76,4 +77,31 @@ def teams_send(chat_id: str, content: str, html: bool = False, confirm: bool = F
     return result
 
 
-TOOLS = [mail_send, draft_send, teams_send]
+def teams_new(
+    to: list[str], content: str, topic: str | None = None,
+    html: bool = False, confirm: bool = False,
+) -> JsonDict:
+    """Preview a new Teams chat and its first message. `to` takes emails, UPNs, user IDs or unique names. One person opens the existing 1:1 chat or makes it; two or more make a NEW group chat on every confirmed call. Set confirm=true only when the user explicitly asks to send. Do not retry after an uncertain result."""
+    refs = teams_new_lib.split_refs(to)
+    with graph_client() as client:
+        me, users = teams_new_lib.resolve_recipients(client, refs)
+        teams_new_lib.validate_new_chat(users, content, topic)
+        result: JsonDict = {
+            "chatType": teams_new_lib.chat_type_for(users),
+            "members": [
+                {"id": user["id"], "displayName": user.get("displayName"),
+                 "mail": user.get("mail") or user.get("userPrincipalName")}
+                for user in users
+            ],
+            "topic": topic, "content": content,
+            "contentType": "html" if html else "text", "sent": False,
+        }
+        if confirm is True:
+            chat, message = teams_new_lib.start_chat(
+                client, me, users, content, content_type=result["contentType"], topic=topic,
+            )
+            result.update(sent=True, chat_id=chat.get("id"), webUrl=chat.get("webUrl"), message=message)
+    return result
+
+
+TOOLS = [mail_send, draft_send, teams_send, teams_new]

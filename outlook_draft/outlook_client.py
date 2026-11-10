@@ -950,6 +950,59 @@ class OutlookClient:
         )
         return resp.json()
 
+    def get_directory_user(self, ref: str) -> dict[str, Any] | None:
+        """Find a directory user by object ID, UPN or primary email address.
+
+        Returns None when no user matches. Guests and external users are not found.
+        """
+        select = "id,displayName,mail,userPrincipalName"
+        try:
+            resp = self._request("GET", f"/users/{quote(ref, safe='@')}", params={"$select": select})
+            return resp.json()
+        except OutlookAPIError as exc:
+            if exc.status != 404:
+                raise
+        # The primary email address can differ from the UPN.
+        escaped = ref.replace("'", "''")
+        resp = self._request(
+            "GET",
+            "/users",
+            params={"$filter": f"mail eq '{escaped}'", "$select": select, "$top": "2"},
+        )
+        users = resp.json().get("value", [])
+        return users[0] if len(users) == 1 else None
+
+    def create_teams_chat(
+        self,
+        self_user_id: str,
+        member_user_ids: list[str],
+        *,
+        topic: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a Teams chat without automatic retries.
+
+        One member makes a 1:1 chat. Graph returns the existing 1:1 chat if there
+        is one. Two or more members make a new group chat each time.
+        """
+        if not member_user_ids:
+            raise ValueError("A chat needs at least one other member.")
+        chat_type = "oneOnOne" if len(member_user_ids) == 1 else "group"
+        if topic and chat_type == "oneOnOne":
+            raise ValueError("A 1:1 chat cannot have a topic.")
+        members = [
+            {
+                "@odata.type": "#microsoft.graph.aadUserConversationMember",
+                "roles": ["owner"],
+                "user@odata.bind": f"{config.GRAPH_BASE_URL}/users('{user_id}')",
+            }
+            for user_id in [self_user_id, *member_user_ids]
+        ]
+        payload: dict[str, Any] = {"chatType": chat_type, "members": members}
+        if topic:
+            payload["topic"] = topic
+        resp = self._request("POST", "/chats", json_body=payload, max_retries=0)
+        return resp.json()
+
     def _send_teams_message_internal(self, chat_id: str, content: str, *, content_type: str = "text") -> dict[str, Any]:
         """Send a Teams message — internal use by gateway only.
 
