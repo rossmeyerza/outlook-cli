@@ -48,9 +48,9 @@ def mail_send(
     to: list[str], subject: str, body: str,
     cc: list[str] | None = None, bcc: list[str] | None = None,
     body_format: EmailBodyFormat = "markdown", importance: str = "Normal", confirm: bool = False,
-    attachments: list[str] | None = None,
+    attachments: list[str] | None = None, signature: str = "new", save_to_sent_items: bool = True,
 ) -> JsonDict:
-    """Preview an email from Markdown (default) or HTML, with Aptos and the saved signature. Markdown lists become native email bullets. Set confirm=true only after explicit send approval. Saves to Sent Items. Never retry an uncertain result automatically."""
+    """Preview an email from Markdown (default) or HTML, with Aptos and the saved signature. Markdown lists become native email bullets. Set confirm=true only after explicit send approval. Select signature new, reply or none. Saves to Sent Items unless save_to_sent_items=false. Never retry an uncertain result automatically."""
     html = is_html_format(body_format)
     encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
@@ -59,13 +59,17 @@ def mail_send(
     if not body.strip():
         raise ValueError("body must not be empty")
     importance = _check_importance(importance)
+    if signature not in {"new", "reply", "none"}:
+        raise ValueError("signature must be new, reply or none")
+    signature_file = config.SIGNATURE_REPLY_FILE if signature == "reply" else config.SIGNATURE_NEW_FILE
     html_body = compose_email_html(
-        body, is_html=html, signature_html=load_signature(config.SIGNATURE_NEW_FILE),
+        body, is_html=html, signature_html="" if signature == "none" else load_signature(signature_file),
     )
     cc_list, bcc_list = parse_recipients(cc), parse_recipients(bcc)
     result = {
         "to": recipients, "cc": cc_list, "bcc": bcc_list, "subject": subject,
         "bodyHtml": html_body, "bodyFormat": body_format, "importance": importance, "sent": False,
+        "signature": signature, "saveToSentItems": save_to_sent_items,
     }
     if attachments:
         result["attachments"] = [{"name": item["Name"], "size": len(base64.b64decode(item["ContentBytes"]))} for item in encoded]
@@ -74,7 +78,7 @@ def mail_send(
             client.send_mail(
                 subject=subject, body=html_body, to=recipients, cc=cc_list or None,
                 bcc=bcc_list or None, content_type="HTML", importance=importance,
-                save_to_sent_items=True,
+                save_to_sent_items=save_to_sent_items,
                 **({"attachments": encoded} if attachments else {}),
             )
         result["sent"] = True

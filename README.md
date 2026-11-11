@@ -172,7 +172,7 @@ outlook-cli teams show 1
 outlook-cli teams messages 1 -n 20
 ```
 
-Lists and searches Teams chats, shows chat details, and reads messages. `teams messages` fetches the newest messages first and follows Graph paging, so long chats show recent messages and `--count` above 50 works; CLI and MCP results show the newest message first. MCP requests remain limited to 50 messages. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` `teams send <chat> <msg>` and `teams new --to <person> <msg>` print a preview and send nothing unless `--yes` is passed. `teams new` starts a 1:1 chat (or reuses the existing one) or, with two or more `--to` recipients, a new group chat, then sends the first message. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
+Lists and searches Teams chats, shows chat details, and reads messages. `teams messages` fetches the newest messages first and follows Graph paging, so long chats show recent messages and `--count` above 50 works; CLI and MCP results show the newest message first. MCP message and attachment scans now accept the caller's count and use the client's pagination. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` `teams send <chat> <msg>` and `teams new --to <person> <msg>` print a preview and send nothing unless `--yes` is passed. `teams new` starts a 1:1 chat (or reuses the existing one) or, with two or more `--to` recipients, a new group chat, then sends the first message. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
 
 `teams send` and `teams new` also accept repeatable `--attach` and `--image` options.
 File attachments use an existing OneDrive folder and named chat-member access.
@@ -421,13 +421,13 @@ Check it with `pi mcp list`.
 
 Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
 
-- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
-- Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
-- Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
-- Contacts: `contact_search`
-- Tasks: `task_list`, `task_create`, `task_complete`
-- Teams (read-only): `teams_list`, `teams_search`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
-- Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`
+- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_download_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
+- Drafts: `draft_create`, `draft_reply`, `draft_update`, `draft_forward`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
+- Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
+- Contacts: `contact_search`, `contact_create`, `contact_update`
+- Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
+- Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
+- Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
 - Copilot: `copilot_ask` (prompt with optional `files`; pass `conversation_id` for a follow-up). Not read-only: Copilot can take actions with its own tools. The result lists `toolCalls` and `pendingConfirmations`. The tool never confirms an action.
 - Auth: `auth_status` (read-only)
 - Sending: `mail_send`, `draft_send`, `teams_send` (preview by default; requires `confirm=true` to send)
@@ -437,7 +437,16 @@ Side effects to know about: `cal_create` with attendees emails invitations immed
 Rules:
 
 - Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
-- Destructive and account-level commands are not exposed (calendar update/delete/cancel, file upload/move/rename/mkdir, contact create/update, mailbox update, interactive auth, signature fetch, gateway).
+- All 73 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
+- New contact, task, calendar and file changes preview by default and require explicit confirmation.
+- File uploads require explicit overwrite approval to replace an existing file. New remote writes have no automatic retries.
+- Mailbox settings, account administration, interactive authentication, signatures and the gateway remain outside this parity scope.
+- Calendar removal tools preview by default. Set `confirm=true` only after explicit approval of the exact event and scope.
+- Whole-series removal also requires `allow_series=true`. Organiser meetings with attendees require `cal_cancel`, which notifies attendees.
+- Use `cal_respond` to decline an invitation. Calendar removal does not delete the invitation email.
+- Calendar delete and cancel writes have no automatic retries.
+
+See [the complete CLI-to-MCP table](docs/cli-mcp-parity.md) for all commands, partial support and missing tools.
 - The server never runs the login. If a token is expired, tools return "Run 'outlook-cli auth' in a terminal, then retry." Tokens are re-read on every call, so a fresh `outlook-cli auth` works without restarting the server.
 - One exception: `copilot_ask` gets a new Copilot token from the saved browser session when the token expires. This step has no password or MFA. If the saved session has expired, the tool returns the auth message.
 - stdout is the protocol channel. Logs go to stderr.

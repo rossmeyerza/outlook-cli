@@ -97,6 +97,7 @@ def copilot_client() -> Iterator[CopilotClient]:
     yield CopilotClient(manager)
 
 
-def clamp(value: int, *, low: int = 1, high: int = 100) -> int:
-    """Cap a caller-supplied count to a sane range."""
-    return max(low, min(int(value), high))
+def clamp(value: int, *, low: int = 1, high: int | None = None) -> int:
+    """Apply a lower bound without a hidden MCP-only upper limit."""
+    value = int(value)
+    return max(low, min(value, high) if high is not None else value)

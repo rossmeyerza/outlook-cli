@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 from typing import Any
 
+from ..commands.files import _write_download
 from ..commands.mail import _collect_message_links, _safe_filename, _unique_path
-from .clients import clamp, outlook_client
+from ..errors import OutlookAPIError
+from .clients import clamp, graph_client, outlook_client
 from .shaping import (
     PREVIEW_CHARS,
     JsonDict,
@@ -16,6 +18,7 @@ from .shaping import (
     require_absolute_dir,
     truncate,
 )
+from .validation import require_id
 
 WELL_KNOWN_FOLDERS = {"inbox", "archive", "drafts", "sentitems", "deleteditems", "junkemail"}
 
@@ -92,14 +95,15 @@ def mail_download_attachments(
     dest_dir: str,
     attachment_ids: list[str] | None = None,
     overwrite: bool = False,
+    include_inline: bool = False,
 ) -> list[str]:
-    """Download file attachments to an absolute directory on this machine. Skips inline images unless named in attachment_ids. Writes files."""
+    """Download file attachments to an absolute directory on this machine. Skips inline images unless selected by ID or include_inline=true. Writes files."""
     out_dir = require_absolute_dir(dest_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
     with outlook_client() as client:
         for item in client.list_message_attachments(message_id):
-            selected = item.get("Id", "") in attachment_ids if attachment_ids else not item.get("IsInline")
+            selected = item.get("Id", "") in attachment_ids if attachment_ids else include_inline or not item.get("IsInline")
             if not selected:
                 continue
             full = client.get_message_attachment(message_id, item.get("Id", ""))
@@ -107,7 +111,7 @@ def mail_download_attachments(
             if not content:
                 continue
             path = _unique_path(out_dir, _safe_filename(full.get("Name") or "attachment"), overwrite=overwrite)
-            path.write_bytes(base64.b64decode(content))
+            _write_download(path, base64.b64decode(content), overwrite=overwrite)
             written.append(str(path))
     return written
 
@@ -119,10 +123,33 @@ def mail_links(message_id: str, share_only: bool = True) -> list[JsonDict]:
     return _collect_message_links(msg, share_only=share_only)
 
 
-def mail_folders() -> list[JsonDict]:
+def mail_download_links(message_id: str, dest_dir: str, overwrite: bool = False) -> JsonDict:
+    """Download SharePoint/OneDrive links from an email to an absolute local directory. Returns successful paths and explicit per-link errors. Does not change remote data."""
+    out_dir = require_absolute_dir(dest_dir)
+    links = mail_links(message_id, share_only=True)
+    result: JsonDict = {"files": [], "errors": []}
+    if not links:
+        return result
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with graph_client() as client:
+        for link in links:
+            try:
+                item = client.get_share_drive_item(link["url"])
+                if "folder" in item:
+                    raise ValueError("Download supports files, not folders.")
+                content = client.download_share_url(link["url"])
+                path = _unique_path(out_dir, _safe_filename(item.get("name") or "download"), overwrite=overwrite)
+                _write_download(path, content, overwrite=overwrite)
+                result["files"].append(str(path))
+            except (OutlookAPIError, OSError, ValueError) as exc:
+                result["errors"].append({"url": link["url"], "error": str(exc)})
+    return result
+
+
+def mail_folders(count: int = 250) -> list[JsonDict]:
     """List top-level mail folders with unread and total counts. Read-only."""
     with outlook_client() as client:
-        folders = client.list_mail_folders(top=250)
+        folders = client.list_mail_folders(top=clamp(count))
     return [
         {
             "id": f.get("Id", ""),
@@ -161,6 +188,14 @@ def _resolve_folder(client: Any, folder: str) -> str:
         return by_name[0]["Id"]
     if by_name:
         raise ValueError(f"Ambiguous folder name {folder!r}. Use the folder ID from mail_folders.")
+    require_id(folder, "folder")
+    try:
+        found = client.get_mail_folder(folder)
+        if isinstance(found, dict) and found.get("Id"):
+            return found["Id"]
+    except OutlookAPIError as exc:
+        if exc.status != 404:
+            raise
     raise ValueError(f"No folder matching {folder!r}. Use mail_folders to list folders.")
 
 
@@ -185,6 +220,7 @@ TOOLS = [
     mail_attachments,
     mail_download_attachments,
     mail_links,
+    mail_download_links,
     mail_folders,
     mail_create_folder,
     mail_mark_read,

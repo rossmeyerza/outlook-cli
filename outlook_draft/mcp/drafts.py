@@ -72,7 +72,7 @@ def draft_create(
 
 def draft_reply(
     message_id: str, body: str, reply_all: bool = False, body_format: EmailBodyFormat = "markdown",
-    attachments: list[str] | None = None,
+    attachments: list[str] | None = None, importance: str | None = None,
 ) -> JsonDict:
     """Create a reply draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Markdown dash lists become native bullets. Does not send."""
     html = is_html_format(body_format)
@@ -80,9 +80,10 @@ def draft_reply(
         raise ValueError("body must not be empty")
     encoded = encode_attachments(attachments)
     signature = load_signature(config.SIGNATURE_REPLY_FILE)
+    fields = {"importance": _check_importance(importance)} if importance is not None else {}
     with outlook_client() as client:
         draft = client.create_reply_draft(message_id, reply_all=reply_all)
-        draft = finish_quoted_draft(client, draft, body, html, signature)
+        draft = finish_quoted_draft(client, draft, body, html, signature, **fields)
         attach_to_draft(client, draft, encoded)
     return {**draft_summary(draft), "bodyFormat": body_format}
 
@@ -140,6 +141,7 @@ def draft_update(
 def draft_forward(
     message_id: str, to: list[str], body: str = "", cc: list[str] | None = None,
     bcc: list[str] | None = None, body_format: EmailBodyFormat = "markdown", attachments: list[str] | None = None,
+    importance: str | None = None,
 ) -> JsonDict:
     """Create a forward draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Does not send."""
     html = is_html_format(body_format)
@@ -148,11 +150,12 @@ def draft_forward(
     if not recipients:
         raise ValueError("At least one recipient is required in 'to'")
     signature = load_signature(config.SIGNATURE_REPLY_FILE)
+    fields = {"importance": _check_importance(importance)} if importance is not None else {}
     with outlook_client() as client:
         draft = client.create_forward_draft(message_id)
         draft = finish_quoted_draft(
             client, draft, body, html, signature, to=recipients,
-            cc=parse_recipients(cc) or None, bcc=parse_recipients(bcc) or None,
+            cc=parse_recipients(cc) or None, bcc=parse_recipients(bcc) or None, **fields,
         )
         attach_to_draft(client, draft, encoded)
     return {**draft_summary(draft), "bodyFormat": body_format}

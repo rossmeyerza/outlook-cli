@@ -45,12 +45,12 @@ def test_mail_unread_returns_lean_summaries_with_full_ids(monkeypatch):
     ]
 
 
-def test_mail_unread_caps_count(monkeypatch):
+def test_mail_unread_preserves_the_cli_count(monkeypatch):
     fake = use_client(monkeypatch, mail, "outlook_client", FakeClient(list_unread=[]))
 
     mail.mail_unread(count=100000)
 
-    assert fake.call("list_unread")[1] == {"top": 100}
+    assert fake.call("list_unread")[1] == {"top": 100000}
 
 
 def test_mail_search_passes_query(monkeypatch):

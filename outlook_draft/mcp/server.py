@@ -18,8 +18,8 @@ from . import auth, calendar, contacts, copilot, drafts, files, mail, mail_ops, 
 INSTRUCTIONS = (
     "Outlook mail, drafts, calendar, contacts, tasks, Teams, OneDrive/SharePoint files "
     "and Microsoft 365 Copilot for Ross's Microsoft 365 account. Send tools preview unless confirm=true.\n\n"
-    "Set confirm=true only when the user explicitly requests sending that message. "
-    "Prefer drafts. Never automatically retry a send after an uncertain result. "
+    "Set confirm=true only when the user explicitly approves that tool's send or destructive change. "
+    "Prefer drafts. Never automatically retry a send or destructive change after an uncertain result. "
     "Do not send Teams messages directly from the Teams gateway.\n\n"
     "All IDs are full Outlook or Graph IDs returned by the list and search tools. "
     "If a tool reports an expired token, ask the user to run 'outlook-cli auth' in a terminal."
@@ -34,6 +34,7 @@ READ_ONLY_TOOLS = {
     "contact_search", "task_list", "teams_list", "teams_search", "teams_messages",
     "teams_attachments", "teams_download_attachments", "files_sites", "files_libraries",
     "files_list", "files_search", "files_download", "auth_status",
+    "mail_download_links", "cal_rooms", "teams_get", "teams_self",
 }
 
 
@@ -55,7 +56,9 @@ def build_server() -> FastMCP:
         for tool in module.TOOLS:
             if not _tool_enabled(tool.__name__):
                 continue
-            if tool.__name__ in {"mail_bulk", "mail_trash", "mail_categorise", "draft_update", "draft_forward"} or (
+            if tool.__name__ in {"mail_bulk", "mail_trash", "mail_categorise", "draft_update", "draft_forward",
+                                  "cal_delete", "cal_cancel", "cal_update", "contact_create", "contact_update",
+                                  "task_update", "task_delete", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
                 module is mail_organise and tool.__name__ not in READ_ONLY_TOOLS
             ) or module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(

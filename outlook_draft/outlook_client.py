@@ -153,17 +153,17 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root",
                                  params={"$select": ITEM_SELECT})
         else:
-            resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root:/{path}",
+            resp = self._request("GET", f"{GRAPH_BASE}/me/drive/root:/{quote(path, safe='/')}",
                                  params={"$select": ITEM_SELECT})
         return resp.json()
 
     def od_item_by_id(self, item_id: str) -> dict[str, Any]:
-        resp = self._request("GET", f"{GRAPH_BASE}/me/drive/items/{item_id}",
+        resp = self._request("GET", f"{GRAPH_BASE}/me/drive/items/{quote(item_id, safe='')}",
                              params={"$select": ITEM_SELECT})
         return resp.json()
 
     def od_list_children(self, item_id: str) -> list[dict]:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}/children"
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(item_id, safe='')}/children"
         params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
         items = []
         while url:
@@ -174,47 +174,48 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             params = None
         return items
 
-    def od_upload(self, parent_id: str, name: str, local_path: Path) -> dict:
+    def od_upload(self, parent_id: str, name: str, local_path: Path, *, overwrite: bool = True) -> dict:
         data = local_path.read_bytes()
         size = len(data)
         if size < 4 * 1024 * 1024:
-            url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{name}:/content"
+            url = f"{GRAPH_BASE}/me/drive/items/{quote(parent_id, safe='')}:/{quote(name, safe='')}:/content"
             resp = self._request("PUT", url, data=data,
-                                 extra_headers={"Content-Type": "application/octet-stream"})
+                                 params={"@microsoft.graph.conflictBehavior": "replace" if overwrite else "fail"},
+                                 extra_headers={"Content-Type": "application/octet-stream"}, max_retries=0)
             return resp.json()
-        return self._chunked_upload_od(parent_id, name, data)
+        return self._chunked_upload_od(parent_id, name, data, overwrite=overwrite)
 
     def od_download(self, item_id: str) -> bytes:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}/content"
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(item_id, safe='')}/content"
         resp = self._request("GET", url)
         return resp.content
 
-    def _chunked_upload_od(self, parent_id: str, name: str, data: bytes) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{parent_id}:/{name}:/createUploadSession"
+    def _chunked_upload_od(self, parent_id: str, name: str, data: bytes, *, overwrite: bool = True) -> dict:
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(parent_id, safe='')}:/{quote(name, safe='')}:/createUploadSession"
         sess = self._request("POST", url, json_body={
-            "item": {"@microsoft.graph.conflictBehavior": "replace", "name": name}
-        }).json()
+            "item": {"@microsoft.graph.conflictBehavior": "replace" if overwrite else "fail", "name": name}
+        }, max_retries=0).json()
         return self._upload_chunks(sess["uploadUrl"], data)
 
     def od_mkdir(self, parent_id: str, name: str) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{parent_id}/children"
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(parent_id, safe='')}/children"
         resp = self._request("POST", url, json_body={
             "name": name, "folder": {},
             "@microsoft.graph.conflictBehavior": "fail"
-        })
+        }, max_retries=0)
         return resp.json()
 
     def od_rename(self, item_id: str, new_name: str) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
-        resp = self._request("PATCH", url, json_body={"name": new_name})
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(item_id, safe='')}"
+        resp = self._request("PATCH", url, json_body={"name": new_name}, max_retries=0)
         return resp.json()
 
     def od_move(self, item_id: str, new_parent_id: str, new_name: str | None = None) -> dict:
-        url = f"{GRAPH_BASE}/me/drive/items/{item_id}"
+        url = f"{GRAPH_BASE}/me/drive/items/{quote(item_id, safe='')}"
         body: dict = {"parentReference": {"id": new_parent_id}}
         if new_name:
             body["name"] = new_name
-        resp = self._request("PATCH", url, json_body=body)
+        resp = self._request("PATCH", url, json_body=body, max_retries=0)
         return resp.json()
 
     # ── SharePoint ────────────────────────────────────────────────────
@@ -275,15 +276,15 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
     def sp_item_by_path(self, drive_id: str, path: str) -> dict:
         path = path.strip("/")
         if not path:
-            resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/root",
+            resp = self._request("GET", f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/root",
                                  params={"$select": ITEM_SELECT})
         else:
-            resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/root:/{path}",
+            resp = self._request("GET", f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/root:/{quote(path, safe='/')}",
                                  params={"$select": ITEM_SELECT})
         return resp.json()
 
     def sp_item_by_id(self, drive_id: str, item_id: str) -> dict:
-        resp = self._request("GET", f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}",
+        resp = self._request("GET", f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(item_id, safe='')}",
                              params={"$select": ITEM_SELECT})
         return resp.json()
 
@@ -295,7 +296,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
         return resp.json()
 
     def sp_list_children(self, drive_id: str, item_id: str) -> list[dict]:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/children"
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(item_id, safe='')}/children"
         params: dict | None = {"$select": ITEM_SELECT, "$top": "200"}
         items = []
         while url:
@@ -319,48 +320,49 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             params = None
         return items[:top]
 
-    def sp_upload(self, drive_id: str, parent_id: str, name: str, local_path: Path) -> dict:
+    def sp_upload(self, drive_id: str, parent_id: str, name: str, local_path: Path, *, overwrite: bool = True) -> dict:
         data = local_path.read_bytes()
         size = len(data)
         if size < 4 * 1024 * 1024:
-            url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{name}:/content"
+            url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(parent_id, safe='')}:/{quote(name, safe='')}:/content"
             resp = self._request("PUT", url, data=data,
-                                 extra_headers={"Content-Type": "application/octet-stream"})
+                                 params={"@microsoft.graph.conflictBehavior": "replace" if overwrite else "fail"},
+                                 extra_headers={"Content-Type": "application/octet-stream"}, max_retries=0)
             return resp.json()
-        return self._chunked_upload_sp(drive_id, parent_id, name, data)
+        return self._chunked_upload_sp(drive_id, parent_id, name, data, overwrite=overwrite)
 
     def sp_download(self, drive_id: str, item_id: str) -> bytes:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(item_id, safe='')}/content"
         resp = self._request("GET", url)
         return resp.content
 
-    def _chunked_upload_sp(self, drive_id: str, parent_id: str, name: str, data: bytes) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}:/{name}:/createUploadSession"
+    def _chunked_upload_sp(self, drive_id: str, parent_id: str, name: str, data: bytes, *, overwrite: bool = True) -> dict:
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(parent_id, safe='')}:/{quote(name, safe='')}:/createUploadSession"
         sess = self._request("POST", url, json_body={
-            "item": {"@microsoft.graph.conflictBehavior": "replace", "name": name}
-        }).json()
+            "item": {"@microsoft.graph.conflictBehavior": "replace" if overwrite else "fail", "name": name}
+        }, max_retries=0).json()
         return self._upload_chunks(sess["uploadUrl"], data)
 
     def sp_mkdir(self, drive_id: str, parent_id: str, name: str) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{parent_id}/children"
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(parent_id, safe='')}/children"
         resp = self._request("POST", url, json_body={
             "name": name, "folder": {},
             "@microsoft.graph.conflictBehavior": "fail"
-        })
+        }, max_retries=0)
         return resp.json()
 
     def sp_rename(self, drive_id: str, item_id: str, new_name: str) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}"
-        resp = self._request("PATCH", url, json_body={"name": new_name})
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(item_id, safe='')}"
+        resp = self._request("PATCH", url, json_body={"name": new_name}, max_retries=0)
         return resp.json()
 
     def sp_move(self, drive_id: str, item_id: str, new_parent_id: str,
                 new_name: str | None = None) -> dict:
-        url = f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}"
+        url = f"{GRAPH_BASE}/drives/{quote(drive_id, safe='')}/items/{quote(item_id, safe='')}"
         body: dict = {"parentReference": {"driveId": drive_id, "id": new_parent_id}}
         if new_name:
             body["name"] = new_name
-        resp = self._request("PATCH", url, json_body=body)
+        resp = self._request("PATCH", url, json_body=body, max_retries=0)
         return resp.json()
 
     # ── Shared helpers ────────────────────────────────────────────────
@@ -378,13 +380,20 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
                 "Content-Length": str(len(chunk)),
                 "Content-Range": f"bytes {offset}-{end}/{total}",
             }
-            resp = self._ensure_client().put(upload_url, content=chunk, headers=headers)
+            check_request("PUT", upload_url)
+            try:
+                resp = self._ensure_client().put(upload_url, content=chunk, headers=headers)
+            except httpx.HTTPError:
+                # Upload URLs contain credentials. Do not include them in errors.
+                raise OutlookAPIError(0, "The upload result is uncertain. Check the destination before any retry.") from None
             if resp.status_code in (200, 201, 202):
                 result = resp.json()
             else:
-                raise OutlookAPIError(resp.status_code, resp.text[:300])
+                raise OutlookAPIError(resp.status_code, "A file chunk failed. Check the destination before any retry.")
             if self._upload_progress:
                 self._upload_progress(i + 1, chunks)
+        if not result.get("id"):
+            raise OutlookAPIError(0, "The upload has no final item ID. Check the destination before any retry.")
         return result
 
 
@@ -512,12 +521,12 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
         """Get a single calendar event by ID, including body."""
         resp = self._request(
             "GET",
-            f"/me/events/{event_id}",
+            f"/me/events/{quote(event_id, safe='')}",
             params={
                 "$select": (
                     "id,subject,start,end,location,organizer,isAllDay,isCancelled,"
                     "body,attendees,type,seriesMasterId,recurrence,"
-                    "isOnlineMeeting,onlineMeetingProvider,onlineMeeting"
+                    "isOnlineMeeting,onlineMeetingProvider,onlineMeeting,isOrganizer,changeKey"
                 ),
             },
             extra_headers=self._calendar_headers(),
@@ -637,16 +646,16 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             payload["IsOnlineMeeting"] = bool(is_online_meeting)
             if is_online_meeting:
                 payload["OnlineMeetingProvider"] = online_meeting_provider
-        resp = self._request("PATCH", f"/me/events/{event_id}", json_body=payload)
+        resp = self._request("PATCH", f"/me/events/{quote(event_id, safe='')}", json_body=payload, max_retries=0)
         return resp.json() if resp.content else {}
 
     def delete_event(self, event_id: str) -> None:
         """Delete a calendar event from the user's calendar."""
-        self._request("DELETE", f"/me/events/{event_id}")
+        self._request("DELETE", f"/me/events/{quote(event_id, safe='')}", max_retries=0)
 
     def cancel_event(self, event_id: str, *, comment: str = "") -> None:
         """Cancel a calendar event as organizer and notify attendees."""
-        self._request("POST", f"/me/events/{event_id}/cancel", json_body={"Comment": comment})
+        self._request("POST", f"/me/events/{quote(event_id, safe='')}/cancel", json_body={"Comment": comment}, max_retries=0)
 
     def respond_to_event(
         self,
@@ -678,6 +687,10 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
         )
         return resp.json().get("value", [])
 
+    def get_task(self, task_id: str) -> dict[str, Any]:
+        """Read a task before a confirmed change."""
+        return self._request("GET", f"/me/tasks/{quote(task_id, safe='')}").json()
+
     def create_task(self, subject: str) -> dict[str, Any]:
         """Create a new task."""
         resp = self._request(
@@ -697,7 +710,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
 
     def delete_task(self, task_id: str) -> None:
         """Delete a task."""
-        self._request("DELETE", f"/me/tasks/{task_id}")
+        self._request("DELETE", f"/me/tasks/{quote(task_id, safe='')}", max_retries=0)
 
     # ── Email search / read ────────────────────────────────────────────
 
@@ -782,6 +795,10 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             },
         )
         return resp.json().get("value", [])
+
+    def get_mail_folder(self, folder_id: str) -> dict[str, Any]:
+        """Resolve a full folder ID beyond a limited folder list."""
+        return self._request("GET", f"/me/mailfolders/{quote(folder_id, safe='')}").json()
 
     def create_mail_folder(self, name: str, parent_id: str | None = None) -> dict[str, Any]:
         """Create a mail folder at the top level or under a parent folder."""
@@ -1111,6 +1128,10 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
         )
         return resp.json().get("value", [])
 
+    def get_contact(self, contact_id: str) -> dict[str, Any]:
+        """Read a personal contact before a confirmed change."""
+        return self._request("GET", f"/me/contacts/{quote(contact_id, safe='')}").json()
+
     def create_contact(
         self,
         *,
@@ -1134,7 +1155,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             payload["CompanyName"] = company
         if mobile_phone is not None:
             payload["MobilePhone1"] = mobile_phone
-        resp = self._request("POST", "/me/contacts", json_body=payload)
+        resp = self._request("POST", "/me/contacts", json_body=payload, max_retries=0)
         return resp.json()
 
     def update_contact(
@@ -1162,7 +1183,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             payload["CompanyName"] = company
         if mobile_phone is not None:
             payload["MobilePhone1"] = mobile_phone
-        resp = self._request("PATCH", f"/me/contacts/{contact_id}", json_body=payload)
+        resp = self._request("PATCH", f"/me/contacts/{quote(contact_id, safe='')}", json_body=payload, max_retries=0)
         return resp.json() if resp.content else {}
 
     # ── Mailbox settings ──────────────────────────────────────────────
@@ -1206,7 +1227,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
             payload["Importance"] = importance
         if status is not None:
             payload["Status"] = status
-        resp = self._request("PATCH", f"/me/tasks/{task_id}", json_body=payload)
+        resp = self._request("PATCH", f"/me/tasks/{quote(task_id, safe='')}", json_body=payload, max_retries=0)
         return resp.json() if resp.content else {}
 
     def update_draft(

@@ -390,9 +390,11 @@ def _download_destination(dest: str, remote_name: str) -> Path:
 
 
 def _write_download(path: Path, data: bytes, *, overwrite: bool) -> None:
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"{path} already exists. Use --overwrite to replace it.")
-    path.write_bytes(data)
+    try:
+        with path.open("wb" if overwrite else "xb") as stream:
+            stream.write(data)
+    except FileExistsError as exc:
+        raise FileExistsError(f"{path} already exists. Use --overwrite to replace it.") from exc
 
 
 # ── Command handlers ──────────────────────────────────────────────

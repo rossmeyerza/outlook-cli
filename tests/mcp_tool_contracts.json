@@ -159,7 +159,7 @@
   {
     "name": "mail_download_attachments",
     "title": null,
-    "description": "Download file attachments to an absolute directory on this machine. Skips inline images unless named in attachment_ids. Writes files.",
+    "description": "Download file attachments to an absolute directory on this machine. Skips inline images unless selected by ID or include_inline=true. Writes files.",
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -188,6 +188,11 @@
         "overwrite": {
           "default": false,
           "title": "Overwrite",
+          "type": "boolean"
+        },
+        "include_inline": {
+          "default": false,
+          "title": "Include Inline",
           "type": "boolean"
         }
       },
@@ -264,11 +269,54 @@
     "execution": null
   },
   {
+    "name": "mail_download_links",
+    "title": null,
+    "description": "Download SharePoint/OneDrive links from an email to an absolute local directory. Returns successful paths and explicit per-link errors. Does not change remote data.",
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "dest_dir": {
+          "title": "Dest Dir",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_id",
+        "dest_dir"
+      ],
+      "title": "mail_download_linksArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_download_linksDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "mail_folders",
     "title": null,
     "description": "List top-level mail folders with unread and total counts. Read-only.",
     "inputSchema": {
-      "properties": {},
+      "properties": {
+        "count": {
+          "default": 250,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
       "title": "mail_foldersArguments",
       "type": "object"
     },
@@ -1183,6 +1231,18 @@
           ],
           "default": null,
           "title": "Attachments"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Importance"
         }
       },
       "required": [
@@ -1420,6 +1480,18 @@
           ],
           "default": null,
           "title": "Attachments"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Importance"
         }
       },
       "required": [
@@ -1683,7 +1755,7 @@
   {
     "name": "cal_find_time",
     "title": null,
-    "description": "Find meeting slots where no attendee is busy or out of office. Read-only. Creates nothing.\n\nComputed from Outlook free/busy, between day_start and day_end local time.\nBest slots first: clear slots, then slots with the fewest tentative attendees or\nattendees outside their own working hours, then by start time.\n",
+    "description": "Find meeting slots where no attendee is busy or out of office. Read-only. Creates nothing.\n\nComputed from Outlook free/busy, between day_start and day_end local time.\nBest slots first: clear slots, then slots with the fewest tentative attendees or\nattendees outside their own working hours, then by start time.\nSet outlook=true for native Outlook suggestions; local slot filters then do not apply.\n",
     "inputSchema": {
       "properties": {
         "attendees": {
@@ -1729,6 +1801,11 @@
         "tentative_is_free": {
           "default": true,
           "title": "Tentative Is Free",
+          "type": "boolean"
+        },
+        "outlook": {
+          "default": false,
+          "title": "Outlook",
           "type": "boolean"
         }
       },
@@ -1879,6 +1956,292 @@
     "execution": null
   },
   {
+    "name": "cal_delete",
+    "title": null,
+    "description": "Preview removal of a calendar entry, not the invitation email. Set confirm=true only after approval of the exact event and scope. Organiser meetings with attendees require cal_cancel instead. A series master requires explicit whole-series approval and allow_series=true; occurrence IDs affect only that occurrence. Optional expected_change_key checks the preview version. Never retry uncertain results automatically.",
+    "inputSchema": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        },
+        "allow_series": {
+          "default": false,
+          "title": "Allow Series",
+          "type": "boolean"
+        },
+        "expected_change_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Change Key"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "title": "cal_deleteArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_deleteDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "cal_cancel",
+    "title": null,
+    "description": "Preview cancellation of a meeting you organise. Confirmation notifies attendees. Set confirm=true only after approval of the exact event, scope, comment and notifications. A series master also requires explicit whole-series approval and allow_series=true. Use cal_respond to decline someone else's invitation. Optional expected_change_key checks the preview version. Never retry uncertain results automatically.",
+    "inputSchema": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        },
+        "allow_series": {
+          "default": false,
+          "title": "Allow Series",
+          "type": "boolean"
+        },
+        "expected_change_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Change Key"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "title": "cal_cancelArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_cancelDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "cal_rooms",
+    "title": null,
+    "description": "Discover meeting rooms, optionally in a room list. Read-only. Tenant support and permissions can limit this endpoint.",
+    "inputSchema": {
+      "properties": {
+        "room_list": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Room List"
+        }
+      },
+      "title": "cal_roomsArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "cal_roomsOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "cal_update",
+    "title": null,
+    "description": "Preview calendar edits. Omitted fields stay unchanged; empty location/body clears them. Time edits require both start and end. Updates can notify attendees. Set confirm=true only after approval of the event, changes and notifications. A series master also requires allow_series=true. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "online_meeting": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Online Meeting"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        },
+        "allow_series": {
+          "default": false,
+          "title": "Allow Series",
+          "type": "boolean"
+        },
+        "expected_change_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Change Key"
+        }
+      },
+      "required": [
+        "event_id"
+      ],
+      "title": "cal_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "cal_updateDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "contact_search",
     "title": null,
     "description": "Search the org directory and recent contacts by name or email. Read-only.",
@@ -1919,6 +2282,207 @@
     },
     "icons": null,
     "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "contact_create",
+    "title": null,
+    "description": "Preview a new personal contact. Set confirm=true only after approval. Does not modify directory users. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "display_name": {
+          "title": "Display Name",
+          "type": "string"
+        },
+        "email": {
+          "title": "Email",
+          "type": "string"
+        },
+        "given_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Given Name"
+        },
+        "surname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surname"
+        },
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Company"
+        },
+        "mobile_phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mobile Phone"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "display_name",
+        "email"
+      ],
+      "title": "contact_createArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "contact_createDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "contact_update",
+    "title": null,
+    "description": "Preview changes to a personal contact by its contact ID, not a directory person ID. Omitted fields stay unchanged. An email replaces the whole email collection. Empty optional text fields clear. Set confirm=true only after approval. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "contact_id": {
+          "title": "Contact Id",
+          "type": "string"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "email": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Email"
+        },
+        "given_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Given Name"
+        },
+        "surname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surname"
+        },
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Company"
+        },
+        "mobile_phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mobile Phone"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contact_id"
+      ],
+      "title": "contact_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "contact_updateDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
     "meta": null,
     "execution": null
   },
@@ -2014,15 +2578,144 @@
     "execution": null
   },
   {
+    "name": "task_update",
+    "title": null,
+    "description": "Preview task edits. Omitted fields stay unchanged. Due dates use the configured local timezone. Set confirm=true only after approval. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "due": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Importance"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "title": "task_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "task_updateDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "task_delete",
+    "title": null,
+    "description": "Preview task deletion. Set confirm=true only after approval of this exact task. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "task_id"
+      ],
+      "title": "task_deleteArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "task_deleteDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "teams_list",
     "title": null,
-    "description": "List recent Teams chats, newest activity first. Read-only.",
+    "description": "List recent Teams chats. Set sort_received=true to sort the fetched chats by latest received message, not all historical chats. Read-only.",
     "inputSchema": {
       "properties": {
         "count": {
           "default": 20,
           "title": "Count",
           "type": "integer"
+        },
+        "sort_received": {
+          "default": false,
+          "title": "Sort Received",
+          "type": "boolean"
         }
       },
       "title": "teams_listArguments",
@@ -2079,6 +2772,11 @@
           "default": false,
           "title": "Include Messages",
           "type": "boolean"
+        },
+        "member_count": {
+          "default": 100,
+          "title": "Member Count",
+          "type": "integer"
         }
       },
       "required": [
@@ -2102,6 +2800,52 @@
         "result"
       ],
       "title": "teams_searchOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "teams_get",
+    "title": null,
+    "description": "Read chat details, created time and members without a message fetch. Use a full chat ID or 48:notes for self-chat discovery. Read-only.",
+    "inputSchema": {
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chat_id"
+      ],
+      "title": "teams_getArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "teams_getDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "teams_self",
+    "title": null,
+    "description": "Discover and check access to your Teams self-chat. Read-only.",
+    "inputSchema": {
+      "properties": {},
+      "title": "teams_selfArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "teams_selfDictOutput",
       "type": "object"
     },
     "icons": null,
@@ -2144,7 +2888,7 @@
   {
     "name": "teams_attachments",
     "title": null,
-    "description": "List file attachments and SharePoint/OneDrive links in the latest messages of a chat. Read-only.",
+    "description": "List file attachments and SharePoint/OneDrive links in the latest messages of a chat. Count controls the message scan. Read-only.",
     "inputSchema": {
       "properties": {
         "chat_id": {
@@ -2440,7 +3184,7 @@
   {
     "name": "files_download",
     "title": null,
-    "description": "Download a file to an absolute local path (file or directory). `item` is a path, or for SharePoint also a drive item ID. OneDrive is used when `site` is omitted. Writes a file.",
+    "description": "Download a file to an absolute local path or directory. Accepts SharePoint/OneDrive URLs, paths and item IDs. A share URL identifies its own site and library. Writes a local file without remote changes.",
     "inputSchema": {
       "properties": {
         "item": {
@@ -2495,6 +3239,274 @@
     },
     "icons": null,
     "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "files_upload",
+    "title": null,
+    "description": "Preview a local file upload to an existing OneDrive or SharePoint folder. Set confirm=true only after approval of the file and exact destination. Replacement also requires overwrite=true. No folder or share link is created. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "dest": {
+          "default": "",
+          "title": "Dest",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "files_uploadArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_uploadDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "files_mkdir",
+    "title": null,
+    "description": "Preview one new folder in an existing parent. Set confirm=true only after approval of the exact site, library and path. Does not create missing parent folders. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "files_mkdirArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_mkdirDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "files_rename",
+    "title": null,
+    "description": "Preview a file or folder rename. The new name must not contain a path. Set confirm=true only after approval of the exact item and new name. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "name"
+      ],
+      "title": "files_renameArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_renameDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "files_move",
+    "title": null,
+    "description": "Preview a file or folder move within one drive. The destination folder must exist. Set confirm=true only after approval of the exact source and destination. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "dest": {
+          "title": "Dest",
+          "type": "string"
+        },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "dest"
+      ],
+      "title": "files_moveArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_moveDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
     "meta": null,
     "execution": null
   },

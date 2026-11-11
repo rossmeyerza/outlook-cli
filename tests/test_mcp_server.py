@@ -23,11 +23,13 @@ EXPECTED_TOOLS = {
     "mail_categories", "mail_category_create", "mail_category_update", "mail_category_delete", "mail_categorise",
     "mail_rules", "mail_rule_create", "mail_rule_update", "mail_rule_delete",
     "draft_create", "draft_reply", "draft_update", "draft_forward", "draft_list", "draft_get", "draft_delete",
-    "cal_agenda", "cal_get", "cal_availability", "cal_find_time", "cal_create", "cal_respond",
+    "cal_agenda", "cal_get", "cal_availability", "cal_find_time", "cal_create", "cal_respond", "cal_delete", "cal_cancel",
     "contact_search", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
     "copilot_ask", "copilot_app", "auth_status", "mail_send", "draft_send", "teams_send", "teams_new",
+    "mail_download_links", "cal_rooms", "cal_update", "contact_create", "contact_update",
+    "task_update", "task_delete", "teams_get", "teams_self", "files_upload", "files_mkdir", "files_rename", "files_move",
 }
 
 
@@ -47,8 +49,9 @@ def test_registers_exactly_the_phase_one_tools():
 
 def test_only_approved_send_and_destructive_tools_are_registered():
     forbidden = ("send", "delete_event", "cancel", "update", "upload", "mkdir", "rename", "contact_create")
-    for name in _tool_names() - {"draft_delete", "draft_update", "mail_category_update", "mail_rule_update",
-                                "mail_send", "draft_send", "teams_send", "teams_new"}:
+    for name in _tool_names() - {"cal_delete", "cal_cancel", "draft_delete", "draft_update", "mail_category_update", "mail_rule_update",
+                                "mail_send", "draft_send", "teams_send", "teams_new", "cal_update", "contact_create",
+                                "contact_update", "task_update", "task_delete", "files_upload", "files_mkdir", "files_rename", "files_move"}:
         assert not any(word in name for word in forbidden), name
     tools = asyncio.run(build_server().list_tools())
     for tool in tools:
