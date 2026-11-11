@@ -30,9 +30,9 @@ outlook-cli mail download-attachments <n>  # download attachments
 
 # Create drafts
 outlook-cli draft create --to <email> -s "Subject" -b "Body text"
-outlook-cli draft create --to <email> -s "Subject" -f ./email.html --html
+outlook-cli draft create --to <email> -s "Subject" -f ./email.html --format html
 outlook-cli draft reply <message-ref> -b "Thanks, I'll come back to you"
-outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
+outlook-cli draft reply <message-id> --reply-all -f ./reply.html --format html
 
 # Manage drafts
 outlook-cli draft list                     # list all drafts
@@ -164,6 +164,11 @@ outlook-cli config check                   # validate local config without print
 See `docs/mail-features.md` for commands, MCP tools, safety controls and live verification limits.
 `mail_query.py`, `mail_compose.py` and `mail_organise.py` provide mixins for `OutlookClient`.
 `commands/mail_ops.py` handles bulk actions, conversations and filtered search.
+Email composition accepts Markdown (default) or HTML, not a separate plain-body mode.
+CLI commands expose `--format markdown|html`; MCP tools expose `body_format` with the same values.
+`email_markdown.py` uses CommonMark with explicit inline block styles and compact native lists.
+Supplied HTML, signatures and quoted originals retain their markup.
+Markdown replies do not reinterpret the quoted original as Markdown.
 Categories and inbox rules use Graph v1.0 through Graph client factories, with lowerCamelCase payloads and full Graph IDs.
 The current local Graph token lacks mailbox-settings permissions and returned HTTP 403 on category and rule reads.
 Do not fall back to Outlook beta endpoints.
@@ -209,9 +214,9 @@ See `docs/teams-media.md` for size limits, examples and live verification detail
   - `cal availability --json` prints the decoded report. `--raw` prints Outlook's raw `getSchedule` JSON. `cal_availability(include_raw=true)` adds the digit string to each attendee.
 - **Tasks**: `task list` caches to disk so `task complete <n>` works in a separate invocation.
 - **Recipients**: `--to`, `--cc`, `--bcc` are repeatable and accept comma-separated addresses.
-- **Body source**: `--body` for inline text, `--body-file` for file. Add `--html` when the provided body is already HTML.
+- **Body source**: `--body` accepts inline Markdown or HTML; `--body-file` reads a file. Use `--format html` for supplied HTML. Markdown is the default.
 - **Reply drafts**: `draft reply` creates a draft tied to an existing message. Use a cached mail index from `mail unread` / `mail search`, a cached ID suffix, or a full message ID.
-- **Draft formatting**: New and reply drafts are always saved as HTML, use Aptos for the message body, and append the saved signature HTML from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
+- **Draft formatting**: Markdown and HTML bodies both use HTML for Outlook. Markdown lists become native lists, with zero list-item margins and 8 px paragraph gaps. New and reply drafts retain Aptos and the saved signature from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
 - **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
 - **Teams**: `teams list`, `teams search`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `list_teams_messages` asks Graph for `createdDateTime desc` and follows `@odata.nextLink`, so `--count` above 50 works; CLI and MCP results show the newest message first. MCP requests remain limited to 50 messages. `teams search <query>` scans a bounded set of chats, matches chat topics and participants, and caches the matching chats so numeric refs work in a separate invocation. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` and `teams send <chat> <msg>` print a preview and send nothing unless `--yes` is passed. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.

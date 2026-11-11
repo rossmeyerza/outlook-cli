@@ -6,6 +6,7 @@ import base64
 
 from .. import config
 from .. import teams_new as teams_new_lib
+from ..email_markdown import EmailBodyFormat, is_html_format
 from ..formatting import compose_email_html, parse_recipients
 from ..mail_compose import encode_attachments
 from ..signatures import load_signature
@@ -46,10 +47,11 @@ def draft_send(draft_id: str, confirm: bool = False) -> JsonDict:
 def mail_send(
     to: list[str], subject: str, body: str,
     cc: list[str] | None = None, bcc: list[str] | None = None,
-    html: bool = False, importance: str = "Normal", confirm: bool = False,
+    body_format: EmailBodyFormat = "markdown", importance: str = "Normal", confirm: bool = False,
     attachments: list[str] | None = None,
 ) -> JsonDict:
-    """Preview a new email with Aptos and the new-message signature. Set confirm=true only when the user explicitly asks to send. Saves to Sent Items. Do not retry after an uncertain result."""
+    """Preview an email from Markdown (default) or HTML, with Aptos and the saved signature. Markdown lists become native email bullets. Set confirm=true only after explicit send approval. Saves to Sent Items. Never retry an uncertain result automatically."""
+    html = is_html_format(body_format)
     encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
     if not recipients:
@@ -63,7 +65,7 @@ def mail_send(
     cc_list, bcc_list = parse_recipients(cc), parse_recipients(bcc)
     result = {
         "to": recipients, "cc": cc_list, "bcc": bcc_list, "subject": subject,
-        "bodyHtml": html_body, "importance": importance, "sent": False,
+        "bodyHtml": html_body, "bodyFormat": body_format, "importance": importance, "sent": False,
     }
     if attachments:
         result["attachments"] = [{"name": item["Name"], "size": len(base64.b64decode(item["ContentBytes"]))} for item in encoded]

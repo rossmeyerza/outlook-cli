@@ -8,6 +8,7 @@ from datetime import datetime
 from html import escape
 
 from . import config
+from .email_markdown import markdown_to_email_html
 
 log = logging.getLogger(__name__)
 
@@ -66,13 +67,15 @@ def compose_email_html(
     signature_html: str,
     quoted_html: str = "",
 ) -> str:
-    """Build the final HTML body with Aptos styling and signature."""
-    content_html = body if is_html else text_to_html(body)
+    """Build the email from Markdown or HTML, with the saved signature unchanged."""
+    content_html = body if is_html else markdown_to_email_html(body)
     style = (
         f"font-family: {config.EMAIL_FONT_FAMILY}; "
         f"font-size: {config.EMAIL_FONT_SIZE}; "
         "color: rgb(0, 0, 0);"
     )
+    if not is_html:
+        style += " line-height: 1.2;"
     return f'<div style="{style}">{content_html}</div>{signature_html}{quoted_html}'
 
 

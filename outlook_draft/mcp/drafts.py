@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .. import config
+from ..email_markdown import EmailBodyFormat, is_html_format
 from ..formatting import compose_email_html, parse_recipients
 from ..mail_compose import attach_to_draft, draft_update_fields, encode_attachments, finish_quoted_draft
 from ..signatures import load_signature
@@ -38,11 +39,12 @@ def draft_create(
     body: str,
     cc: list[str] | None = None,
     bcc: list[str] | None = None,
-    html: bool = False,
+    body_format: EmailBodyFormat = "markdown",
     importance: str = "Normal",
     attachments: list[str] | None = None,
 ) -> JsonDict:
-    """Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send."""
+    """Create a draft from Markdown (default) or HTML, with the Aptos style and saved signature. Markdown supports real bullet lists, numbered lists, emphasis and links. Does not send."""
+    html = is_html_format(body_format)
     encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
     if not recipients:
@@ -65,14 +67,15 @@ def draft_create(
             importance=_check_importance(importance),
         )
         attach_to_draft(client, draft, encoded)
-    return draft_summary(draft)
+    return {**draft_summary(draft), "bodyFormat": body_format}
 
 
 def draft_reply(
-    message_id: str, body: str, reply_all: bool = False, html: bool = False,
+    message_id: str, body: str, reply_all: bool = False, body_format: EmailBodyFormat = "markdown",
     attachments: list[str] | None = None,
 ) -> JsonDict:
-    """Create a reply draft to an existing message with the reply signature and quoted original. Does not send."""
+    """Create a reply draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Markdown dash lists become native bullets. Does not send."""
+    html = is_html_format(body_format)
     if not body.strip():
         raise ValueError("body must not be empty")
     encoded = encode_attachments(attachments)
@@ -81,7 +84,7 @@ def draft_reply(
         draft = client.create_reply_draft(message_id, reply_all=reply_all)
         draft = finish_quoted_draft(client, draft, body, html, signature)
         attach_to_draft(client, draft, encoded)
-    return draft_summary(draft)
+    return {**draft_summary(draft), "bodyFormat": body_format}
 
 
 def draft_list(count: int = 20) -> list[JsonDict]:
@@ -120,24 +123,26 @@ def draft_delete(draft_id: str) -> JsonDict:
 def draft_update(
     draft_id: str, subject: str | None = None, body: str | None = None,
     to: list[str] | None = None, cc: list[str] | None = None,
-    bcc: list[str] | None = None, html: bool = False,
+    bcc: list[str] | None = None, body_format: EmailBodyFormat = "markdown",
     importance: str | None = None, signature: str = "none",
     attachments: list[str] | None = None,
 ) -> JsonDict:
-    """Edit a draft. Omitted fields stay unchanged; empty fields clear. Does not send."""
+    """Edit a draft with a replacement body in Markdown (default) or HTML. Omitted fields stay unchanged; empty fields clear. Does not send."""
+    html = is_html_format(body_format)
     encoded = encode_attachments(attachments)
     fields = draft_update_fields(subject, body, to, cc, bcc, html, importance, signature)
     with outlook_client() as client:
         draft = client.update_mail_draft(draft_id, **fields)
         attach_to_draft(client, draft, encoded)
-    return draft_summary(draft)
+    return {**draft_summary(draft), **({"bodyFormat": body_format} if body is not None else {})}
 
 
 def draft_forward(
     message_id: str, to: list[str], body: str = "", cc: list[str] | None = None,
-    bcc: list[str] | None = None, html: bool = False, attachments: list[str] | None = None,
+    bcc: list[str] | None = None, body_format: EmailBodyFormat = "markdown", attachments: list[str] | None = None,
 ) -> JsonDict:
-    """Create a forward draft with the reply signature and quoted original. Does not send."""
+    """Create a forward draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Does not send."""
+    html = is_html_format(body_format)
     encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
     if not recipients:
@@ -150,7 +155,7 @@ def draft_forward(
             cc=parse_recipients(cc) or None, bcc=parse_recipients(bcc) or None,
         )
         attach_to_draft(client, draft, encoded)
-    return draft_summary(draft)
+    return {**draft_summary(draft), "bodyFormat": body_format}
 
 
 TOOLS = [draft_create, draft_reply, draft_update, draft_forward, draft_list, draft_get, draft_delete]

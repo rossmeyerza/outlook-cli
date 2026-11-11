@@ -14,7 +14,7 @@ from ..cache import MAIL_CACHE, MAIL_FOLDER_CACHE, load_cache, save_cache
 from ..errors import CliError, OutlookAPIError
 from ..formatting import format_datetime, html_to_text
 from ..links import extract_links_from_html, filter_share_links, looks_like_share_url
-from ..parser import _add_yes_arg, add_output_args
+from ..parser import _add_yes_arg, add_email_format_args, add_output_args
 from ..progress import spinner
 from ..references import _resolve_message_id
 from . import drafts, mail_ops, mail_organise
@@ -628,9 +628,9 @@ def _register_cmd_mail_send(mail_sub) -> None:
     cmd_mail_send.add_argument("--cc", action="append", help="CC recipient")
     cmd_mail_send.add_argument("--bcc", action="append", help="BCC recipient")
     cmd_mail_send.add_argument("--subject", "-s", required=True, help="Subject line")
-    cmd_mail_send.add_argument("--body", "-b", help="Body text (inline)")
-    cmd_mail_send.add_argument("--body-file", "-f", help="Read body from file")
-    cmd_mail_send.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_mail_send.add_argument("--body", "-b", help="Markdown or HTML body (inline)")
+    cmd_mail_send.add_argument("--body-file", "-f", help="Read the body from a Markdown or HTML file")
+    add_email_format_args(cmd_mail_send)
     cmd_mail_send.add_argument("--attach", action="append", help="Local attachment path, repeatable; at most 3 MiB each")
     cmd_mail_send.add_argument("--signature", choices=["none", "new", "reply"], default="none", help="Append saved signature")
     cmd_mail_send.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")

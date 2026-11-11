@@ -94,11 +94,11 @@ The current local token does not include those permissions.
 ```bash
 # Create a draft
 outlook-cli draft create --to someone@example.com -s "Hello" -b "Hi there"
-outlook-cli draft create --to someone@example.com -s "Report" -f ./email.html --html
+outlook-cli draft create --to someone@example.com -s "Report" -f ./email.html --format html
 
 # Create a reply draft from an existing email
 outlook-cli draft reply 1 -b "Thanks, I'll review this and come back to you."
-outlook-cli draft reply <message-id> --reply-all -f ./reply.html --html
+outlook-cli draft reply <message-id> --reply-all -f ./reply.html --format html
 
 # List drafts
 outlook-cli draft list
@@ -470,7 +470,10 @@ Draft signatures are loaded automatically from `SIGNATURE_NEW_FILE` and `SIGNATU
 - `signature-new.html` for new drafts
 - `signature-reply.html` for reply drafts
 
-Draft bodies are sent as HTML and wrapped with Aptos styling before the saved signature is appended.
+Email composition accepts Markdown (default) or HTML through `--format markdown|html`.
+The MCP email tools expose `body_format` with the same two choices.
+Markdown renders as HTML with native lists, compact paragraph margins and Aptos before the saved signature.
+Supplied HTML, saved signatures and quoted originals retain their existing markup.
 
 ## Architecture
 

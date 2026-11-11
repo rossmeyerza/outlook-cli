@@ -92,13 +92,48 @@ The search cache contains only messages from the latest result.
 MCP tool: `mail_query`.
 Its arguments include `sender`, `recipient`, `after`, `before`, `has_attachments`, `unread`, `folder_id`, `page`, `all_pages` and `page_size`.
 
+## Markdown or HTML composition
+
+All email composition tools accept two input formats: Markdown and HTML.
+Markdown is the default.
+The tool renders Markdown as HTML because Outlook has no native Markdown body type.
+This change also applies to direct sends without a signature.
+It does not add a separate plain-body input mode.
+
+```bash
+outlook-cli draft create --to person@example.com -s "Report" --body-file ./email.md
+outlook-cli draft reply <message-id> --body-file ./reply.md --format markdown
+outlook-cli draft update <draft-id> --body-file ./email.html --format html
+outlook-cli mail send --to person@example.com -s "Report" --body-file ./email.md
+```
+
+The MCP tools `draft_create`, `draft_reply`, `draft_forward`, `draft_update` and `mail_send` expose `body_format`.
+Its only values are `markdown` and `html`.
+Composition results identify the input format through `bodyFormat`.
+An update without a replacement body does not claim a new body format.
+Restart the MCP server after the update so agents see the new parameter instead of the former `html` boolean.
+
+Markdown supports dash bullets, numbered lists, nested lists, emphasis, links, headings, quotes and code blocks.
+Use `- ` followed by a space for each bullet.
+A single newline remains a line break.
+The tool escapes embedded HTML in Markdown mode and rejects unsafe link schemes through the Markdown parser.
+The renderer uses CommonMark rather than an automatic format guess.
+
+Markdown paragraphs have zero top margin and an 8 px bottom margin.
+Lists have zero top margin and compact items without extra paragraph gaps.
+The body keeps a line height of 1.2.
+The tool leaves supplied HTML markup unchanged inside the existing email wrapper.
+It also preserves saved signatures and quoted originals.
+It does not alter emails or drafts that already exist.
+Teams composition keeps its existing interface.
+
 ## Attachments and draft edits
 
 ```bash
 outlook-cli draft create --to person@example.com -s "Report" -b "Please review." --attach ./report.pdf
 outlook-cli draft reply <message-id> -b "Please see the file." --attach ./report.pdf
 outlook-cli draft update <draft-id> -s "Updated subject" --attach ./report.pdf --json
-outlook-cli draft update <draft-id> --body-file ./body.html --html --json
+outlook-cli draft update <draft-id> --body-file ./body.html --format html --json
 outlook-cli draft update <draft-id> --cc "" --json
 outlook-cli mail send --to person@example.com -s "Report" -b "Please review." --attach ./report.pdf
 ```

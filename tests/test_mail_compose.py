@@ -151,7 +151,7 @@ def test_update_fields_preserve_omitted_body_and_signature(client):
 
 def test_update_fields_default_has_no_signature(client):
     fields = draft_update_fields(None, "", None, None, None, False, None, "none")
-    assert fields == {"body": "", "content_type": "Text"}
+    assert fields == {"body": "", "content_type": "HTML"}
 
 
 def test_update_explicit_signature_has_no_duplicate(client):
@@ -217,7 +217,7 @@ def test_cli_attach_is_repeatable_and_json_supported(operation):
 def test_cli_update_empty_fields(client, capsys):
     args = parse("draft", "update", "d1", "--to", "", "--subject", "", "--body", "", "--json")
     args.func(args)
-    client.update_draft.assert_called_once_with("d1", subject="", to=[], body="", content_type="Text")
+    client.update_draft.assert_called_once_with("d1", subject="", to=[], body="", content_type="HTML")
     assert '"Id": "d1"' in capsys.readouterr().out
 
 

@@ -15,7 +15,7 @@ from ..formatting import compose_email_html as _compose_email_html
 from ..formatting import parse_recipients as _parse_recipients
 from ..mail_compose import attach_to_draft, draft_update_fields, encode_attachments, finish_quoted_draft
 from ..outlook_client import OutlookClient
-from ..parser import _add_yes_arg, add_output_args
+from ..parser import _add_yes_arg, add_email_format_args, add_output_args, email_is_html
 from ..progress import spinner
 from ..references import _resolve_message_id
 from ..runtime import console
@@ -53,7 +53,7 @@ def cmd_create(args: argparse.Namespace) -> None:
     importance = args.importance or "Normal"
     html_body = _compose_email_html(
         body,
-        is_html=args.html,
+        is_html=email_is_html(args),
         signature_html=_load_signature(config.SIGNATURE_NEW_FILE),
     )
 
@@ -84,7 +84,7 @@ def cmd_create(args: argparse.Namespace) -> None:
     console.print(Panel(
         f"[bold]Subject:[/] {draft.get('Subject', '')}\n"
         f"[bold]To:[/] {recipients}\n"
-        f"[bold]Type:[/] HTML\n"
+        f"[bold]Format:[/] {'HTML' if email_is_html(args) else 'Markdown'}\n"
         f"[bold]ID:[/] [dim]{draft_id}[/]",
         title="[green]Draft created[/]",
         border_style="green",
@@ -102,7 +102,7 @@ def cmd_reply(args: argparse.Namespace) -> None:
         with spinner(args, "Creating reply draft..."):
             draft = client.create_reply_draft(message_id, reply_all=args.reply_all)
             draft = finish_quoted_draft(
-                client, draft, body, args.html, signature, importance=importance,
+                client, draft, body, email_is_html(args), signature, importance=importance,
             )
             attach_to_draft(client, draft, encoded)
     except OutlookAPIError as e:
@@ -118,7 +118,7 @@ def cmd_reply(args: argparse.Namespace) -> None:
         f"[bold]Subject:[/] {draft.get('Subject', '')}\n"
         f"[bold]To:[/] {recipients}\n"
         f"[bold]Reply all:[/] {'Yes' if args.reply_all else 'No'}\n"
-        f"[bold]Type:[/] HTML\n"
+        f"[bold]Format:[/] {'HTML' if email_is_html(args) else 'Markdown'}\n"
         f"[bold]ID:[/] [dim]{draft.get('Id', '')}[/]",
         title="[green]Reply draft created[/]",
         border_style="green",
@@ -145,7 +145,7 @@ def cmd_update(args: argparse.Namespace) -> None:
     try:
         fields = draft_update_fields(
             args.subject, body, args.to, args.cc, args.bcc,
-            args.html, args.importance, args.signature,
+            email_is_html(args), args.importance, args.signature,
         )
     except (ValueError, FileNotFoundError) as exc:
         raise CliError(str(exc)) from exc
@@ -176,7 +176,7 @@ def cmd_forward(args: argparse.Namespace) -> None:
         with spinner(args, "Creating forward draft..."):
             draft = client.create_forward_draft(message_id)
             draft = finish_quoted_draft(
-                client, draft, body, args.html, signature, to=recipients,
+                client, draft, body, email_is_html(args), signature, to=recipients,
                 cc=_parse_recipients(args.cc) or None,
                 bcc=_parse_recipients(args.bcc) or None, importance=args.importance,
             )
@@ -207,9 +207,9 @@ def _add_edit_options(parser, *, require_to=False) -> None:
     parser.add_argument("--cc", action="append", help="CC recipient (repeatable)")
     parser.add_argument("--bcc", action="append", help="BCC recipient (repeatable)")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--body", "-b", help="Replacement body text; empty clears it")
+    group.add_argument("--body", "-b", help="Replacement Markdown or HTML body; empty clears it")
     group.add_argument("--body-file", "-f", help="Read the body from a local file")
-    parser.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    add_email_format_args(parser)
     parser.add_argument("--importance", choices=["Low", "Normal", "High"])
     parser.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")
     add_output_args(parser)
@@ -349,16 +349,12 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
     _require_send_confirmation(args, f"email '{args.subject}' to {', '.join(to)}")
     cc = _parse_recipients(args.cc)
     bcc = _parse_recipients(args.bcc)
+    signature_html = ""
     if args.signature != "none":
         signature_file = config.SIGNATURE_REPLY_FILE if args.signature == "reply" else config.SIGNATURE_NEW_FILE
-        body = _compose_email_html(
-            body,
-            is_html=args.html,
-            signature_html=_load_signature(signature_file),
-        )
-        content_type = "HTML"
-    else:
-        content_type = "HTML" if args.html else "Text"
+        signature_html = _load_signature(signature_file)
+    body = _compose_email_html(body, is_html=email_is_html(args), signature_html=signature_html)
+    content_type = "HTML"
 
     client = runtime.get_client()
     try:
@@ -422,9 +418,9 @@ def register(sub) -> None:
     cmd_draft_create.add_argument("--cc", action="append", help="CC recipient")
     cmd_draft_create.add_argument("--bcc", action="append", help="BCC recipient")
     cmd_draft_create.add_argument("--subject", "-s", required=True, help="Subject line")
-    cmd_draft_create.add_argument("--body", "-b", help="Body text (inline)")
-    cmd_draft_create.add_argument("--body-file", "-f", help="Read body from a file (.txt or .html)")
-    cmd_draft_create.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_draft_create.add_argument("--body", "-b", help="Markdown or HTML body (inline)")
+    cmd_draft_create.add_argument("--body-file", "-f", help="Read the body from a Markdown or HTML file")
+    add_email_format_args(cmd_draft_create)
     cmd_draft_create.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
     cmd_draft_create.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")
     add_output_args(cmd_draft_create)
@@ -432,9 +428,9 @@ def register(sub) -> None:
 
     cmd_draft_reply = draft_sub.add_parser("reply", help="Create a reply draft from an email")
     cmd_draft_reply.add_argument("message_id", help="Message index, cached ID suffix, or full ID")
-    cmd_draft_reply.add_argument("--body", "-b", help="Reply body text (inline)")
-    cmd_draft_reply.add_argument("--body-file", "-f", help="Read reply body from a file (.txt or .html)")
-    cmd_draft_reply.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_draft_reply.add_argument("--body", "-b", help="Markdown or HTML reply body (inline)")
+    cmd_draft_reply.add_argument("--body-file", "-f", help="Read the reply body from a Markdown or HTML file")
+    add_email_format_args(cmd_draft_reply)
     cmd_draft_reply.add_argument("--reply-all", action="store_true", help="Reply to all recipients")
     cmd_draft_reply.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
     cmd_draft_reply.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")

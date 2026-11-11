@@ -171,7 +171,7 @@ def test_draft_create_applies_aptos_and_new_signature(monkeypatch, signatures):
     assert kwargs["bcc"] is None
     assert kwargs["content_type"] == "HTML"
     assert "Aptos" in kwargs["body"]
-    assert "<p>Line one</p><p>Line two</p>" in kwargs["body"]
+    assert '>Line one</p>\n<p style="margin: 0 0 8px 0; line-height: 1.2;">Line two</p>' in kwargs["body"]
     assert kwargs["body"].endswith("<div>NEW-SIG</div>")
     assert result["id"] == "d1"
     assert result["webLink"] == "https://o/d1"
@@ -182,7 +182,7 @@ def test_draft_create_html_body_is_not_escaped(monkeypatch, signatures):
     fake = FakeClient(create_draft={"Id": "d1"})
     use_client(monkeypatch, drafts, "outlook_client", fake)
 
-    drafts.draft_create(to=["a@example.com"], subject="s", body="<p>raw</p>", html=True)
+    drafts.draft_create(to=["a@example.com"], subject="s", body="<p>raw</p>", body_format="html")
 
     assert "<p>raw</p>" in fake.call("create_draft")[1]["body"]
 

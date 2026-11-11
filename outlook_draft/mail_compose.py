@@ -93,13 +93,14 @@ def draft_update_fields(subject, body, to, cc, bcc, html, importance, signature)
         if values is not None:
             fields[name] = parse_recipients(values)
     if body is not None:
+        signature_html = ""
         if signature != "none":
             path = config.SIGNATURE_REPLY_FILE if signature == "reply" else config.SIGNATURE_NEW_FILE
             saved_signature = load_signature(path)
             signature_html = "" if html and saved_signature in body else saved_signature
+        if (not html or signature != "none") and (body or signature_html):
             body = compose_email_html(body, is_html=html, signature_html=signature_html)
-            html = True
-        fields.update(body=body, content_type="HTML" if html else "Text")
+        fields.update(body=body, content_type="HTML")
     return {key: value for key, value in fields.items() if value is not None}
 
 

@@ -1045,7 +1045,7 @@
   {
     "name": "draft_create",
     "title": null,
-    "description": "Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send.",
+    "description": "Create a draft from Markdown (default) or HTML, with the Aptos style and saved signature. Markdown supports real bullet lists, numbered lists, emphasis and links. Does not send.",
     "inputSchema": {
       "properties": {
         "to": {
@@ -1093,10 +1093,14 @@
           "default": null,
           "title": "Bcc"
         },
-        "html": {
-          "default": false,
-          "title": "Html",
-          "type": "boolean"
+        "body_format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "html"
+          ],
+          "title": "Body Format",
+          "type": "string"
         },
         "importance": {
           "default": "Normal",
@@ -1140,7 +1144,7 @@
   {
     "name": "draft_reply",
     "title": null,
-    "description": "Create a reply draft to an existing message with the reply signature and quoted original. Does not send.",
+    "description": "Create a reply draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Markdown dash lists become native bullets. Does not send.",
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -1156,10 +1160,14 @@
           "title": "Reply All",
           "type": "boolean"
         },
-        "html": {
-          "default": false,
-          "title": "Html",
-          "type": "boolean"
+        "body_format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "html"
+          ],
+          "title": "Body Format",
+          "type": "string"
         },
         "attachments": {
           "anyOf": [
@@ -1197,7 +1205,7 @@
   {
     "name": "draft_update",
     "title": null,
-    "description": "Edit a draft. Omitted fields stay unchanged; empty fields clear. Does not send.",
+    "description": "Edit a draft with a replacement body in Markdown (default) or HTML. Omitted fields stay unchanged; empty fields clear. Does not send.",
     "inputSchema": {
       "properties": {
         "draft_id": {
@@ -1273,10 +1281,14 @@
           "default": null,
           "title": "Bcc"
         },
-        "html": {
-          "default": false,
-          "title": "Html",
-          "type": "boolean"
+        "body_format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "html"
+          ],
+          "title": "Body Format",
+          "type": "string"
         },
         "importance": {
           "anyOf": [
@@ -1336,7 +1348,7 @@
   {
     "name": "draft_forward",
     "title": null,
-    "description": "Create a forward draft with the reply signature and quoted original. Does not send.",
+    "description": "Create a forward draft from Markdown (default) or HTML. Preserves the reply signature and quoted original. Does not send.",
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -1385,10 +1397,14 @@
           "default": null,
           "title": "Bcc"
         },
-        "html": {
-          "default": false,
-          "title": "Html",
-          "type": "boolean"
+        "body_format": {
+          "default": "markdown",
+          "enum": [
+            "markdown",
+            "html"
+          ],
+          "title": "Body Format",
+          "type": "string"
         },
         "attachments": {
           "anyOf": [
