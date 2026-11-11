@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+
 from .. import config
 from .. import teams_new as teams_new_lib
 from ..formatting import compose_email_html, parse_recipients
+from ..mail_compose import encode_attachments
 from ..signatures import load_signature
 from .clients import graph_client, outlook_client
 from .drafts import _check_importance, draft_summary
@@ -36,8 +39,10 @@ def mail_send(
     to: list[str], subject: str, body: str,
     cc: list[str] | None = None, bcc: list[str] | None = None,
     html: bool = False, importance: str = "Normal", confirm: bool = False,
+    attachments: list[str] | None = None,
 ) -> JsonDict:
     """Preview a new email with Aptos and the new-message signature. Set confirm=true only when the user explicitly asks to send. Saves to Sent Items. Do not retry after an uncertain result."""
+    encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
     if not recipients:
         raise ValueError("At least one recipient is required in 'to'")
@@ -52,12 +57,15 @@ def mail_send(
         "to": recipients, "cc": cc_list, "bcc": bcc_list, "subject": subject,
         "bodyHtml": html_body, "importance": importance, "sent": False,
     }
+    if attachments:
+        result["attachments"] = [{"name": item["Name"], "size": len(base64.b64decode(item["ContentBytes"]))} for item in encoded]
     if confirm is True:
         with outlook_client() as client:
             client.send_mail(
                 subject=subject, body=html_body, to=recipients, cc=cc_list or None,
                 bcc=bcc_list or None, content_type="HTML", importance=importance,
                 save_to_sent_items=True,
+                **({"attachments": encoded} if attachments else {}),
             )
         result["sent"] = True
     return result

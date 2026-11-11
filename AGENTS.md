@@ -20,6 +20,8 @@ outlook-cli mail mark-read <n>             # mark email as read
 outlook-cli mail mark-unread <n>           # mark email as unread
 outlook-cli mail archive <n>               # archive email
 outlook-cli mail folders                   # list mail folders
+outlook-cli mail create-folder "Clients"    # create a top-level mail folder
+outlook-cli mail create-folder "Project" --parent inbox # create a subfolder
 outlook-cli mail folders --json            # JSON folders
 outlook-cli mail move <n> --folder <folder> # move email
 outlook-cli mail attachments <n>           # list attachments
@@ -157,6 +159,23 @@ outlook-cli mailbox update --timezone "GMT Standard Time"
 outlook-cli config check                   # validate local config without printing secrets
 ```
 
+## Extended mail features
+
+See `docs/mail-features.md` for commands, MCP tools, safety controls and live verification limits.
+`mail_query.py`, `mail_compose.py` and `mail_organise.py` provide mixins for `OutlookClient`.
+`commands/mail_ops.py` handles bulk actions, conversations and filtered search.
+Categories and inbox rules use Graph v1.0 through Graph client factories, with lowerCamelCase payloads and full Graph IDs.
+The current local Graph token lacks mailbox-settings permissions and returned HTTP 403 on category and rule reads.
+Do not fall back to Outlook beta endpoints.
+Bulk and organisation mutations preview by default, with `--yes` or `confirm=true` for writes.
+New rules start disabled and reject automatic forward and delete actions.
+Draft uploads validate local files before remote writes and permit at most 3 MiB for each file.
+`--dry-run` prints a plan without authentication, file validation or remote checks.
+`safety.check_request` guards HTTP writes before authentication or network access.
+Read-only and no-send modes also block Copilot prompts.
+The MCP server supports `OUTLOOK_CLI_READONLY`, `OUTLOOK_CLI_NO_SEND`, `OUTLOOK_CLI_ENABLE_TOOLS` and `OUTLOOK_CLI_DISABLE_TOOLS`.
+Restart the MCP server after code or environment changes.
+
 ## Key Details
 
 - **Progress spinners**: Interactive commands render Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; JSON stdout remains parseable.
@@ -210,7 +229,7 @@ outlook-cli config check                   # validate local config without print
 
 Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
 
-- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_mark_read`, `mail_move`, `mail_archive`
+- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
 - Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
 - Contacts: `contact_search`

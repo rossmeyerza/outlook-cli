@@ -134,6 +134,13 @@ def mail_folders() -> list[JsonDict]:
     ]
 
 
+def mail_create_folder(name: str, parent_id: str | None = None) -> JsonDict:
+    """Create a mail folder. Omit parent_id for the top level; otherwise use a full folder ID or well-known name such as inbox. Changes mailbox state. Never retry automatically after an uncertain result."""
+    with outlook_client() as client:
+        folder = client.create_mail_folder(name, parent_id=parent_id)
+    return {"id": folder.get("Id", ""), "displayName": folder.get("DisplayName", "")}
+
+
 def mail_mark_read(message_id: str, is_read: bool = True) -> JsonDict:
     """Mark a message read or unread. Changes mailbox state."""
     with outlook_client() as client:
@@ -179,6 +186,7 @@ TOOLS = [
     mail_download_attachments,
     mail_links,
     mail_folders,
+    mail_create_folder,
     mail_mark_read,
     mail_move,
     mail_archive,

@@ -75,6 +75,8 @@ outlook-cli mail mark-read 1                # mark email as read
 outlook-cli mail mark-unread 1              # mark email as unread
 outlook-cli mail archive 1                  # archive email
 outlook-cli mail folders                    # list mail folders
+outlook-cli mail create-folder "Clients"    # create a top-level mail folder
+outlook-cli mail create-folder "Project" --parent inbox # create a subfolder
 outlook-cli mail folders --json             # machine-readable folders
 outlook-cli mail move 1 --folder Archive    # move email to folder
 outlook-cli mail attachments 1              # list attachments
@@ -82,6 +84,10 @@ outlook-cli mail download-attachments 1 -d ./attachments
 ```
 
 Results from `mail unread` or `mail search` are cached to disk, so `mail read <n>` works in a separate invocation. Those cached message refs can also be used with `draft reply <n>`.
+
+See [Mail features](docs/mail-features.md) for bulk actions, complete conversations, search filters, attachments, draft edits, forward drafts, categories, rules and safety controls.
+Categories and rules need additional Microsoft Graph mailbox permissions.
+The current local token does not include those permissions.
 
 ### Drafts
 
@@ -410,7 +416,7 @@ Check it with `pi mcp list`.
 
 Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used):
 
-- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_mark_read`, `mail_move`, `mail_archive`
+- Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
 - Drafts: `draft_create`, `draft_reply`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`
 - Contacts: `contact_search`

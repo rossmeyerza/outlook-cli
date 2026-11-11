@@ -13,9 +13,9 @@ from .. import config, runtime
 from ..errors import CliError, OutlookAPIError
 from ..formatting import compose_email_html as _compose_email_html
 from ..formatting import parse_recipients as _parse_recipients
-from ..formatting import text_to_html as _text_to_html
+from ..mail_compose import attach_to_draft, draft_update_fields, encode_attachments, finish_quoted_draft
 from ..outlook_client import OutlookClient
-from ..parser import _add_yes_arg
+from ..parser import _add_yes_arg, add_output_args
 from ..progress import spinner
 from ..references import _resolve_message_id
 from ..runtime import console
@@ -28,10 +28,11 @@ def _load_body(args: argparse.Namespace) -> str:
     """Load a body from --body or --body-file."""
     if args.body_file:
         body_path = Path(args.body_file)
-        if not body_path.exists():
-            raise CliError(f"[red]File not found: {body_path}[/]")
-        return body_path.read_text(encoding="utf-8")
-    if args.body:
+        try:
+            return body_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise CliError(f"Cannot read body file {body_path}: {exc}") from exc
+    if args.body is not None:
         return args.body
     raise CliError("[red]Provide --body or --body-file[/]")
 
@@ -45,6 +46,7 @@ def _load_signature(path: Path) -> str:
 def cmd_create(args: argparse.Namespace) -> None:
     """Create a new email draft."""
     body = _load_body(args)
+    encoded = _encode_files(args)
     to = [a.strip() for addr in args.to for a in addr.split(",") if a.strip()]
     cc = [a.strip() for addr in args.cc for a in addr.split(",") if a.strip()] if args.cc else None
     bcc = [a.strip() for addr in args.bcc for a in addr.split(",") if a.strip()] if args.bcc else None
@@ -67,11 +69,15 @@ def cmd_create(args: argparse.Namespace) -> None:
                 content_type="HTML",
                 importance=importance,
             )
+            attach_to_draft(client, draft, encoded)
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to create draft: {e}[/]") from e
     finally:
         client.close()
 
+    if getattr(args, "json", False):
+        runtime.print_json(draft)
+        return
     draft_id = draft.get("Id", "")
     recipients = ", ".join(r.get("EmailAddress", {}).get("Address", "") for r in draft.get("ToRecipients", []))
 
@@ -87,38 +93,26 @@ def cmd_create(args: argparse.Namespace) -> None:
 def cmd_reply(args: argparse.Namespace) -> None:
     """Create a draft reply tied to an existing message."""
     body = _load_body(args)
+    encoded = _encode_files(args)
+    signature = _load_signature(config.SIGNATURE_REPLY_FILE)
     importance = args.importance or "Normal"
     client = runtime.get_client()
-    message_id = _resolve_message_id(client, args.message_id)
-
     try:
+        message_id = _resolve_message_id(client, args.message_id)
         with spinner(args, "Creating reply draft..."):
             draft = client.create_reply_draft(message_id, reply_all=args.reply_all)
-            draft_id = draft.get("Id", "")
-            if not draft_id:
-                raise OutlookAPIError(0, "Reply draft was created without a draft ID")
-
-            quoted_html = draft.get("Body", {}).get("Content", "")
-            if draft.get("Body", {}).get("ContentType") == "Text":
-                quoted_html = _text_to_html(quoted_html)
-
-            reply_html = _compose_email_html(
-                body,
-                is_html=args.html,
-                signature_html=_load_signature(config.SIGNATURE_REPLY_FILE),
-                quoted_html=quoted_html,
+            draft = finish_quoted_draft(
+                client, draft, body, args.html, signature, importance=importance,
             )
-            draft = client.update_draft(
-                draft_id,
-                body=reply_html,
-                content_type="HTML",
-                importance=importance,
-            )
+            attach_to_draft(client, draft, encoded)
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to create reply draft: {e}[/]") from e
     finally:
         client.close()
 
+    if getattr(args, "json", False):
+        runtime.print_json(draft)
+        return
     recipients = ", ".join(r.get("EmailAddress", {}).get("Address", "") for r in draft.get("ToRecipients", []))
     console.print(Panel(
         f"[bold]Subject:[/] {draft.get('Subject', '')}\n"
@@ -129,6 +123,97 @@ def cmd_reply(args: argparse.Namespace) -> None:
         title="[green]Reply draft created[/]",
         border_style="green",
     ))
+
+def _encode_files(args: argparse.Namespace) -> list[dict]:
+    try:
+        return encode_attachments(getattr(args, "attach", None))
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+
+
+def _show_saved(args, draft: dict, title: str) -> None:
+    if getattr(args, "json", False):
+        runtime.print_json(draft)
+    else:
+        console.print(Panel(f"[bold]ID:[/] {draft.get('Id', '')}", title=title))
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    """Edit supplied fields without changing an omitted body or signature."""
+    encoded = _encode_files(args)
+    body = _load_body(args) if args.body is not None or args.body_file is not None else None
+    try:
+        fields = draft_update_fields(
+            args.subject, body, args.to, args.cc, args.bcc,
+            args.html, args.importance, args.signature,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise CliError(str(exc)) from exc
+    client = runtime.get_client()
+    try:
+        draft_id = _resolve_draft_id(client, args.draft_id)
+        with spinner(args, "Updating draft..."):
+            draft = client.update_mail_draft(draft_id, **fields)
+            attach_to_draft(client, draft, encoded)
+    except (OutlookAPIError, ValueError) as exc:
+        raise CliError(f"Failed to update draft: {exc}") from exc
+    finally:
+        client.close()
+    _show_saved(args, draft, "Draft updated")
+
+
+def cmd_forward(args: argparse.Namespace) -> None:
+    """Create a forward draft with a signature and the quoted original."""
+    encoded = _encode_files(args)
+    body = _load_body(args) if args.body is not None or args.body_file is not None else ""
+    signature = _load_signature(config.SIGNATURE_REPLY_FILE)
+    recipients = _parse_recipients(args.to)
+    if not recipients:
+        raise CliError("At least one recipient is required in --to")
+    client = runtime.get_client()
+    try:
+        message_id = _resolve_message_id(client, args.message_id)
+        with spinner(args, "Creating forward draft..."):
+            draft = client.create_forward_draft(message_id)
+            draft = finish_quoted_draft(
+                client, draft, body, args.html, signature, to=recipients,
+                cc=_parse_recipients(args.cc) or None,
+                bcc=_parse_recipients(args.bcc) or None, importance=args.importance,
+            )
+            attach_to_draft(client, draft, encoded)
+    except (OutlookAPIError, ValueError) as exc:
+        raise CliError(f"Failed to create forward draft: {exc}") from exc
+    finally:
+        client.close()
+    _show_saved(args, draft, "Forward draft created")
+
+
+def _register_edits(draft_sub) -> None:
+    update = draft_sub.add_parser("update", help="Edit an existing draft")
+    update.add_argument("draft_id", help="Draft ID, index, or ID suffix")
+    update.add_argument("--subject", "-s", help="Replace the subject; empty clears it")
+    update.add_argument("--signature", choices=["none", "new", "reply"], default="none",
+                        help="Signature for a replacement body only (default: none)")
+    _add_edit_options(update)
+    update.set_defaults(func=cmd_update)
+    forward = draft_sub.add_parser("forward", help="Create a forward draft")
+    forward.add_argument("message_id", help="Message index, cached ID suffix, or full ID")
+    _add_edit_options(forward, require_to=True)
+    forward.set_defaults(func=cmd_forward)
+
+
+def _add_edit_options(parser, *, require_to=False) -> None:
+    parser.add_argument("--to", action="append", required=require_to, help="Recipient (repeatable)")
+    parser.add_argument("--cc", action="append", help="CC recipient (repeatable)")
+    parser.add_argument("--bcc", action="append", help="BCC recipient (repeatable)")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--body", "-b", help="Replacement body text; empty clears it")
+    group.add_argument("--body-file", "-f", help="Read the body from a local file")
+    parser.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    parser.add_argument("--importance", choices=["Low", "Normal", "High"])
+    parser.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")
+    add_output_args(parser)
+
 
 def cmd_list(args: argparse.Namespace) -> None:
     """List drafts in the Drafts folder."""
@@ -219,10 +304,12 @@ def cmd_show(args: argparse.Namespace) -> None:
     console.print(Panel("\n".join(lines), title="Draft", border_style="cyan"))
 
 def cmd_delete(args: argparse.Namespace) -> None:
-    """Delete a draft."""
+    """Delete a draft, never a received email."""
     client = runtime.get_client()
-    draft_id = _resolve_draft_id(client, args.draft_id)
     try:
+        draft_id = _resolve_draft_id(client, args.draft_id)
+        if not client.get_draft(draft_id).get("IsDraft", False):
+            raise CliError("Refusing to delete: this message is not a draft.")
         with spinner(args, "Deleting draft..."):
             client.delete_draft(draft_id)
     except OutlookAPIError as e:
@@ -257,6 +344,7 @@ def cmd_send_draft(args: argparse.Namespace) -> None:
 def cmd_send_mail(args: argparse.Namespace) -> None:
     """Send a new email immediately."""
     body = _load_body(args)
+    encoded = _encode_files(args)
     to = _parse_recipients(args.to)
     _require_send_confirmation(args, f"email '{args.subject}' to {', '.join(to)}")
     cc = _parse_recipients(args.cc)
@@ -283,6 +371,7 @@ def cmd_send_mail(args: argparse.Namespace) -> None:
             content_type=content_type,
             save_to_sent_items=not args.no_save,
             importance=args.importance,
+            **({"attachments": encoded} if getattr(args, "attach", None) else {}),
         )
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to send email: {e}[/]") from e
@@ -337,6 +426,8 @@ def register(sub) -> None:
     cmd_draft_create.add_argument("--body-file", "-f", help="Read body from a file (.txt or .html)")
     cmd_draft_create.add_argument("--html", action="store_true", help="Treat body input as HTML")
     cmd_draft_create.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
+    cmd_draft_create.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")
+    add_output_args(cmd_draft_create)
     cmd_draft_create.set_defaults(func=cmd_create)
 
     cmd_draft_reply = draft_sub.add_parser("reply", help="Create a reply draft from an email")
@@ -346,7 +437,10 @@ def register(sub) -> None:
     cmd_draft_reply.add_argument("--html", action="store_true", help="Treat body input as HTML")
     cmd_draft_reply.add_argument("--reply-all", action="store_true", help="Reply to all recipients")
     cmd_draft_reply.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
+    cmd_draft_reply.add_argument("--attach", action="append", help="Attach a local file (repeatable, max 3 MiB each)")
+    add_output_args(cmd_draft_reply)
     cmd_draft_reply.set_defaults(func=cmd_reply)
+    _register_edits(draft_sub)
 
     cmd_draft_list = draft_sub.add_parser("list", help="List drafts")
     cmd_draft_list.add_argument("--count", "-n", type=int, default=20, help="Number of drafts")

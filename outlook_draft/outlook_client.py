@@ -16,6 +16,10 @@ from .calendar_time import outlook_timezone_prefer_header
 from .concurrency import ordered_map
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
+from .mail_compose import MailComposeMixin
+from .mail_organise import MailOrganiseMixin
+from .mail_query import MailQueryMixin
+from .safety import check_request
 from .teams_activity import TeamsChatList, activity_time
 from .token_manager import TokenManager
 
@@ -26,7 +30,7 @@ UPLOAD_CHUNK_SIZE = 10 * 320 * 1024
 ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentReference"
 
 
-class OutlookClient:
+class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
     """Sync HTTP client for Outlook and Microsoft Graph operations."""
 
     def __init__(
@@ -86,8 +90,9 @@ class OutlookClient:
         max_retries: int = 2,
     ) -> httpx.Response:
         """Make a request to the API with retry on 401/429/5xx."""
-        client = self._ensure_client()
         url = path if path.startswith("https://") else f"{self._base_url}{path}"
+        check_request(method, url)
+        client = self._ensure_client()
 
         for attempt in range(max_retries + 1):
             try:
@@ -441,7 +446,7 @@ class OutlookClient:
         if bcc:
             payload["BccRecipients"] = [_addr(a) for a in bcc]
 
-        resp = self._request("POST", "/me/messages", json_body=payload)
+        resp = self._request("POST", "/me/messages", json_body=payload, max_retries=0)
         return resp.json()
 
     def create_reply_draft(
@@ -452,7 +457,7 @@ class OutlookClient:
     ) -> dict[str, Any]:
         """Create a reply draft tied to an existing message."""
         action = "createReplyAll" if reply_all else "createReply"
-        resp = self._request("POST", f"/me/messages/{message_id}/{action}")
+        resp = self._request("POST", f"/me/messages/{message_id}/{action}", max_retries=0)
         return resp.json()
 
     def list_drafts(self, top: int = 20) -> list[dict[str, Any]]:
@@ -741,6 +746,7 @@ class OutlookClient:
         content_type: str = "Text",
         save_to_sent_items: bool = True,
         importance: str = "Normal",
+        attachments: list[dict[str, Any]] | None = None,
     ) -> None:
         """Send a new email immediately."""
         def _addr(email: str) -> dict:
@@ -756,6 +762,8 @@ class OutlookClient:
             message["CcRecipients"] = [_addr(a) for a in cc]
         if bcc:
             message["BccRecipients"] = [_addr(a) for a in bcc]
+        if attachments:
+            message["Attachments"] = attachments
         self._request(
             "POST",
             "/me/sendmail",
@@ -774,6 +782,20 @@ class OutlookClient:
             },
         )
         return resp.json().get("value", [])
+
+    def create_mail_folder(self, name: str, parent_id: str | None = None) -> dict[str, Any]:
+        """Create a mail folder at the top level or under a parent folder."""
+        name = name.strip()
+        if not name or any(ord(char) < 32 or ord(char) == 127 for char in name):
+            raise ValueError("Folder name must be non-empty and contain no control characters.")
+        if parent_id is not None and not parent_id.strip():
+            raise ValueError("Parent folder ID must be non-empty.")
+        path = "/me/mailfolders"
+        if parent_id is not None:
+            path += f"/{quote(parent_id, safe='')}/childfolders"
+        return self._request(
+            "POST", path, json_body={"DisplayName": name}, max_retries=0,
+        ).json()
 
     def move_message(self, message_id: str, destination_id: str) -> dict[str, Any]:
         """Move a message to another mail folder."""

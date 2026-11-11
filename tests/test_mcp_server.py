@@ -18,8 +18,11 @@ from outlook_draft.token_manager import TokenManager
 
 EXPECTED_TOOLS = {
     "mail_search", "mail_unread", "mail_read", "mail_attachments", "mail_download_attachments",
-    "mail_links", "mail_folders", "mail_mark_read", "mail_move", "mail_archive",
-    "draft_create", "draft_reply", "draft_list", "draft_get", "draft_delete",
+    "mail_links", "mail_folders", "mail_create_folder", "mail_mark_read", "mail_move", "mail_archive",
+    "mail_query", "mail_conversation", "mail_bulk", "mail_trash",
+    "mail_categories", "mail_category_create", "mail_category_update", "mail_category_delete", "mail_categorise",
+    "mail_rules", "mail_rule_create", "mail_rule_update", "mail_rule_delete",
+    "draft_create", "draft_reply", "draft_update", "draft_forward", "draft_list", "draft_get", "draft_delete",
     "cal_agenda", "cal_get", "cal_availability", "cal_find_time", "cal_create", "cal_respond",
     "contact_search", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
@@ -44,7 +47,8 @@ def test_registers_exactly_the_phase_one_tools():
 
 def test_only_approved_send_and_destructive_tools_are_registered():
     forbidden = ("send", "delete_event", "cancel", "update", "upload", "mkdir", "rename", "contact_create")
-    for name in _tool_names() - {"draft_delete", "mail_send", "draft_send", "teams_send", "teams_new"}:
+    for name in _tool_names() - {"draft_delete", "draft_update", "mail_category_update", "mail_rule_update",
+                                "mail_send", "draft_send", "teams_send", "teams_new"}:
         assert not any(word in name for word in forbidden), name
     tools = asyncio.run(build_server().list_tools())
     for tool in tools:

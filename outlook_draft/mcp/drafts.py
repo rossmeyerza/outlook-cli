@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from .. import config
-from ..errors import OutlookAPIError
-from ..formatting import compose_email_html, parse_recipients, text_to_html
+from ..formatting import compose_email_html, parse_recipients
+from ..mail_compose import attach_to_draft, draft_update_fields, encode_attachments, finish_quoted_draft
 from ..signatures import load_signature
 from .clients import clamp, outlook_client
 from .shaping import PREVIEW_CHARS, JsonDict, addresses, body_text
@@ -40,8 +40,10 @@ def draft_create(
     bcc: list[str] | None = None,
     html: bool = False,
     importance: str = "Normal",
+    attachments: list[str] | None = None,
 ) -> JsonDict:
     """Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send."""
+    encoded = encode_attachments(attachments)
     recipients = parse_recipients(to)
     if not recipients:
         raise ValueError("At least one recipient is required in 'to'")
@@ -62,26 +64,23 @@ def draft_create(
             content_type="HTML",
             importance=_check_importance(importance),
         )
+        attach_to_draft(client, draft, encoded)
     return draft_summary(draft)
 
 
-def draft_reply(message_id: str, body: str, reply_all: bool = False, html: bool = False) -> JsonDict:
+def draft_reply(
+    message_id: str, body: str, reply_all: bool = False, html: bool = False,
+    attachments: list[str] | None = None,
+) -> JsonDict:
     """Create a reply draft to an existing message with the reply signature and quoted original. Does not send."""
     if not body.strip():
         raise ValueError("body must not be empty")
+    encoded = encode_attachments(attachments)
     signature = load_signature(config.SIGNATURE_REPLY_FILE)
     with outlook_client() as client:
         draft = client.create_reply_draft(message_id, reply_all=reply_all)
-        draft_id = draft.get("Id", "")
-        if not draft_id:
-            raise OutlookAPIError(0, "Reply draft was created without a draft ID")
-        quoted = draft.get("Body", {}).get("Content", "")
-        if draft.get("Body", {}).get("ContentType") == "Text":
-            quoted = text_to_html(quoted)
-        reply_html = compose_email_html(
-            body, is_html=html, signature_html=signature, quoted_html=quoted
-        )
-        draft = client.update_draft(draft_id, body=reply_html, content_type="HTML")
+        draft = finish_quoted_draft(client, draft, body, html, signature)
+        attach_to_draft(client, draft, encoded)
     return draft_summary(draft)
 
 
@@ -118,4 +117,40 @@ def draft_delete(draft_id: str) -> JsonDict:
     return {"id": draft_id, "deleted": True}
 
 
-TOOLS = [draft_create, draft_reply, draft_list, draft_get, draft_delete]
+def draft_update(
+    draft_id: str, subject: str | None = None, body: str | None = None,
+    to: list[str] | None = None, cc: list[str] | None = None,
+    bcc: list[str] | None = None, html: bool = False,
+    importance: str | None = None, signature: str = "none",
+    attachments: list[str] | None = None,
+) -> JsonDict:
+    """Edit a draft. Omitted fields stay unchanged; empty fields clear. Does not send."""
+    encoded = encode_attachments(attachments)
+    fields = draft_update_fields(subject, body, to, cc, bcc, html, importance, signature)
+    with outlook_client() as client:
+        draft = client.update_mail_draft(draft_id, **fields)
+        attach_to_draft(client, draft, encoded)
+    return draft_summary(draft)
+
+
+def draft_forward(
+    message_id: str, to: list[str], body: str = "", cc: list[str] | None = None,
+    bcc: list[str] | None = None, html: bool = False, attachments: list[str] | None = None,
+) -> JsonDict:
+    """Create a forward draft with the reply signature and quoted original. Does not send."""
+    encoded = encode_attachments(attachments)
+    recipients = parse_recipients(to)
+    if not recipients:
+        raise ValueError("At least one recipient is required in 'to'")
+    signature = load_signature(config.SIGNATURE_REPLY_FILE)
+    with outlook_client() as client:
+        draft = client.create_forward_draft(message_id)
+        draft = finish_quoted_draft(
+            client, draft, body, html, signature, to=recipients,
+            cc=parse_recipients(cc) or None, bcc=parse_recipients(bcc) or None,
+        )
+        attach_to_draft(client, draft, encoded)
+    return draft_summary(draft)
+
+
+TOOLS = [draft_create, draft_reply, draft_update, draft_forward, draft_list, draft_get, draft_delete]

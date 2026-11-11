@@ -17,7 +17,7 @@ from ..links import extract_links_from_html, filter_share_links, looks_like_shar
 from ..parser import _add_yes_arg, add_output_args
 from ..progress import spinner
 from ..references import _resolve_message_id
-from . import drafts
+from . import drafts, mail_ops, mail_organise
 
 JsonDict = dict[str, Any]
 
@@ -119,7 +119,9 @@ def cmd_unread(args: argparse.Namespace) -> None:
 
 
 def cmd_mail(args: argparse.Namespace) -> None:
-    """Search emails by keyword."""
+    """Search emails by keyword or explicit filters."""
+    if mail_ops.enhanced_search(args):
+        return mail_ops.cmd_query(args)
     client = runtime.get_client()
     try:
         with spinner(args, f"Searching emails for '{args.query}'..."):
@@ -246,6 +248,22 @@ def cmd_move(args: argparse.Namespace) -> None:
         raise CliError(f"[red]Failed to move email: {e}[/]") from e
     finally:
         client.close()
+
+
+def cmd_create_folder(args: argparse.Namespace) -> None:
+    client = runtime.get_client()
+    try:
+        parent_id = _resolve_folder_id(args, args.parent) if args.parent is not None else None
+        folder = client.create_mail_folder(args.name, parent_id=parent_id)
+    except (OutlookAPIError, ValueError) as e:
+        raise CliError(f"[red]Failed to create folder: {e}[/]") from e
+    finally:
+        client.close()
+    if args.json:
+        runtime.print_json({"id": folder.get("Id", ""), "displayName": folder.get("DisplayName", "")})
+    else:
+        runtime.console.print(f"Created folder: {folder.get('DisplayName', args.name)}", markup=False)
+        runtime.console.print(f"ID: {folder.get('Id', '')}", markup=False)
 
 
 def cmd_folders(args: argparse.Namespace) -> None:
@@ -496,6 +514,8 @@ def register(sub) -> None:
     _register_cmd_mail_links(mail_sub)
     _register_cmd_mail_download_links(mail_sub)
     _register_cmd_mail_send(mail_sub)
+    mail_ops.register(mail_sub)
+    mail_organise.register(mail_sub)
 
 
 def _register_cmd_mail_unread(mail_sub) -> None:
@@ -508,7 +528,8 @@ def _register_cmd_mail_unread(mail_sub) -> None:
 def _register_cmd_mail_search(mail_sub) -> None:
     cmd_mail_search = mail_sub.add_parser("search", help="Search emails by keyword")
     add_output_args(cmd_mail_search)
-    cmd_mail_search.add_argument("query", help="Search term")
+    cmd_mail_search.add_argument("query", nargs="?", help="Search term")
+    mail_ops.query_options(cmd_mail_search)
     cmd_mail_search.add_argument("--count", "-n", type=int, default=20, help="Max results")
     cmd_mail_search.set_defaults(func=cmd_mail)
 
@@ -550,6 +571,12 @@ def _register_cmd_mail_folders(mail_sub) -> None:
     add_output_args(cmd_mail_folders)
     cmd_mail_folders.add_argument("--count", "-n", type=int, default=100, help="Max folders")
     cmd_mail_folders.set_defaults(func=cmd_folders)
+
+    create_folder = mail_sub.add_parser("create-folder", help="Create a mail folder")
+    add_output_args(create_folder)
+    create_folder.add_argument("name", help="New folder name")
+    create_folder.add_argument("--parent", help="Parent folder name, cached index or full ID; default: top level")
+    create_folder.set_defaults(func=cmd_create_folder)
 
 
 def _register_cmd_mail_attachments(mail_sub) -> None:
@@ -604,6 +631,7 @@ def _register_cmd_mail_send(mail_sub) -> None:
     cmd_mail_send.add_argument("--body", "-b", help="Body text (inline)")
     cmd_mail_send.add_argument("--body-file", "-f", help="Read body from file")
     cmd_mail_send.add_argument("--html", action="store_true", help="Treat body input as HTML")
+    cmd_mail_send.add_argument("--attach", action="append", help="Local attachment path, repeatable; at most 3 MiB each")
     cmd_mail_send.add_argument("--signature", choices=["none", "new", "reply"], default="none", help="Append saved signature")
     cmd_mail_send.add_argument("--importance", choices=["Low", "Normal", "High"], default="Normal")
     cmd_mail_send.add_argument("--no-save", action="store_true", help="Do not save to Sent Items")

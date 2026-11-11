@@ -1,19 +1,18 @@
 [
   {
-    "annotations": null,
+    "name": "mail_search",
+    "title": null,
     "description": "Search mail by keyword. Read-only. Returns message summaries with full IDs.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
         "count": {
           "default": 20,
           "title": "Count",
           "type": "integer"
-        },
-        "query": {
-          "title": "Query",
-          "type": "string"
         }
       },
       "required": [
@@ -22,8 +21,6 @@
       "title": "mail_searchArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_search",
     "outputSchema": {
       "properties": {
         "result": {
@@ -41,13 +38,15 @@
       "title": "mail_searchOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_unread",
+    "title": null,
     "description": "List unread Inbox messages, newest first. Read-only. Returns message summaries.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "count": {
@@ -59,8 +58,6 @@
       "title": "mail_unreadArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_unread",
     "outputSchema": {
       "properties": {
         "result": {
@@ -78,15 +75,21 @@
       "title": "mail_unreadOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_read",
+    "title": null,
     "description": "Read one message by full ID: headers, recipients, body text, attachments and links. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
         "include_html": {
           "default": false,
           "title": "Include Html",
@@ -96,10 +99,6 @@
           "default": 20000,
           "title": "Max Chars",
           "type": "integer"
-        },
-        "message_id": {
-          "title": "Message Id",
-          "type": "string"
         }
       },
       "required": [
@@ -108,20 +107,20 @@
       "title": "mail_readArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_read",
     "outputSchema": {
       "additionalProperties": true,
       "title": "mail_readDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_attachments",
+    "title": null,
     "description": "List attachments on a message (id, name, contentType, size, isInline). Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -135,8 +134,6 @@
       "title": "mail_attachmentsArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_attachments",
     "outputSchema": {
       "properties": {
         "result": {
@@ -154,15 +151,25 @@
       "title": "mail_attachmentsOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_download_attachments",
+    "title": null,
     "description": "Download file attachments to an absolute directory on this machine. Skips inline images unless named in attachment_ids. Writes files.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "dest_dir": {
+          "title": "Dest Dir",
+          "type": "string"
+        },
         "attachment_ids": {
           "anyOf": [
             {
@@ -178,14 +185,6 @@
           "default": null,
           "title": "Attachment Ids"
         },
-        "dest_dir": {
-          "title": "Dest Dir",
-          "type": "string"
-        },
-        "message_id": {
-          "title": "Message Id",
-          "type": "string"
-        },
         "overwrite": {
           "default": false,
           "title": "Overwrite",
@@ -199,8 +198,6 @@
       "title": "mail_download_attachmentsArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_download_attachments",
     "outputSchema": {
       "properties": {
         "result": {
@@ -217,13 +214,15 @@
       "title": "mail_download_attachmentsOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_links",
+    "title": null,
     "description": "List links in a message body. By default only SharePoint/OneDrive share links. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -242,8 +241,6 @@
       "title": "mail_linksArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_links",
     "outputSchema": {
       "properties": {
         "result": {
@@ -261,20 +258,20 @@
       "title": "mail_linksOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_folders",
+    "title": null,
     "description": "List top-level mail folders with unread and total counts. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {},
       "title": "mail_foldersArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_folders",
     "outputSchema": {
       "properties": {
         "result": {
@@ -292,23 +289,70 @@
       "title": "mail_foldersOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
-    "description": "Mark a message read or unread. Changes mailbox state.",
-    "execution": null,
-    "icons": null,
+    "name": "mail_create_folder",
+    "title": null,
+    "description": "Create a mail folder. Omit parent_id for the top level; otherwise use a full folder ID or well-known name such as inbox. Changes mailbox state. Never retry automatically after an uncertain result.",
     "inputSchema": {
       "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "mail_create_folderArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "mail_create_folderDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_mark_read",
+    "title": null,
+    "description": "Mark a message read or unread. Changes mailbox state.",
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
         "is_read": {
           "default": true,
           "title": "Is Read",
           "type": "boolean"
-        },
-        "message_id": {
-          "title": "Message Id",
-          "type": "string"
         }
       },
       "required": [
@@ -317,28 +361,28 @@
       "title": "mail_mark_readArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_mark_read",
     "outputSchema": {
       "additionalProperties": true,
       "title": "mail_mark_readDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_move",
+    "title": null,
     "description": "Move a message to a folder given by name (e.g. 'inbox', 'archive', a display name) or ID. Changes mailbox state.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "folder": {
-          "title": "Folder",
-          "type": "string"
-        },
         "message_id": {
           "title": "Message Id",
+          "type": "string"
+        },
+        "folder": {
+          "title": "Folder",
           "type": "string"
         }
       },
@@ -349,20 +393,20 @@
       "title": "mail_moveArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_move",
     "outputSchema": {
       "additionalProperties": true,
       "title": "mail_moveDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "mail_archive",
+    "title": null,
     "description": "Move a message to the Archive folder. Changes mailbox state.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "message_id": {
@@ -376,23 +420,414 @@
       "title": "mail_archiveArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "mail_archive",
     "outputSchema": {
       "additionalProperties": true,
       "title": "mail_archiveDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
-    "description": "Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send.",
-    "execution": null,
-    "icons": null,
+    "name": "mail_query",
+    "title": null,
+    "description": "Search mail with exact address and date filters. Filters apply to fetched pages. Use all_pages for exhaustive structured queries. Keyword searches can have a server-side limit. Keep all filters unchanged for a continuation page. Read-only.",
     "inputSchema": {
       "properties": {
-        "bcc": {
+        "query": {
+          "default": "",
+          "title": "Query",
+          "type": "string"
+        },
+        "sender": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sender"
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recipient"
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before"
+        },
+        "has_attachments": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Has Attachments"
+        },
+        "unread": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unread"
+        },
+        "folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Folder Id"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "all_pages": {
+          "default": false,
+          "title": "All Pages",
+          "type": "boolean"
+        },
+        "page_size": {
+          "default": 100,
+          "title": "Page Size",
+          "type": "integer"
+        }
+      },
+      "title": "mail_queryArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_conversation",
+    "title": null,
+    "description": "Read every accessible message in a conversation, oldest first, including bodies and attachment metadata. Read-only. Does not download attachment bytes.",
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message_id"
+      ],
+      "title": "mail_conversationArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_bulk",
+    "title": null,
+    "description": "Preview archive, trash, move, mark-read or mark-unread for explicit message IDs. Apply only with confirm=true after user approval. Stops after a failed or uncertain write. Never retry uncertain results automatically. No permanent deletion.",
+    "inputSchema": {
+      "properties": {
+        "message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Message Ids",
+          "type": "array"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "folder_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Folder Id"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_ids",
+        "action"
+      ],
+      "title": "mail_bulkArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_trash",
+    "title": null,
+    "description": "Preview a move to Deleted Items. Set confirm=true only after user approval. No permanent deletion.",
+    "inputSchema": {
+      "properties": {
+        "message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Message Ids",
+          "type": "array"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_ids"
+      ],
+      "title": "mail_trashArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_categories",
+    "title": null,
+    "description": "List master categories through Graph. Requires MailboxSettings.Read.",
+    "inputSchema": {
+      "properties": {},
+      "title": "mail_categoriesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_categoriesOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_category_create",
+    "title": null,
+    "description": "Preview a category creation. Set confirm=true to create it. Requires MailboxSettings.ReadWrite. Colour: none or preset0..preset24.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "colour": {
+          "default": "none",
+          "title": "Colour",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "mail_category_createArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_category_update",
+    "title": null,
+    "description": "Preview a category colour update. Set confirm=true to apply it. Requires MailboxSettings.ReadWrite. A category name cannot change.",
+    "inputSchema": {
+      "properties": {
+        "category_id": {
+          "title": "Category Id",
+          "type": "string"
+        },
+        "colour": {
+          "title": "Colour",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category_id",
+        "colour"
+      ],
+      "title": "mail_category_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_category_delete",
+    "title": null,
+    "description": "Preview a master category deletion. Set confirm=true to delete it. Requires MailboxSettings.ReadWrite.",
+    "inputSchema": {
+      "properties": {
+        "category_id": {
+          "title": "Category Id",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category_id"
+      ],
+      "title": "mail_category_deleteArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_categorise",
+    "title": null,
+    "description": "Preview category changes on full Graph message IDs, not cached indices. Set confirm=true to apply. Requires Mail.ReadWrite. REST v2 IDs may differ from Graph IDs. Returns per-message results; a failed write stops the batch. Never retry an uncertain result automatically.",
+    "inputSchema": {
+      "properties": {
+        "message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Message Ids",
+          "type": "array"
+        },
+        "add": {
           "anyOf": [
             {
               "items": {
@@ -405,7 +840,224 @@
             }
           ],
           "default": null,
-          "title": "Bcc"
+          "title": "Add"
+        },
+        "remove": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remove"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_ids"
+      ],
+      "title": "mail_categoriseArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_rules",
+    "title": null,
+    "description": "List inbox rules through Graph. Requires MailboxSettings.Read.",
+    "inputSchema": {
+      "properties": {},
+      "title": "mail_rulesArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Result",
+          "type": "array"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "mail_rulesOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_rule_create",
+    "title": null,
+    "description": "Preview an inbox rule. Set confirm=true to create it. Rules start disabled unless enabled=true. Requires MailboxSettings.ReadWrite. Use Graph lowerCamelCase JSON: conditions fromAddresses (recipient objects), subjectContains; actions moveToFolder (Graph folder ID), assignCategories, markAsRead, stopProcessingRules. Other fields and dangerous actions are rejected.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "conditions": {
+          "additionalProperties": true,
+          "title": "Conditions",
+          "type": "object"
+        },
+        "actions": {
+          "additionalProperties": true,
+          "title": "Actions",
+          "type": "object"
+        },
+        "sequence": {
+          "default": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "conditions",
+        "actions"
+      ],
+      "title": "mail_rule_createArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_rule_update",
+    "title": null,
+    "description": "Preview a rule update. Set confirm=true to apply it. Requires MailboxSettings.ReadWrite. Changes accept displayName, sequence, isEnabled, conditions and actions in Graph lowerCamelCase. Unknown keys and dangerous actions fail validation. An enable request also checks the current rule.",
+    "inputSchema": {
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "changes": {
+          "additionalProperties": true,
+          "title": "Changes",
+          "type": "object"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "rule_id",
+        "changes"
+      ],
+      "title": "mail_rule_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "mail_rule_delete",
+    "title": null,
+    "description": "Preview an inbox rule deletion. Set confirm=true to delete it. Requires MailboxSettings.ReadWrite.",
+    "inputSchema": {
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "rule_id"
+      ],
+      "title": "mail_rule_deleteArguments",
+      "type": "object"
+    },
+    "outputSchema": null,
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "draft_create",
+    "title": null,
+    "description": "Create a new email draft in Outlook Drafts with the Aptos style and new-message signature. Does not send.",
+    "inputSchema": {
+      "properties": {
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "To",
+          "type": "array"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
         },
         "body": {
           "title": "Body",
@@ -426,6 +1078,21 @@
           "default": null,
           "title": "Cc"
         },
+        "bcc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bcc"
+        },
         "html": {
           "default": false,
           "title": "Html",
@@ -436,16 +1103,20 @@
           "title": "Importance",
           "type": "string"
         },
-        "subject": {
-          "title": "Subject",
-          "type": "string"
-        },
-        "to": {
-          "items": {
-            "type": "string"
-          },
-          "title": "To",
-          "type": "array"
+        "attachments": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachments"
         }
       },
       "required": [
@@ -456,39 +1127,54 @@
       "title": "draft_createArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "draft_create",
     "outputSchema": {
       "additionalProperties": true,
       "title": "draft_createDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "draft_reply",
+    "title": null,
     "description": "Create a reply draft to an existing message with the reply signature and quoted original. Does not send.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "body": {
-          "title": "Body",
-          "type": "string"
-        },
-        "html": {
-          "default": false,
-          "title": "Html",
-          "type": "boolean"
-        },
         "message_id": {
           "title": "Message Id",
+          "type": "string"
+        },
+        "body": {
+          "title": "Body",
           "type": "string"
         },
         "reply_all": {
           "default": false,
           "title": "Reply All",
           "type": "boolean"
+        },
+        "html": {
+          "default": false,
+          "title": "Html",
+          "type": "boolean"
+        },
+        "attachments": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachments"
         }
       },
       "required": [
@@ -498,20 +1184,255 @@
       "title": "draft_replyArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "draft_reply",
     "outputSchema": {
       "additionalProperties": true,
       "title": "draft_replyDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
-    "description": "List drafts in the Drafts folder, newest first. Read-only.",
-    "execution": null,
+    "name": "draft_update",
+    "title": null,
+    "description": "Edit a draft. Omitted fields stay unchanged; empty fields clear. Does not send.",
+    "inputSchema": {
+      "properties": {
+        "draft_id": {
+          "title": "Draft Id",
+          "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "cc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cc"
+        },
+        "bcc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bcc"
+        },
+        "html": {
+          "default": false,
+          "title": "Html",
+          "type": "boolean"
+        },
+        "importance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Importance"
+        },
+        "signature": {
+          "default": "none",
+          "title": "Signature",
+          "type": "string"
+        },
+        "attachments": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachments"
+        }
+      },
+      "required": [
+        "draft_id"
+      ],
+      "title": "draft_updateArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_updateDictOutput",
+      "type": "object"
+    },
     "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "draft_forward",
+    "title": null,
+    "description": "Create a forward draft with the reply signature and quoted original. Does not send.",
+    "inputSchema": {
+      "properties": {
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "title": "To",
+          "type": "array"
+        },
+        "body": {
+          "default": "",
+          "title": "Body",
+          "type": "string"
+        },
+        "cc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cc"
+        },
+        "bcc": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bcc"
+        },
+        "html": {
+          "default": false,
+          "title": "Html",
+          "type": "boolean"
+        },
+        "attachments": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attachments"
+        }
+      },
+      "required": [
+        "message_id",
+        "to"
+      ],
+      "title": "draft_forwardArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "draft_forwardDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "draft_list",
+    "title": null,
+    "description": "List drafts in the Drafts folder, newest first. Read-only.",
     "inputSchema": {
       "properties": {
         "count": {
@@ -523,8 +1444,6 @@
       "title": "draft_listArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "draft_list",
     "outputSchema": {
       "properties": {
         "result": {
@@ -542,13 +1461,15 @@
       "title": "draft_listOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "draft_get",
+    "title": null,
     "description": "Get one draft by full ID, including recipients and body text. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "draft_id": {
@@ -567,20 +1488,20 @@
       "title": "draft_getArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "draft_get",
     "outputSchema": {
       "additionalProperties": true,
       "title": "draft_getDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "draft_delete",
+    "title": null,
     "description": "Delete a draft by full ID. Refuses to delete anything that is not a draft.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "draft_id": {
@@ -594,38 +1515,36 @@
       "title": "draft_deleteArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "draft_delete",
     "outputSchema": {
       "additionalProperties": true,
       "title": "draft_deleteDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_agenda",
+    "title": null,
     "description": "List upcoming calendar events for the next N days. Read-only. Returns event summaries with full IDs.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "count": {
-          "default": 50,
-          "title": "Count",
-          "type": "integer"
-        },
         "days": {
           "default": 7,
           "title": "Days",
+          "type": "integer"
+        },
+        "count": {
+          "default": 50,
+          "title": "Count",
           "type": "integer"
         }
       },
       "title": "cal_agendaArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_agenda",
     "outputSchema": {
       "properties": {
         "result": {
@@ -643,13 +1562,15 @@
       "title": "cal_agendaOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_get",
+    "title": null,
     "description": "Get one calendar event by full ID, including attendees, body text and recurrence. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "event_id": {
@@ -663,20 +1584,20 @@
       "title": "cal_getArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_get",
     "outputSchema": {
       "additionalProperties": true,
       "title": "cal_getDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_availability",
+    "title": null,
     "description": "Get free/busy for people or rooms between two local times, decoded. Read-only.\n\nReturns each attendee's non-free ranges (busy, tentative, outOfOffice, workingElsewhere)\nand their Outlook working hours, plus commonFree windows between day_start and day_end\nwhere no attendee is busy or out of office. Each window lists attendees who are\ntentative or outside their own working hours; clear=true means neither.\nTimes are in the configured local timezone. include_raw adds Outlook's digit string.\n",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "attendees": {
@@ -686,42 +1607,42 @@
           "title": "Attendees",
           "type": "array"
         },
-        "day_end": {
-          "default": "18:00",
-          "title": "Day End",
-          "type": "string"
-        },
-        "day_start": {
-          "default": "08:00",
-          "title": "Day Start",
+        "start": {
+          "title": "Start",
           "type": "string"
         },
         "end": {
           "title": "End",
           "type": "string"
         },
-        "include_raw": {
-          "default": false,
-          "title": "Include Raw",
-          "type": "boolean"
-        },
         "interval_minutes": {
           "default": 30,
           "title": "Interval Minutes",
           "type": "integer"
         },
-        "start": {
-          "title": "Start",
+        "day_start": {
+          "default": "08:00",
+          "title": "Day Start",
           "type": "string"
+        },
+        "day_end": {
+          "default": "18:00",
+          "title": "Day End",
+          "type": "string"
+        },
+        "weekdays_only": {
+          "default": true,
+          "title": "Weekdays Only",
+          "type": "boolean"
         },
         "tentative_is_free": {
           "default": true,
           "title": "Tentative Is Free",
           "type": "boolean"
         },
-        "weekdays_only": {
-          "default": true,
-          "title": "Weekdays Only",
+        "include_raw": {
+          "default": false,
+          "title": "Include Raw",
           "type": "boolean"
         }
       },
@@ -733,20 +1654,20 @@
       "title": "cal_availabilityArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_availability",
     "outputSchema": {
       "additionalProperties": true,
       "title": "cal_availabilityDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_find_time",
+    "title": null,
     "description": "Find meeting slots where no attendee is busy or out of office. Read-only. Creates nothing.\n\nComputed from Outlook free/busy, between day_start and day_end local time.\nBest slots first: clear slots, then slots with the fewest tentative attendees or\nattendees outside their own working hours, then by start time.\n",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "attendees": {
@@ -756,19 +1677,12 @@
           "title": "Attendees",
           "type": "array"
         },
-        "count": {
-          "default": 10,
-          "title": "Count",
-          "type": "integer"
-        },
-        "day_end": {
-          "default": "18:00",
-          "title": "Day End",
+        "start": {
+          "title": "Start",
           "type": "string"
         },
-        "day_start": {
-          "default": "08:00",
-          "title": "Day Start",
+        "end": {
+          "title": "End",
           "type": "string"
         },
         "duration_minutes": {
@@ -776,22 +1690,29 @@
           "title": "Duration Minutes",
           "type": "integer"
         },
-        "end": {
-          "title": "End",
+        "count": {
+          "default": 10,
+          "title": "Count",
+          "type": "integer"
+        },
+        "day_start": {
+          "default": "08:00",
+          "title": "Day Start",
           "type": "string"
         },
-        "start": {
-          "title": "Start",
+        "day_end": {
+          "default": "18:00",
+          "title": "Day End",
           "type": "string"
-        },
-        "tentative_is_free": {
-          "default": true,
-          "title": "Tentative Is Free",
-          "type": "boolean"
         },
         "weekdays_only": {
           "default": true,
           "title": "Weekdays Only",
+          "type": "boolean"
+        },
+        "tentative_is_free": {
+          "default": true,
+          "title": "Tentative Is Free",
           "type": "boolean"
         }
       },
@@ -803,22 +1724,34 @@
       "title": "cal_find_timeArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_find_time",
     "outputSchema": {
       "additionalProperties": true,
       "title": "cal_find_timeDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_create",
+    "title": null,
     "description": "Create a calendar event. WARNING: if attendees are given, Outlook emails invitations to them immediately. Omit attendees for a private event.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        },
+        "start": {
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "title": "End",
+          "type": "string"
+        },
         "attendees": {
           "anyOf": [
             {
@@ -834,22 +1767,6 @@
           "default": null,
           "title": "Attendees"
         },
-        "body": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Body"
-        },
-        "end": {
-          "title": "End",
-          "type": "string"
-        },
         "location": {
           "anyOf": [
             {
@@ -862,18 +1779,22 @@
           "default": null,
           "title": "Location"
         },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
         "online_meeting": {
           "default": false,
           "title": "Online Meeting",
           "type": "boolean"
-        },
-        "start": {
-          "title": "Start",
-          "type": "string"
-        },
-        "subject": {
-          "title": "Subject",
-          "type": "string"
         }
       },
       "required": [
@@ -884,27 +1805,22 @@
       "title": "cal_createArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_create",
     "outputSchema": {
       "additionalProperties": true,
       "title": "cal_createDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "cal_respond",
+    "title": null,
     "description": "Accept, tentatively accept or decline an invitation. WARNING: when send_response is true, the organizer is emailed your response.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "comment": {
-          "default": "",
-          "title": "Comment",
-          "type": "string"
-        },
         "event_id": {
           "title": "Event Id",
           "type": "string"
@@ -916,6 +1832,11 @@
             "decline"
           ],
           "title": "Response",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
           "type": "string"
         },
         "send_response": {
@@ -931,30 +1852,30 @@
       "title": "cal_respondArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "cal_respond",
     "outputSchema": {
       "additionalProperties": true,
       "title": "cal_respondDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "contact_search",
+    "title": null,
     "description": "Search the org directory and recent contacts by name or email. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
         "count": {
           "default": 10,
           "title": "Count",
           "type": "integer"
-        },
-        "query": {
-          "title": "Query",
-          "type": "string"
         }
       },
       "required": [
@@ -963,8 +1884,6 @@
       "title": "contact_searchArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "contact_search",
     "outputSchema": {
       "properties": {
         "result": {
@@ -982,13 +1901,15 @@
       "title": "contact_searchOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "task_list",
+    "title": null,
     "description": "List incomplete tasks. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "count": {
@@ -1000,8 +1921,6 @@
       "title": "task_listArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "task_list",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1019,13 +1938,15 @@
       "title": "task_listOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "task_create",
+    "title": null,
     "description": "Create a task in Outlook Tasks. Changes mailbox data.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "subject": {
@@ -1039,20 +1960,20 @@
       "title": "task_createArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "task_create",
     "outputSchema": {
       "additionalProperties": true,
       "title": "task_createDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "task_complete",
+    "title": null,
     "description": "Mark a task as completed. Changes mailbox data.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "task_id": {
@@ -1066,20 +1987,20 @@
       "title": "task_completeArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "task_complete",
     "outputSchema": {
       "additionalProperties": true,
       "title": "task_completeDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "teams_list",
+    "title": null,
     "description": "List recent Teams chats, newest activity first. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "count": {
@@ -1091,8 +2012,6 @@
       "title": "teams_listArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "teams_list",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1110,30 +2029,17 @@
       "title": "teams_listOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "teams_search",
+    "title": null,
     "description": "Search recent chats by topic or participant. Use one_on_one to find a person's chat. Use include_messages to read recent messages. Read-only. Increase scan/count if searchIncomplete is true.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "count": {
-          "default": 10,
-          "title": "Count",
-          "type": "integer"
-        },
-        "include_messages": {
-          "default": false,
-          "title": "Include Messages",
-          "type": "boolean"
-        },
-        "one_on_one": {
-          "default": false,
-          "title": "One On One",
-          "type": "boolean"
-        },
         "query": {
           "title": "Query",
           "type": "string"
@@ -1142,6 +2048,21 @@
           "default": 200,
           "title": "Scan",
           "type": "integer"
+        },
+        "count": {
+          "default": 10,
+          "title": "Count",
+          "type": "integer"
+        },
+        "one_on_one": {
+          "default": false,
+          "title": "One On One",
+          "type": "boolean"
+        },
+        "include_messages": {
+          "default": false,
+          "title": "Include Messages",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1150,8 +2071,6 @@
       "title": "teams_searchArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "teams_search",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1169,13 +2088,15 @@
       "title": "teams_searchOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "teams_messages",
+    "title": null,
     "description": "Read recent messages in a Teams chat by full chat ID, newest first. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "chat_id": {
@@ -1194,20 +2115,20 @@
       "title": "teams_messagesArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "teams_messages",
     "outputSchema": {
       "additionalProperties": true,
       "title": "teams_messagesDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "teams_attachments",
+    "title": null,
     "description": "List file attachments and SharePoint/OneDrive links in the latest messages of a chat. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "chat_id": {
@@ -1226,8 +2147,6 @@
       "title": "teams_attachmentsArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "teams_attachments",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1245,15 +2164,25 @@
       "title": "teams_attachmentsOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "teams_download_attachments",
+    "title": null,
     "description": "Download Teams attachments or share links from a chat to an absolute directory. `attachment` is a 1-based index from teams_attachments, a URL, or a name fragment; omit for all. Writes files.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "dest_dir": {
+          "title": "Dest Dir",
+          "type": "string"
+        },
         "attachment": {
           "anyOf": [
             {
@@ -1266,18 +2195,10 @@
           "default": null,
           "title": "Attachment"
         },
-        "chat_id": {
-          "title": "Chat Id",
-          "type": "string"
-        },
         "count": {
           "default": 50,
           "title": "Count",
           "type": "integer"
-        },
-        "dest_dir": {
-          "title": "Dest Dir",
-          "type": "string"
         },
         "overwrite": {
           "default": false,
@@ -1292,8 +2213,6 @@
       "title": "teams_download_attachmentsArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "teams_download_attachments",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1310,20 +2229,20 @@
       "title": "teams_download_attachmentsOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "files_sites",
+    "title": null,
     "description": "List SharePoint sites (Microsoft 365 groups) you are a member of. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {},
       "title": "files_sitesArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "files_sites",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1341,13 +2260,15 @@
       "title": "files_sitesOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "files_libraries",
+    "title": null,
     "description": "List document libraries in a SharePoint site (partial, case-insensitive site name). Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
         "site": {
@@ -1361,8 +2282,6 @@
       "title": "files_librariesArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "files_libraries",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1380,27 +2299,17 @@
       "title": "files_librariesOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "files_list",
+    "title": null,
     "description": "List a folder in OneDrive, or in a SharePoint site when `site` is given. With a site and no path or library, lists the site's libraries. Read-only.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "library": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Library"
-        },
         "path": {
           "default": "",
           "title": "Path",
@@ -1417,31 +2326,6 @@
           ],
           "default": null,
           "title": "Site"
-        }
-      },
-      "title": "files_listArguments",
-      "type": "object"
-    },
-    "meta": null,
-    "name": "files_list",
-    "outputSchema": {
-      "additionalProperties": true,
-      "title": "files_listDictOutput",
-      "type": "object"
-    },
-    "title": null
-  },
-  {
-    "annotations": null,
-    "description": "Search document libraries of a SharePoint site (site is required). Read-only. Returns items with webUrl.",
-    "execution": null,
-    "icons": null,
-    "inputSchema": {
-      "properties": {
-        "count": {
-          "default": 20,
-          "title": "Count",
-          "type": "integer"
         },
         "library": {
           "anyOf": [
@@ -1454,7 +2338,27 @@
           ],
           "default": null,
           "title": "Library"
-        },
+        }
+      },
+      "title": "files_listArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "files_listDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "files_search",
+    "title": null,
+    "description": "Search document libraries of a SharePoint site (site is required). Read-only. Returns items with webUrl.",
+    "inputSchema": {
+      "properties": {
         "query": {
           "title": "Query",
           "type": "string"
@@ -1470,6 +2374,23 @@
           ],
           "default": null,
           "title": "Site"
+        },
+        "library": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library"
+        },
+        "count": {
+          "default": 20,
+          "title": "Count",
+          "type": "integer"
         }
       },
       "required": [
@@ -1478,8 +2399,6 @@
       "title": "files_searchArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "files_search",
     "outputSchema": {
       "properties": {
         "result": {
@@ -1497,22 +2416,36 @@
       "title": "files_searchOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "files_download",
+    "title": null,
     "description": "Download a file to an absolute local path (file or directory). `item` is a path, or for SharePoint also a drive item ID. OneDrive is used when `site` is omitted. Writes a file.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
+        "item": {
+          "title": "Item",
+          "type": "string"
+        },
         "dest": {
           "title": "Dest",
           "type": "string"
         },
-        "item": {
-          "title": "Item",
-          "type": "string"
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
         },
         "library": {
           "anyOf": [
@@ -1530,18 +2463,6 @@
           "default": false,
           "title": "Overwrite",
           "type": "boolean"
-        },
-        "site": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Site"
         }
       },
       "required": [
@@ -1551,39 +2472,25 @@
       "title": "files_downloadArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "files_download",
     "outputSchema": {
       "additionalProperties": true,
       "title": "files_downloadDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": {
-      "destructiveHint": true,
-      "idempotentHint": false,
-      "openWorldHint": true,
-      "readOnlyHint": false,
-      "title": null
-    },
+    "name": "copilot_ask",
+    "title": null,
     "description": "Ask Microsoft 365 Copilot a question. `files` are SharePoint/OneDrive URLs (such as webUrl from files_search), drive item IDs or paths (OneDrive unless `site` is given); Copilot reads them as context. For a follow-up, pass conversationId from an earlier result; Copilot keeps earlier files. NOT read-only: Copilot can use its own tools to create drafts and events, change Teams and SharePoint data, and more. Ask only for information; use the guarded tools here to send or change data. The result lists `toolCalls` and any `pendingConfirmations`, which are never confirmed. An answer can take a few minutes.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {
-        "conversation_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Conversation Id"
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
         },
         "files": {
           "anyOf": [
@@ -1600,6 +2507,18 @@
           "default": null,
           "title": "Files"
         },
+        "site": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Site"
+        },
         "library": {
           "anyOf": [
             {
@@ -1612,11 +2531,7 @@
           "default": null,
           "title": "Library"
         },
-        "prompt": {
-          "title": "Prompt",
-          "type": "string"
-        },
-        "site": {
+        "conversation_id": {
           "anyOf": [
             {
               "type": "string"
@@ -1626,7 +2541,7 @@
             }
           ],
           "default": null,
-          "title": "Site"
+          "title": "Conversation Id"
         }
       },
       "required": [
@@ -1635,32 +2550,39 @@
       "title": "copilot_askArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "copilot_ask",
     "outputSchema": {
       "additionalProperties": true,
       "title": "copilot_askDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
   },
   {
-    "annotations": null,
+    "name": "auth_status",
+    "title": null,
     "description": "Report whether the Outlook, Graph and Copilot tokens are present and valid, and minutes left. Read-only. If expired, run 'outlook-cli auth' in a terminal.",
-    "execution": null,
-    "icons": null,
     "inputSchema": {
       "properties": {},
       "title": "auth_statusArguments",
       "type": "object"
     },
-    "meta": null,
-    "name": "auth_status",
     "outputSchema": {
       "additionalProperties": true,
       "title": "auth_statusDictOutput",
       "type": "object"
     },
-    "title": null
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
   }
 ]
