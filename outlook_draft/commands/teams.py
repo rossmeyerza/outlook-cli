@@ -15,9 +15,10 @@ from ..concurrency import ordered_map
 from ..errors import CliError, OutlookAPIError
 from ..formatting import format_datetime, html_to_text
 from ..links import extract_links_from_html, looks_like_share_url
-from ..parser import _add_yes_arg
+from ..parser import _add_yes_arg, add_output_args
 from ..progress import spinner
 from ..teams_activity import activity_fields, activity_time, is_system_event
+from . import teams_media as media_commands
 
 JsonDict = dict[str, Any]
 SELF_CHAT_ID = "48:notes"
@@ -502,14 +503,18 @@ def cmd_teams_self(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_send(args: argparse.Namespace) -> None:
+    if getattr(args, "attach", None) or getattr(args, "image", None):
+        return media_commands.cmd_send(args)
+    if not args.message.strip():
+        raise CliError("Provide message text, --attach or --image.")
     console = runtime.console
     if not getattr(args, "yes", False):
         console.print(f"[yellow]Not sent.[/] Would send to chat {args.chat_id}: {args.message}")
         console.print("[dim]Re-run with --yes to send.[/]")
         sys.exit(2)
     client = runtime.get_graph_client()
-    chat_id = _resolve_teams_chat_id(args, args.chat_id)
     try:
+        chat_id = _resolve_teams_chat_id(args, args.chat_id)
         client.send_teams_message(
             chat_id,
             args.message,
@@ -523,6 +528,10 @@ def cmd_teams_send(args: argparse.Namespace) -> None:
 
 
 def cmd_teams_new(args: argparse.Namespace) -> None:
+    if getattr(args, "attach", None) or getattr(args, "image", None):
+        return media_commands.cmd_new(args)
+    if not args.message.strip():
+        raise CliError("Provide message text, --attach or --image.")
     console = runtime.console
     refs = teams_new.split_refs(args.to)
     content_type = "html" if args.html else "text"
@@ -841,7 +850,9 @@ def _register_cmd_teams_download_attachments_cmd(teams_sub) -> None:
 def _register_cmd_teams_send_cmd(teams_sub) -> None:
     cmd_teams_send_cmd = teams_sub.add_parser("send", help="Send a Teams chat message (requires --yes)")
     cmd_teams_send_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
-    cmd_teams_send_cmd.add_argument("message", help="Message text or HTML")
+    cmd_teams_send_cmd.add_argument("message", nargs="?", default="", help="Message text or HTML")
+    media_commands.add_media_args(cmd_teams_send_cmd)
+    add_output_args(cmd_teams_send_cmd)
     cmd_teams_send_cmd.add_argument("--html", action="store_true", help="Treat message as HTML")
     _add_yes_arg(cmd_teams_send_cmd)
     cmd_teams_send_cmd.set_defaults(func=cmd_teams_send)
@@ -860,7 +871,9 @@ def _register_cmd_teams_new_cmd(teams_sub) -> None:
         "--to", required=True, action="append",
         help="Email, UPN, user ID or a unique name (repeatable, comma-separated ok)",
     )
-    command.add_argument("message", help="Message text or HTML")
+    command.add_argument("message", nargs="?", default="", help="Message text or HTML")
+    media_commands.add_media_args(command)
+    add_output_args(command)
     command.add_argument("--topic", help="Group chat name (group chats only)")
     command.add_argument("--html", action="store_true", help="Treat message as HTML")
     _add_yes_arg(command)

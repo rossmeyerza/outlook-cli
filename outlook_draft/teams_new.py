@@ -5,7 +5,10 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from .errors import OutlookAPIError
+from . import config
+from .errors import OutlookDraftError
+from .safety import check_request
+from .teams_media import DEFAULT_UPLOAD_FOLDER, PreparedMedia, resolve_upload_folder, send_media, validate_content
 
 JsonDict = dict[str, Any]
 MAX_CANDIDATES = 5
@@ -14,12 +17,12 @@ MAX_CANDIDATES = 5
 class ChatCreatedSendFailed(Exception):
     """Graph created the chat, but the first message failed."""
 
-    def __init__(self, chat: JsonDict, error: OutlookAPIError):
+    def __init__(self, chat: JsonDict, error: Exception):
         self.chat = chat
         self.error = error
         super().__init__(
             f"Chat {chat.get('id', '')} exists, but the message failed: {error}. "
-            "Send it with 'teams send <chat-id>'. Do not start the chat again."
+            "Check the chat before any retry. Do not start the chat again."
         )
 
 
@@ -94,6 +97,8 @@ def resolve_recipients(client: Any, refs: list[str]) -> tuple[JsonDict, list[Jso
     seen = {me["id"]}
     for ref in refs:
         user = resolve_recipient(client, ref)
+        if user.get("userType") == "Guest":
+            raise ValueError("Guests and external users are not supported for new chats.")
         if user["id"] not in seen:
             seen.add(user["id"])
             users.append(user)
@@ -106,8 +111,8 @@ def chat_type_for(users: list[JsonDict]) -> str:
     return "oneOnOne" if len(users) == 1 else "group"
 
 
-def validate_new_chat(users: list[JsonDict], message: str, topic: str | None) -> None:
-    if not message.strip():
+def validate_new_chat(users: list[JsonDict], message: str, topic: str | None, *, has_media: bool = False) -> None:
+    if not message.strip() and not has_media:
         raise ValueError("The message must not be empty.")
     if topic and chat_type_for(users) == "oneOnOne":
         raise ValueError("A 1:1 chat cannot have a topic. Remove --topic or add more recipients.")
@@ -121,13 +126,22 @@ def start_chat(
     *,
     content_type: str = "text",
     topic: str | None = None,
+    media: PreparedMedia | None = None,
+    upload_folder: str = DEFAULT_UPLOAD_FOLDER,
 ) -> tuple[JsonDict, JsonDict]:
     """Create the chat and send the first message. Neither call retries."""
-    validate_new_chat(users, message, topic)
+    validate_new_chat(users, message, topic, has_media=bool(media))
+    validate_content(message, media or PreparedMedia(), is_html=content_type == "html")
+    if media and media.files:
+        resolve_upload_folder(client, upload_folder)
+    check_request("POST", f"{config.GRAPH_BASE_URL}/chats/new/messages")
     chat = client.create_teams_chat(me["id"], [user["id"] for user in users], topic=topic or None)
     try:
-        sent = client.send_teams_message(chat["id"], message, content_type=content_type)
-    except OutlookAPIError as exc:
+        if media:
+            sent = send_media(client, chat["id"], message, media, is_html=content_type == "html", upload_folder=upload_folder)
+        else:
+            sent = client.send_teams_message(chat["id"], message, content_type=content_type)
+    except (OutlookDraftError, ValueError) as exc:
         raise ChatCreatedSendFailed(chat, exc) from exc
     return chat, sent
 

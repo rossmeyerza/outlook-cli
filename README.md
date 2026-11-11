@@ -174,6 +174,11 @@ outlook-cli teams messages 1 -n 20
 
 Lists and searches Teams chats, shows chat details, and reads messages. `teams messages` fetches the newest messages first and follows Graph paging, so long chats show recent messages and `--count` above 50 works; CLI and MCP results show the newest message first. MCP requests remain limited to 50 messages. `teams search` matches chat topics and participants, then caches the matching chats so `teams show <n>` and `teams messages <n>` work from the search result list. `teams list` sorts by the latest received user message, ignoring system events and your own messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` `teams send <chat> <msg>` and `teams new --to <person> <msg>` print a preview and send nothing unless `--yes` is passed. `teams new` starts a 1:1 chat (or reuses the existing one) or, with two or more `--to` recipients, a new group chat, then sends the first message. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
 
+`teams send` and `teams new` also accept repeatable `--attach` and `--image` options.
+File attachments use an existing OneDrive folder and named chat-member access.
+Inline images use Teams hosted content.
+See [Teams media](docs/teams-media.md) for previews, limits, permissions and failure handling.
+
 ### Teams Gateway
 
 ```bash

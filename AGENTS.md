@@ -176,6 +176,23 @@ Read-only and no-send modes also block Copilot prompts.
 The MCP server supports `OUTLOOK_CLI_READONLY`, `OUTLOOK_CLI_NO_SEND`, `OUTLOOK_CLI_ENABLE_TOOLS` and `OUTLOOK_CLI_DISABLE_TOOLS`.
 Restart the MCP server after code or environment changes.
 
+## Teams media
+
+`teams send` and `teams new` accept repeatable `--attach` and `--image` options.
+The MCP send tools accept `attachments`, `images` and `upload_folder`.
+`teams_media.py` validates local media and controls uploads, access grants and sends.
+Files use the existing private OneDrive folder `Microsoft Teams Chat Files` by default.
+No new folder or broad share link is created.
+Existing owner and administrator access remains unchanged.
+File previews resolve the folder and current internal chat members without writes.
+Confirmed sends grant read access by member object ID, without invitation email.
+The file reference uses the uploaded item's `webDavUrl` and ETag GUID.
+Inline images use `hostedContents` with matching temporary IDs.
+All media write requests use zero automatic retries.
+A partial failure reports the chat ID, phase and known remote file details without cleanup.
+Read-only and no-send policy checks occur before uploads and access grants.
+See `docs/teams-media.md` for size limits, examples and live verification details.
+
 ## Key Details
 
 - **Progress spinners**: Interactive commands render Rich spinners on stderr while waiting on Microsoft APIs. Use global `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; JSON stdout remains parseable.

@@ -975,9 +975,9 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
     def get_directory_user(self, ref: str) -> dict[str, Any] | None:
         """Find a directory user by object ID, UPN or primary email address.
 
-        Returns None when no user matches. Guests and external users are not found.
+        Returns None when no user matches. Callers must check userType before a new chat.
         """
-        select = "id,displayName,mail,userPrincipalName"
+        select = "id,displayName,mail,userPrincipalName,userType"
         try:
             resp = self._request("GET", f"/users/{quote(ref, safe='@')}", params={"$select": select})
             return resp.json()
