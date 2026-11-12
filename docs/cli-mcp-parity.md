@@ -15,11 +15,11 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **94 executable parser paths** and **97 distinct operations** in the table.
+There are **95 executable parser paths** and **98 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
-The MCP server registers **73 tools**.
-All **73 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
+The MCP server registers **74 tools**.
+All **74 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
 Equivalent options can use different names or several tool calls.
 Confirmation and local-path safeguards remain stricter in MCP.
 Account administration, mailbox settings and Copilot are outside this parity change.
@@ -32,7 +32,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Mail | 26 |
 | Drafts | 8 |
 | Calendar | 12 |
-| Contacts | 3 |
+| Contacts | 4 |
 | Tasks | 5 |
 | Teams | 10 |
 | Mailbox | 2 |
@@ -42,7 +42,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Gateway | 3 |
 | Shell completion | 1 |
 | MCP process | 1 |
-| **Total** | **97** |
+| **Total** | **98** |
 
 ## Account, authentication and configuration
 
@@ -146,6 +146,7 @@ Calendar deletion does not delete an invitation email from the mailbox.
 | CLI command | MCP coverage | MCP tool | Difference or limit |
 |---|---|---|---|
 | `contact search` | Full | `contact_search` | Directory and recent contacts; caller controls the count. |
+| `contact org` | Full | `contact_org` | Company, department, title, manager and all direct reports; optional management chain and explicit completeness flags. |
 | `contact create` | Full | `contact_create` | Personal contact fields; previews unless confirmed. |
 | `contact update` | Full | `contact_update` | Personal contact fields; previews unless confirmed; a supplied email replaces the email collection. |
 

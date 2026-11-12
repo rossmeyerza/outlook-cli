@@ -71,6 +71,8 @@ outlook-cli task delete <n>                # delete task
 # Search contacts
 outlook-cli contact search <query>         # search by name or email
 outlook-cli contact search ross -n 20      # with result limit
+outlook-cli contact org me                 # own company, manager and direct reports
+outlook-cli contact org person@example.com --chain --json # include the recorded management chain
 outlook-cli contact create --name <name> --email <email>
 outlook-cli contact update <n> --company <company>
 
@@ -218,7 +220,7 @@ See `docs/teams-media.md` for size limits, examples and live verification detail
 - **Reply drafts**: `draft reply` creates a draft tied to an existing message. Use a cached mail index from `mail unread` / `mail search`, a cached ID suffix, or a full message ID.
 - **Draft formatting**: Markdown and HTML bodies both use HTML for Outlook. Markdown lists become native lists, with zero list-item margins and 8 px paragraph gaps. New and reply drafts retain Aptos and the saved signature from `SIGNATURE_NEW_FILE` or `SIGNATURE_REPLY_FILE`. Defaults are `signature-new.html` and `signature-reply.html`.
 - **Importance**: `--importance Low|Normal|High` (default: Normal).
-- **Contacts**: `contact search` searches org directory and recent email contacts. Returns name, email, and type.
+- **Contacts**: `contact search` searches the directory and recent email contacts. `contact org` and MCP `contact_org` use the Graph directory, not personal contacts. Names must identify one user; an email, UPN or directory user ID resolves ambiguity. Optional chains detect cycles and report depth limits. Permission errors and partial lists remain explicit. See `docs/contact-org.md`.
 - **Teams**: `teams list`, `teams search`, `teams show`, and `teams messages` browse Teams chats and messages via Microsoft Graph. `list_teams_messages` asks Graph for `createdDateTime desc` and follows `@odata.nextLink`, so `--count` above 50 works; CLI and MCP results show the newest message first. MCP message and attachment scans now accept the caller's count and use the client's pagination. `teams search <query>` scans a bounded set of chats, matches chat topics and participants, and caches the matching chats so numeric refs work in a separate invocation. `teams list` sorts by latest received user message, ignoring system events and self messages where identifiable. Sending is enabled but guarded: `draft send <n>`, `mail send --to ... -s ... -b ...` and `teams send <chat> <msg>` print a preview and send nothing unless `--yes` is passed. Prefer drafts for email and only pass `--yes` when Ross has explicitly asked to send.
 - **Teams new chat**: `teams new --to ... <message>` starts a chat and sends the first message (`outlook_draft/teams_new.py`, Graph `POST /chats` with `Chat.ReadWrite`). `--to` takes an email, UPN, user ID or a name. A name must match exactly one organisation user in `/me/people`; personal contacts are ignored, and an ambiguous name lists the candidates. Your own address and duplicates are dropped. One recipient makes a `oneOnOne` chat, and Graph returns the existing 1:1 chat if there is one. Two or more make a `group` chat, which is new on every run, so do not re-run a group send. `--topic` is for group chats only. Guests and external users are not supported. The preview (no `--yes`) resolves the recipients with Graph reads and creates nothing. Chat creation and the message send do not retry. If the chat is created but the send fails, the error gives the chat ID; use `teams send <chat-id>` and do not run `teams new` again.
 - **Teams self-chat**: `teams self` checks access to the Microsoft Graph special self-chat thread, `48:notes`. This is the real Teams "chat with yourself" stream and is different from normal one-person `/me/chats` entries.
@@ -254,7 +256,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_download_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
 - Drafts: `draft_create`, `draft_reply`, `draft_update`, `draft_forward`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
-- Contacts: `contact_search`, `contact_create`, `contact_update`
+- Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
@@ -267,7 +269,7 @@ Side effects to know about: `cal_create` with attendees emails invitations immed
 Rules:
 
 - Send tools `mail_send`, `draft_send`, `teams_send` and `teams_new` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
-- All 73 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
+- All 74 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
 - New contact, task, calendar and file changes preview by default and require explicit confirmation.
 - File uploads require explicit overwrite approval to replace an existing file. New remote writes have no automatic retries.
 - Mailbox settings, account administration, interactive authentication, signatures and the gateway remain outside this parity scope.

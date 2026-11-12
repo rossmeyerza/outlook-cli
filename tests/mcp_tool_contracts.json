@@ -2487,6 +2487,54 @@
     "execution": null
   },
   {
+    "name": "contact_org",
+    "title": null,
+    "description": "Read a directory user's company, department, title, manager and all direct reports. Accepts an email, UPN, directory user ID, unique name or me, not a personal contact ID. Optional include_chain adds the recorded management chain. max_depth requires include_chain and reports an incomplete chain at the limit. Missing or restricted data remains explicit. Read-only; does not edit contacts or the directory.",
+    "inputSchema": {
+      "properties": {
+        "user": {
+          "default": "me",
+          "title": "User",
+          "type": "string"
+        },
+        "include_chain": {
+          "default": false,
+          "title": "Include Chain",
+          "type": "boolean"
+        },
+        "max_depth": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Depth"
+        }
+      },
+      "title": "contact_orgArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "contact_orgDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "task_list",
     "title": null,
     "description": "List incomplete tasks. Read-only.",

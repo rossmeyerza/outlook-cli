@@ -156,11 +156,19 @@ outlook-cli task delete 1                 # delete task by index
 outlook-cli contact search ross
 outlook-cli contact search "john smith" -n 20
 outlook-cli contact search ross --json
+outlook-cli contact org me
+outlook-cli contact org person@example.com --chain --json
 outlook-cli contact create --name "Ada Lovelace" --email ada@example.com
 outlook-cli contact update 1 --company "Analytical Engines Ltd"
 ```
 
 Searches the org directory and recent contacts. Personal contact create/update uses Outlook contacts.
+
+`contact org` reads profiles, managers and direct reports from the Microsoft Graph directory.
+Use `--chain` for the recorded management chain.
+Use an email, UPN or directory user ID when a name is ambiguous.
+Missing fields and incomplete results remain explicit.
+See [organisation details](docs/contact-org.md) for permissions, result fields and limitations.
 
 ### Teams
 
@@ -424,7 +432,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Mail: `mail_search`, `mail_unread`, `mail_read`, `mail_attachments`, `mail_download_attachments`, `mail_links`, `mail_download_links`, `mail_folders`, `mail_create_folder`, `mail_mark_read`, `mail_move`, `mail_archive`
 - Drafts: `draft_create`, `draft_reply`, `draft_update`, `draft_forward`, `draft_list`, `draft_get`, `draft_delete` (draft creation does not send; `draft_delete` refuses non-drafts)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
-- Contacts: `contact_search`, `contact_create`, `contact_update`
+- Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
@@ -437,7 +445,7 @@ Side effects to know about: `cal_create` with attendees emails invitations immed
 Rules:
 
 - Send tools `mail_send`, `draft_send` and `teams_send` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
-- All 73 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
+- All 74 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
 - New contact, task, calendar and file changes preview by default and require explicit confirmation.
 - File uploads require explicit overwrite approval to replace an existing file. New remote writes have no automatic retries.
 - Mailbox settings, account administration, interactive authentication, signatures and the gateway remain outside this parity scope.

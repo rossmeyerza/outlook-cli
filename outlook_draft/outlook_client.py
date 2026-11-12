@@ -14,6 +14,7 @@ import httpx
 from . import config
 from .calendar_time import outlook_timezone_prefer_header
 from .concurrency import ordered_map
+from .directory import DirectoryMixin
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
 from .links import encode_share_id
 from .mail_compose import MailComposeMixin
@@ -30,7 +31,7 @@ UPLOAD_CHUNK_SIZE = 10 * 320 * 1024
 ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentReference"
 
 
-class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin):
+class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, DirectoryMixin):
     """Sync HTTP client for Outlook and Microsoft Graph operations."""
 
     def __init__(

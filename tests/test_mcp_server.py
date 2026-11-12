@@ -24,7 +24,7 @@ EXPECTED_TOOLS = {
     "mail_rules", "mail_rule_create", "mail_rule_update", "mail_rule_delete",
     "draft_create", "draft_reply", "draft_update", "draft_forward", "draft_list", "draft_get", "draft_delete",
     "cal_agenda", "cal_get", "cal_availability", "cal_find_time", "cal_create", "cal_respond", "cal_delete", "cal_cancel",
-    "contact_search", "task_list", "task_create", "task_complete",
+    "contact_search", "contact_org", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
     "copilot_ask", "copilot_app", "auth_status", "mail_send", "draft_send", "teams_send", "teams_new",

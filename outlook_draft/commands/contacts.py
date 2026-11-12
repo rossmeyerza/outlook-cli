@@ -5,10 +5,12 @@ import json
 from typing import Any
 
 from rich.table import Table
+from rich.text import Text
 
 from .. import runtime
 from ..cache import CONTACT_CACHE
-from ..errors import CliError, OutlookAPIError
+from ..directory import organisation_view, validate_org_options
+from ..errors import CliError, OutlookAPIError, OutlookDraftError
 from ..parser import add_output_args
 from ..progress import spinner
 from ..references import _resolve_contact_id
@@ -86,6 +88,55 @@ def cmd_contacts(args: argparse.Namespace) -> None:
     runtime.console.print(table)
 
 
+def _org_text(value) -> Text:
+    return Text(str(value) if value is not None and value != "" else "Not recorded or visible")
+
+
+def _print_organisation(result: dict[str, Any]) -> None:
+    person = result["person"]
+    runtime.console.print(Text("Company: ") + _org_text(person["company"]))
+    runtime.console.print(Text("Department: ") + _org_text(person["department"]))
+    table = Table(title="Organisation details")
+    for column in ("Relationship", "Name", "Job title", "Email"):
+        table.add_column(column, overflow="fold")
+    rows = [("Person", person), ("Manager", result["manager"])]
+    rows.extend(("Direct report", report) for report in result["directReports"])
+    rows.extend((f"Manager level {level}", manager) for level, manager in enumerate((result["managementChain"] or [])[1:], 2))
+    for relationship, entry in rows:
+        if entry:
+            table.add_row(Text(relationship), _org_text(entry["displayName"] or entry["id"]), _org_text(entry["jobTitle"]), _org_text(entry["email"]))
+        else:
+            label = "Unavailable" if result["managerStatus"] == "unavailable" else "Not recorded or visible"
+            table.add_row(Text(relationship), Text(label), Text(""), Text(""))
+    runtime.console.print(table)
+    suffix = "" if result["directReportsComplete"] else " returned; the list is incomplete"
+    runtime.console.print(Text(f"Direct reports: {result['directReportsCount']}{suffix}"))
+    if result["managementChainComplete"] is False:
+        runtime.console.print(Text("The management chain is incomplete.", style="yellow"))
+    for warning in result["warnings"]:
+        runtime.console.print(Text(f"Warning: {warning}", style="yellow"))
+
+
+def cmd_contact_org(args: argparse.Namespace) -> None:
+    """Show the available organisation details without a directory change."""
+    try:
+        user = validate_org_options(args.user, args.chain, args.max_depth)
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+    client = runtime.get_graph_client()
+    try:
+        with spinner(args, "Read organisation details..."):
+            result = organisation_view(client, user, args.chain, args.max_depth)
+    except (OutlookDraftError, ValueError) as exc:
+        raise CliError(f"Cannot read organisation details: {exc}") from exc
+    finally:
+        client.close()
+    if args.json:
+        runtime.print_json(result)
+    else:
+        _print_organisation(result)
+
+
 def cmd_contact_create(args: argparse.Namespace) -> None:
     client = runtime.get_client()
     try:
@@ -138,6 +189,13 @@ def register(sub) -> None:
     cmd_contact_search.add_argument("query", help="Name or email to search for")
     cmd_contact_search.add_argument("--count", "-n", type=int, default=10, help="Max results")
     cmd_contact_search.set_defaults(func=cmd_contacts)
+
+    cmd_org = contact_sub.add_parser("org", help="Read company, manager and direct reports from the directory")
+    add_output_args(cmd_org)
+    cmd_org.add_argument("user", nargs="?", default="me", help="Email, UPN, directory user ID, unique name or me")
+    cmd_org.add_argument("--chain", action="store_true", help="Include the recorded management chain")
+    cmd_org.add_argument("--max-depth", type=int, help="Limit the management chain; requires --chain")
+    cmd_org.set_defaults(func=cmd_contact_org)
 
     cmd_contact_create_parser = contact_sub.add_parser("create", help="Create a personal contact")
     cmd_contact_create_parser.add_argument("--name", required=True, help="Display name")

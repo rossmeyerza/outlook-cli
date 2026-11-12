@@ -31,7 +31,7 @@ READ_ONLY_TOOLS = {
     "mail_search", "mail_unread", "mail_read", "mail_attachments", "mail_download_attachments",
     "mail_links", "mail_folders", "mail_query", "mail_conversation", "mail_categories", "mail_rules",
     "draft_list", "draft_get", "cal_agenda", "cal_get", "cal_availability", "cal_find_time",
-    "contact_search", "task_list", "teams_list", "teams_search", "teams_messages",
+    "contact_search", "contact_org", "task_list", "teams_list", "teams_search", "teams_messages",
     "teams_attachments", "teams_download_attachments", "files_sites", "files_libraries",
     "files_list", "files_search", "files_download", "auth_status",
     "mail_download_links", "cal_rooms", "teams_get", "teams_self",
@@ -63,6 +63,10 @@ def build_server() -> FastMCP:
             ) or module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(
                     readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True,
+                ))(tool)
+            elif tool is contacts.contact_org:
+                server.tool(annotations=ToolAnnotations(
+                    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True,
                 ))(tool)
             elif tool is mail.mail_create_folder:
                 server.tool(annotations=ToolAnnotations(

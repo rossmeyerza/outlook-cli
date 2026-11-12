@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from ..commands.contacts import _contact_id, _type_label
-from .clients import clamp, outlook_client
+from ..directory import organisation_view, validate_org_options
+from .clients import clamp, graph_client, outlook_client
 from .shaping import JsonDict
 from .validation import require_email, require_id
 
@@ -70,4 +71,11 @@ def contact_update(contact_id: str, display_name: str | None = None, email: str 
     return result
 
 
-TOOLS = [contact_search, contact_create, contact_update]
+def contact_org(user: str = "me", include_chain: bool = False, max_depth: int | None = None) -> JsonDict:
+    """Read a directory user\'s company, department, title, manager and all direct reports. Accepts an email, UPN, directory user ID, unique name or me, not a personal contact ID. Optional include_chain adds the recorded management chain. max_depth requires include_chain and reports an incomplete chain at the limit. Missing or restricted data remains explicit. Read-only; does not edit contacts or the directory."""
+    user = validate_org_options(user, include_chain, max_depth)
+    with graph_client() as client:
+        return organisation_view(client, user, include_chain, max_depth)
+
+
+TOOLS = [contact_search, contact_create, contact_update, contact_org]
