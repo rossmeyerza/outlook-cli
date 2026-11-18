@@ -35,7 +35,7 @@ READ_ONLY_TOOLS = {
     "teams_attachments", "teams_download_attachments", "files_sites", "files_libraries",
     "files_list", "files_search", "files_download", "auth_status",
     "mail_download_links", "cal_rooms", "teams_get", "teams_self",
-    "planner_plans", "planner_groups", "planner_buckets", "planner_tasks", "planner_task_get",
+    "planner_plans", "planner_groups", "planner_buckets", "planner_tasks", "planner_task_get", "planner_members",
 }
 
 
@@ -61,7 +61,7 @@ def build_server() -> FastMCP:
                                   "cal_delete", "cal_cancel", "cal_update", "contact_create", "contact_update",
                                   "task_update", "task_delete", "planner_task_create", "planner_task_update",
                                   "planner_task_delete", "planner_bucket_create", "planner_bucket_update", "planner_bucket_delete",
-                                  "planner_plan_pin", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
+                                  "planner_plan_pin", "planner_member_add", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
                 module is mail_organise and tool.__name__ not in READ_ONLY_TOOLS
             ) or module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(

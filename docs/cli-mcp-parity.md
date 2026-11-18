@@ -15,10 +15,10 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **108 executable parser paths** and **111 distinct operations** in the table.
+There are **110 executable parser paths** and **113 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
-The MCP server registers **86 tools**.
+The MCP server registers **88 tools**.
 All **74 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
 Equivalent options can use different names or several tool calls.
 Confirmation and local-path safeguards remain stricter in MCP.
@@ -34,7 +34,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Calendar | 12 |
 | Contacts | 4 |
 | Tasks | 5 |
-| Planner | 12 |
+| Planner | 14 |
 | Teams | 10 |
 | Mailbox | 2 |
 | Files | 9 |
@@ -171,6 +171,8 @@ Updates send the current etag, so a concurrent edit fails and is not overwritten
 |---|---|---|---|
 | `planner plans` | Full | `planner_plans` | Recently used or pinned plans, or all plans of one group; caller controls the count. |
 | `planner groups` | Full | `planner_groups` | Microsoft 365 groups you belong to, with a name search; caller controls the count. |
+| `planner members` | Full | `planner_members` | Members of the plan's owning Microsoft 365 group. |
+| `planner member-add` | Full | `planner_member_add` | Adds people to the owning group; previews who is new and who is already a member; the service emails each new member and grants group mailbox and SharePoint access; you must own the group; previews unless confirmed. |
 | `planner pin` | Full | `planner_plan_pin` | Pins a plan to your My plans list through the beta API; previews unless confirmed; changes only your own list. |
 | `planner buckets` | Full | `planner_buckets` | All buckets of one plan. |
 | `planner tasks` | Full | `planner_tasks` | Tasks of a plan or bucket, or tasks assigned to you; caller controls the count. |

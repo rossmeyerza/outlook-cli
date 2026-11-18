@@ -28,11 +28,12 @@ def planner_groups(search: str | None = None, count: int = 100) -> list[JsonDict
 
 
 def planner_buckets(plan_id: str) -> list[JsonDict]:
-    """List the buckets (columns) of a plan. Read-only."""
+    """List the buckets (columns) of a plan, left to right as the board shows them. Read-only."""
     planner.planner_id(plan_id, "plan_id")
     with graph_client() as client:
         buckets = client.list_planner_buckets(plan_id)
-    return [{"id": b.get("id", ""), "name": b.get("name", ""), "planId": b.get("planId", "")} for b in buckets]
+    return [{"id": b.get("id", ""), "name": b.get("name", ""), "planId": b.get("planId", "")}
+            for b in planner.board_order(buckets)]
 
 
 def planner_tasks(plan_id: str | None = None, bucket_id: str | None = None, count: int = 50) -> list[JsonDict]:
@@ -85,7 +86,7 @@ def planner_task_delete(task_id: str, confirm: bool = False) -> JsonDict:
 
 def planner_bucket_update(bucket_id: str, name: str | None = None, after_bucket_id: str | None = None,
                           first: bool = False, confirm: bool = False) -> JsonDict:
-    """Preview renaming a bucket or moving it within its plan. Use after_bucket_id to place it right after another bucket of the same plan, or first=true to place it first. The preview lists the bucket order after the change. Set confirm=true only after approval. Never retry uncertain writes automatically."""
+    """Preview renaming a bucket or moving it within its plan. Use after_bucket_id to place it right after (to the right of) another bucket of the same plan, or first=true to place it first (leftmost) on the board. The preview lists the bucket order after the change. Set confirm=true only after approval. Never retry uncertain writes automatically."""
     with graph_client() as client:
         return planner.update_bucket(client, bucket_id, name=name, after=after_bucket_id, first=first, confirm=confirm)
 
@@ -96,6 +97,18 @@ def planner_bucket_delete(bucket_id: str, confirm: bool = False) -> JsonDict:
         return planner.delete_bucket(client, bucket_id, confirm=confirm)
 
 
+def planner_members(plan_id: str) -> JsonDict:
+    """List who can work on a plan: the members of its owning Microsoft 365 group. Read-only."""
+    with graph_client() as client:
+        return planner.list_members(client, plan_id)
+
+
+def planner_member_add(plan_id: str, people: list[str], confirm: bool = False) -> JsonDict:
+    """Preview adding people (emails or user IDs) to a plan so they can work on it. Planner access comes from the owning Microsoft 365 group, so this adds each person to the group: they also get the group mailbox and SharePoint site, and the service emails them an invitation. You must own the group. Set confirm=true only after approval of the exact list of people. Never retry uncertain writes automatically."""
+    with graph_client() as client:
+        return planner.add_members(client, plan_id, people, confirm=confirm)
+
+
 def planner_plan_pin(plan_id: str, confirm: bool = False) -> JsonDict:
     """Preview pinning a plan to your My plans list. It changes only your own Planner list, not the plan. Set confirm=true only after approval. Never retry uncertain writes automatically."""
     with graph_client() as client:
@@ -103,11 +116,11 @@ def planner_plan_pin(plan_id: str, confirm: bool = False) -> JsonDict:
 
 
 def planner_bucket_create(plan_id: str, name: str, confirm: bool = False) -> JsonDict:
-    """Preview a new bucket in a plan. Set confirm=true only after approval. Never retry uncertain writes automatically."""
+    """Preview a new bucket in a plan. It is added at the end (right) of the board. Set confirm=true only after approval. Never retry uncertain writes automatically."""
     with graph_client() as client:
         return planner.create_bucket(client, plan_id, name, confirm=confirm)
 
 
 TOOLS = [planner_plans, planner_groups, planner_buckets, planner_tasks, planner_task_get, planner_task_create,
          planner_task_update, planner_task_delete, planner_bucket_create, planner_bucket_update,
-         planner_bucket_delete, planner_plan_pin]
+         planner_bucket_delete, planner_plan_pin, planner_members, planner_member_add]

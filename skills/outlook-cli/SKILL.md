@@ -241,6 +241,8 @@ Valid task statuses: `NotStarted`, `InProgress`, `Completed`, `WaitingOnOthers`,
 outlook-cli planner plans                          # recently used or pinned plans; --group <id> lists one group's plans
 outlook-cli planner groups --search triage         # Microsoft 365 groups you belong to (they own plans)
 outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
+outlook-cli planner members <plan-id>            # who can work on the plan (its group members)
+outlook-cli planner member-add <plan-id> a@x.com b@x.com --yes   # add people to the plan's group (they get an invitation email and group access)
 outlook-cli planner buckets <plan-id>              # columns of a plan
 outlook-cli planner tasks --plan <plan-id> --json  # also --bucket <id>; no flag lists tasks assigned to you
 outlook-cli planner show <task-id>                 # description and checklist

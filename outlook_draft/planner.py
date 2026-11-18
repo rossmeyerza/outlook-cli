@@ -10,6 +10,7 @@ from datetime import UTC
 from typing import Any
 from urllib.parse import quote
 
+from . import config
 from .calendar_time import parse_local_datetime
 from .errors import OutlookAPIError
 
@@ -91,6 +92,11 @@ def task_changes(*, title: str | None = None, bucket_id: str | None = None, due:
     return changes
 
 
+def _valid_hint(hint: str | None) -> bool:
+    """A Planner order hint holds a space or an exclamation mark."""
+    return isinstance(hint, str) and (" " in hint or "!" in hint)
+
+
 def _assignment(add: bool) -> JsonDict | None:
     if not add:
         return None
@@ -144,13 +150,29 @@ class PlannerMixin:
         return self._request("GET", BETA_PLANNER_USER).json()
 
     def pin_planner_plan(self, plan_id: str, title: str, user: JsonDict) -> JsonDict:
-        """Pin a plan, so it shows under My plans. Existing pins are sent back so none is lost."""
-        pins = dict(user.get("favoritePlanReferences") or {})
+        """Pin a plan, so it shows under My plans.
+
+        Existing pins are sent back so none is lost. The service can return a pin with an order hint such as
+        "000" that it then rejects as invalid, so such a hint is replaced. The service also applies pins with
+        a short delay, so a read straight after a write can still show the old list.
+        """
+        pins = {key: {**ref, "orderHint": ref["orderHint"] if _valid_hint(ref.get("orderHint")) else ORDER_HINT}
+                for key, ref in (user.get("favoritePlanReferences") or {}).items()}
         pins[plan_id] = {"@odata.type": "microsoft.graph.plannerFavoritePlanReference",
                          "orderHint": ORDER_HINT, "planTitle": title}
         return self._request("PATCH", BETA_PLANNER_USER, json_body={"favoritePlanReferences": pins},
                              extra_headers={"If-Match": user["@odata.etag"], "Prefer": "return=representation"},
                              max_retries=0).json()
+
+    def list_planner_members(self, group_id: str) -> list[JsonDict]:
+        """List the members of the Microsoft 365 group that owns a plan."""
+        params = {"$select": "id,displayName,mail,userPrincipalName", "$top": "100"}
+        return self._planner_pages(f"/groups/{quote(group_id, safe='')}/members", 5000, params)
+
+    def add_planner_member(self, group_id: str, user_id: str) -> None:
+        """Add a user to the group. The service sends the person an invitation email. Never retried."""
+        body = {"@odata.id": f"{config.GRAPH_BASE_URL}/directoryObjects/{user_id}"}
+        self._request("POST", f"/groups/{quote(group_id, safe='')}/members/$ref", json_body=body, max_retries=0)
 
     def get_planner_task(self, task_id: str) -> JsonDict:
         return self._request("GET", f"/planner/tasks/{quote(task_id, safe='')}").json()
@@ -275,23 +297,28 @@ def delete_task(client: Any, task_id: str, *, confirm: bool = False) -> JsonDict
     return result
 
 
-def _ordered(buckets: list[JsonDict]) -> list[JsonDict]:
-    """Order buckets the way Planner does: by order hint, compared as plain text."""
-    return sorted(buckets, key=lambda b: b.get("orderHint") or "")
+def board_order(buckets: list[JsonDict]) -> list[JsonDict]:
+    """Order buckets left to right as the Planner board shows them.
+
+    The service lists buckets with the smallest order hint first, but the board shows the largest hint
+    first. A new bucket gets the smallest hint, so it lands at the end of the board.
+    """
+    return sorted(buckets, key=lambda b: b.get("orderHint") or "", reverse=True)
 
 
 def _move_hint(others: list[JsonDict], after: str | None) -> str:
-    """Build the order hint that places a bucket first, or right after the bucket `after`.
+    """Build the order hint that places a bucket first on the board, or right after the bucket `after`.
 
-    Planner reads " <previous hint> <next hint>!" as "between these two" and returns the real hint.
+    `others` are the other buckets in board order. Planner reads " <smaller hint> <larger hint>!" as
+    "between these two" and returns the real hint. First on the board means a hint larger than all.
     """
     if after is None:
-        return f" {others[0]['orderHint']}!" if others else " !"
+        return f"{others[0]['orderHint']} !" if others else " !"
     index = next((i for i, b in enumerate(others) if b["id"] == after), None)
     if index is None:
         raise ValueError("after_bucket_id must be another bucket of the same plan.")
-    following = others[index + 1]["orderHint"] if index + 1 < len(others) else ""
-    return f"{others[index]['orderHint']} {following}!"
+    smaller = others[index + 1]["orderHint"] if index + 1 < len(others) else ""
+    return f"{smaller} {others[index]['orderHint']}!"
 
 
 def update_bucket(client: Any, bucket_id: str, *, name: str | None = None, after: str | None = None,
@@ -309,7 +336,7 @@ def update_bucket(client: Any, bucket_id: str, *, name: str | None = None, after
     if name is None and after is None and not first:
         raise ValueError("Supply a new name, after_bucket_id or first.")
     bucket = client.get_planner_bucket(bucket_id)
-    siblings = _ordered(client.list_planner_buckets(bucket["planId"]))
+    siblings = board_order(client.list_planner_buckets(bucket["planId"]))
     others = [b for b in siblings if b["id"] != bucket_id]
     changes: JsonDict = {}
     if name is not None:
@@ -363,6 +390,54 @@ def pin_plan(client: Any, plan_id: str, *, confirm: bool = False) -> JsonDict:
     if confirm is True and not already:
         client.pin_planner_plan(plan_id, plan.get("title", ""), user)
         result["pinned"] = True
+    return result
+
+
+def _person(user: JsonDict) -> JsonDict:
+    return {"id": user.get("id", ""), "displayName": user.get("displayName") or "",
+            "mail": user.get("mail") or user.get("userPrincipalName") or ""}
+
+
+def _plan_group(client: Any, plan_id: str) -> tuple[JsonDict, str]:
+    plan = client.get_planner_plan(plan_id)
+    group_id = plan.get("owner") or ""
+    if not group_id:
+        raise ValueError("The plan has no owning group, so it has no member list to change.")
+    return {"id": plan_id, "title": plan.get("title", "")}, group_id
+
+
+def list_members(client: Any, plan_id: str) -> JsonDict:
+    """List who can work on a plan: the members of its owning Microsoft 365 group."""
+    planner_id(plan_id, "plan_id")
+    plan, group_id = _plan_group(client, plan_id)
+    return {"plan": plan, "groupId": group_id, "members": [_person(m) for m in client.list_planner_members(group_id)]}
+
+
+def add_members(client: Any, plan_id: str, people: list[str], *, confirm: bool = False) -> JsonDict:
+    """Preview adding people to a plan's group, or add them when confirm is true.
+
+    Planner has no member list of its own. Access comes from the owning group, so this adds each person to
+    the group. That also gives them the group mailbox and SharePoint site, and the service emails them.
+    """
+    planner_id(plan_id, "plan_id")
+    if not people:
+        raise ValueError("Supply at least one person (email address or directory user ID).")
+    plan, group_id = _plan_group(client, plan_id)
+    current = {m["id"].lower() for m in client.list_planner_members(group_id)}
+    resolved = [client.resolve_planner_user(ref) for ref in people]
+    unique = {p["id"]: p for p in resolved}.values()
+    to_add = [p for p in unique if p["id"].lower() not in current]
+    result: JsonDict = {"plan": plan, "groupId": group_id, "toAdd": to_add,
+                        "alreadyMembers": [p for p in unique if p["id"].lower() in current], "added": [], "applied": False}
+    if confirm is True:
+        for person in to_add:
+            try:
+                client.add_planner_member(group_id, person["id"])
+            except OutlookAPIError as exc:
+                done = ", ".join(p["displayName"] or p["id"] for p in result["added"]) or "nobody"
+                raise OutlookAPIError(exc.status, f"Added {done} before failing on {person['displayName'] or person['id']}: {exc}") from exc
+            result["added"].append(person)
+        result["applied"] = True
     return result
 
 

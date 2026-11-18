@@ -2850,7 +2850,7 @@
   {
     "name": "planner_buckets",
     "title": null,
-    "description": "List the buckets (columns) of a plan. Read-only.",
+    "description": "List the buckets (columns) of a plan, left to right as the board shows them. Read-only.",
     "inputSchema": {
       "properties": {
         "plan_id": {
@@ -3259,7 +3259,7 @@
   {
     "name": "planner_bucket_create",
     "title": null,
-    "description": "Preview a new bucket in a plan. Set confirm=true only after approval. Never retry uncertain writes automatically.",
+    "description": "Preview a new bucket in a plan. It is added at the end (right) of the board. Set confirm=true only after approval. Never retry uncertain writes automatically.",
     "inputSchema": {
       "properties": {
         "plan_id": {
@@ -3302,7 +3302,7 @@
   {
     "name": "planner_bucket_update",
     "title": null,
-    "description": "Preview renaming a bucket or moving it within its plan. Use after_bucket_id to place it right after another bucket of the same plan, or first=true to place it first. The preview lists the bucket order after the change. Set confirm=true only after approval. Never retry uncertain writes automatically.",
+    "description": "Preview renaming a bucket or moving it within its plan. Use after_bucket_id to place it right after (to the right of) another bucket of the same plan, or first=true to place it first (leftmost) on the board. The preview lists the bucket order after the change. Set confirm=true only after approval. Never retry uncertain writes automatically.",
     "inputSchema": {
       "properties": {
         "bucket_id": {
@@ -3429,6 +3429,79 @@
     "outputSchema": {
       "additionalProperties": true,
       "title": "planner_plan_pinDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "planner_members",
+    "title": null,
+    "description": "List who can work on a plan: the members of its owning Microsoft 365 group. Read-only.",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id"
+      ],
+      "title": "planner_membersArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "planner_membersDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "planner_member_add",
+    "title": null,
+    "description": "Preview adding people (emails or user IDs) to a plan so they can work on it. Planner access comes from the owning Microsoft 365 group, so this adds each person to the group: they also get the group mailbox and SharePoint site, and the service emails them an invitation. You must own the group. Set confirm=true only after approval of the exact list of people. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "people": {
+          "items": {
+            "type": "string"
+          },
+          "title": "People",
+          "type": "array"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "plan_id",
+        "people"
+      ],
+      "title": "planner_member_addArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "planner_member_addDictOutput",
       "type": "object"
     },
     "icons": null,

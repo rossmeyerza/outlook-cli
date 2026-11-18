@@ -46,6 +46,29 @@ def cmd_planner_groups(args: argparse.Namespace) -> None:
     _table(f"Groups ({len(groups)})", ["Name", "ID"], [[g.get("displayName", ""), g.get("id", "")] for g in groups])
 
 
+def cmd_planner_members(args: argparse.Namespace) -> None:
+    result = _run(args, "Loading members...", lambda c: planner.list_members(c, args.plan_id))
+    if args.json:
+        return runtime.print_json(result)
+    _table(f"Members of {result['plan']['title']} ({len(result['members'])})", ["Name", "Email"],
+           [[m["displayName"], m["mail"]] for m in result["members"]])
+
+
+def cmd_planner_member_add(args: argparse.Namespace) -> None:
+    result = _run(args, "Adding members...", lambda c: planner.add_members(
+        c, args.plan_id, args.people, confirm=args.yes))
+    if args.json:
+        return runtime.print_json(result)
+    label = lambda people: ", ".join(p["displayName"] or p["id"] for p in people) or "nobody"
+    runtime.console.print(f"Already members: {label(result['alreadyMembers'])}")
+    if result["applied"]:
+        runtime.console.print(f"[green]Added: {label(result['added'])}[/]")
+    else:
+        runtime.console.print(f"[yellow]Preview only. Nothing changed. Would add: {label(result['toAdd'])}. "
+                              "The service emails each new member and gives access to the group mailbox and "
+                              "SharePoint site. Add --yes to apply.[/]")
+
+
 def cmd_planner_pin(args: argparse.Namespace) -> None:
     result = _run(args, "Pinning plan...", lambda c: planner.pin_plan(c, args.plan_id, confirm=args.yes))
     if args.json:
@@ -60,7 +83,8 @@ def cmd_planner_pin(args: argparse.Namespace) -> None:
 
 
 def cmd_planner_buckets(args: argparse.Namespace) -> None:
-    buckets = _run(args, "Loading buckets...", lambda c: c.list_planner_buckets(planner.planner_id(args.plan_id, "plan_id")))
+    buckets = planner.board_order(_run(args, "Loading buckets...", lambda c: c.list_planner_buckets(
+        planner.planner_id(args.plan_id, "plan_id"))))
     if args.json:
         return runtime.print_json(buckets)
     _table(f"Buckets ({len(buckets)})", ["Name", "ID"], [[b.get("name", ""), b.get("id", "")] for b in buckets])
@@ -163,13 +187,25 @@ def register(sub) -> None:
     c.add_argument("--count", "-n", type=int, default=100, help="Max groups")
     c.set_defaults(func=cmd_planner_groups)
 
+    c = ps.add_parser("members", help="List who can work on a plan (the members of its group)")
+    add_output_args(c)
+    c.add_argument("plan_id", help="Full plan ID")
+    c.set_defaults(func=cmd_planner_members)
+
+    c = ps.add_parser("member-add", help="Add people to a plan's group (preview unless --yes)")
+    add_output_args(c)
+    c.add_argument("plan_id", help="Full plan ID")
+    c.add_argument("people", nargs="+", help="Email addresses or user IDs")
+    _yes(c)
+    c.set_defaults(func=cmd_planner_member_add)
+
     c = ps.add_parser("pin", help="Pin a plan to My plans (preview unless --yes)")
     add_output_args(c)
     c.add_argument("plan_id", help="Full plan ID")
     _yes(c)
     c.set_defaults(func=cmd_planner_pin)
 
-    c = ps.add_parser("buckets", help="List the buckets of a plan")
+    c = ps.add_parser("buckets", help="List the buckets of a plan, left to right as the board shows them")
     add_output_args(c)
     c.add_argument("plan_id", help="Full plan ID")
     c.set_defaults(func=cmd_planner_buckets)
@@ -217,8 +253,8 @@ def register(sub) -> None:
     add_output_args(c)
     c.add_argument("bucket_id", help="Full bucket ID")
     c.add_argument("--name", help="New name")
-    c.add_argument("--after", help="Place the bucket right after this bucket ID (same plan)")
-    c.add_argument("--first", action="store_true", help="Place the bucket first")
+    c.add_argument("--after", help="Place the bucket right after (to the right of) this bucket ID (same plan)")
+    c.add_argument("--first", action="store_true", help="Place the bucket first (leftmost on the board)")
     _yes(c)
     c.set_defaults(func=cmd_planner_bucket_update)
 

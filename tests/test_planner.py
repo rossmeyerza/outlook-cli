@@ -172,7 +172,7 @@ def test_mcp_tools_use_the_graph_client(monkeypatch):
 
 
 WRITE_TOOLS = {"planner_task_create", "planner_task_update", "planner_task_delete", "planner_bucket_create",
-               "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete"}
+               "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete", "planner_member_add"}
 
 
 def test_write_tools_default_to_preview_and_are_flagged_destructive():
@@ -227,8 +227,9 @@ def test_pin_plan_previews_then_pins_and_skips_a_plan_that_is_already_pinned():
         planner.pin_plan(again, "3")
 
 
-BUCKETS = [{"id": "BucketAAAAAA", "name": "A", "orderHint": "a", "planId": PLAN}, {"id": "BucketBBBBBB", "name": "B", "orderHint": "b", "planId": PLAN},
-           {"id": "BucketCCCCCC", "name": "C", "orderHint": "c", "planId": PLAN}]
+BUCKETS = [{"id": "BucketAAAAAA", "name": "A", "orderHint": "c", "planId": PLAN},
+           {"id": "BucketBBBBBB", "name": "B", "orderHint": "b", "planId": PLAN},
+           {"id": "BucketCCCCCC", "name": "C", "orderHint": "a", "planId": PLAN}]  # board order: A, B, C
 
 
 def _bucket_fake(**extra):
@@ -236,11 +237,15 @@ def _bucket_fake(**extra):
                       list_planner_buckets=[BUCKETS[2], BUCKETS[0], BUCKETS[1]], **extra)
 
 
-def test_move_hints_place_a_bucket_first_in_the_middle_and_last():
+def test_board_order_is_the_reverse_of_the_service_order():
+    assert [b["name"] for b in planner.board_order([BUCKETS[2], BUCKETS[0], BUCKETS[1]])] == ["A", "B", "C"]
+
+
+def test_move_hints_place_a_bucket_first_in_the_middle_and_last_on_the_board():
     fake = _bucket_fake()
-    assert planner.update_bucket(fake, "BucketCCCCCC", first=True)["changes"]["orderHint"] == " a!"
-    assert planner.update_bucket(fake, "BucketCCCCCC", after="BucketAAAAAA")["changes"]["orderHint"] == "a b!"
-    assert planner.update_bucket(fake, "BucketAAAAAA", after="BucketCCCCCC")["changes"]["orderHint"] == "c !"
+    assert planner.update_bucket(fake, "BucketCCCCCC", first=True)["changes"]["orderHint"] == "c !"
+    assert planner.update_bucket(fake, "BucketCCCCCC", after="BucketAAAAAA")["changes"]["orderHint"] == "b c!"
+    assert planner.update_bucket(fake, "BucketAAAAAA", after="BucketCCCCCC")["changes"]["orderHint"] == " a!"
     assert planner.update_bucket(fake, "BucketAAAAAA", after="BucketBBBBBB")["orderAfter"] == ["B", "A", "C"]
     assert planner.update_bucket(fake, "BucketCCCCCC", first=True)["orderAfter"] == ["C", "A", "B"]
 
@@ -252,7 +257,7 @@ def test_rename_and_move_preview_then_apply():
     assert preview["updated"] is False and "update_planner_bucket" not in fake.names()
     done = planner.update_bucket(fake, "BucketBBBBBB", name="Renamed", first=True, confirm=True)
     assert done["updated"] is True
-    assert fake.call("update_planner_bucket")[0] == ("BucketBBBBBB", {"name": "Renamed", "orderHint": " a!"})
+    assert fake.call("update_planner_bucket")[0] == ("BucketBBBBBB", {"name": "Renamed", "orderHint": "c !"})
 
 
 def test_bucket_update_rejects_bad_input():
@@ -287,3 +292,59 @@ def test_bucket_update_and_delete_use_the_etag_and_never_retry():
     for method in ("PATCH", "DELETE"):
         kwargs = next(kw for m, _, kw in client.calls if m == method)
         assert kwargs["extra_headers"]["If-Match"] == 'W/"b1"' and kwargs["max_retries"] == 0
+
+
+def test_pin_replaces_an_order_hint_the_service_would_reject():
+    existing = {"old": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "000", "planTitle": "Old"},
+                "kept": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "8584P7 !", "planTitle": "K"}}
+    client = RecordingClient({})
+    client.pin_planner_plan(PLAN, "New", {"@odata.etag": "e", "favoritePlanReferences": existing})
+    pins = client.calls[0][2]["json_body"]["favoritePlanReferences"]
+    assert pins["old"]["orderHint"] == " !" and pins["old"]["planTitle"] == "Old"
+    assert pins["kept"]["orderHint"] == "8584P7 !"
+    assert all(planner._valid_hint(ref["orderHint"]) for ref in pins.values())
+
+
+MEMBERS = [{"id": USER, "displayName": "Ross", "mail": "ross@example.com"}]
+
+
+def _member_fake(**extra):
+    return FakeClient(get_planner_plan={"id": PLAN, "title": "Triage", "owner": "group-1"}, list_planner_members=MEMBERS,
+                      resolve_planner_user=lambda ref: {"id": USER if "ross" in ref else OTHER, "displayName": ref}, **extra)
+
+
+def test_list_members_reads_the_owning_group():
+    result = planner.list_members(_member_fake(), PLAN)
+    assert result["groupId"] == "group-1" and result["members"][0]["mail"] == "ross@example.com"
+    with pytest.raises(ValueError):
+        planner.list_members(FakeClient(get_planner_plan={"title": "Roster plan"}), PLAN)
+
+
+def test_member_add_previews_skips_existing_members_and_adds_only_new_people():
+    fake = _member_fake()
+    preview = planner.add_members(fake, PLAN, ["ross@example.com", "ann@example.com", "ann@example.com"])
+    assert [p["id"] for p in preview["toAdd"]] == [OTHER] and [p["id"] for p in preview["alreadyMembers"]] == [USER]
+    assert preview["applied"] is False and "add_planner_member" not in fake.names()
+    done = planner.add_members(fake, PLAN, ["ross@example.com", "ann@example.com"], confirm=True)
+    assert done["applied"] is True and [p["id"] for p in done["added"]] == [OTHER]
+    assert fake.call("add_planner_member")[0] == ("group-1", OTHER)
+    with pytest.raises(ValueError):
+        planner.add_members(fake, PLAN, [])
+
+
+def test_member_add_names_who_was_added_before_a_failure():
+    def add(group_id, user_id):
+        if user_id == OTHER:
+            raise OutlookAPIError(403, "not an owner")
+
+    fake = _member_fake(add_planner_member=add)
+    with pytest.raises(OutlookAPIError, match="Added nobody before failing on ann@example.com"):
+        planner.add_members(fake, PLAN, ["ann@example.com"], confirm=True)
+
+
+def test_member_add_posts_a_reference_and_never_retries():
+    client = RecordingClient({})
+    client.add_planner_member("group-1", USER)
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("POST", "/groups/group-1/members/$ref")
+    assert kwargs["json_body"]["@odata.id"].endswith("/directoryObjects/" + USER) and kwargs["max_retries"] == 0
