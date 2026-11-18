@@ -172,7 +172,8 @@ def test_mcp_tools_use_the_graph_client(monkeypatch):
 
 
 WRITE_TOOLS = {"planner_task_create", "planner_task_update", "planner_task_delete", "planner_bucket_create",
-               "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete", "planner_member_add"}
+               "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete", "planner_member_add",
+               "planner_member_remove", "planner_plan_unpin"}
 
 
 def test_write_tools_default_to_preview_and_are_flagged_destructive():
@@ -200,13 +201,13 @@ def test_groups_keep_only_microsoft_365_groups_filter_and_sort():
     assert client.calls[0][2]["params"]["$select"].startswith("id,displayName")
 
 
-def test_pin_sends_existing_pins_back_with_the_etag_and_never_retries():
-    existing = {"old": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "x", "planTitle": "Old"}}
+def test_pin_sends_only_the_one_plan_with_the_etag_and_never_retries():
+    existing = {"old": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "000", "planTitle": "Old"}}
     client = RecordingClient({("PATCH", planner.BETA_PLANNER_USER): {"favoritePlanReferences": {}}})
     client.pin_planner_plan(PLAN, "Triage test", {"@odata.etag": 'W/"u1"', "favoritePlanReferences": existing})
     method, path, kwargs = client.calls[0]
     assert (method, path) == ("PATCH", planner.BETA_PLANNER_USER)
-    assert set(kwargs["json_body"]["favoritePlanReferences"]) == {"old", PLAN}
+    assert set(kwargs["json_body"]["favoritePlanReferences"]) == {PLAN}
     assert kwargs["extra_headers"]["If-Match"] == 'W/"u1"' and kwargs["max_retries"] == 0
 
 
@@ -294,15 +295,14 @@ def test_bucket_update_and_delete_use_the_etag_and_never_retry():
         assert kwargs["extra_headers"]["If-Match"] == 'W/"b1"' and kwargs["max_retries"] == 0
 
 
-def test_pin_replaces_an_order_hint_the_service_would_reject():
-    existing = {"old": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "000", "planTitle": "Old"},
-                "kept": {"@odata.type": "#microsoft.graph.plannerFavoritePlanReference", "orderHint": "8584P7 !", "planTitle": "K"}}
+def test_unpin_sends_only_a_null_for_that_plan_with_the_etag_and_never_retries():
+    pins = {PLAN: {"orderHint": "000", "planTitle": "A"}, "other": {"orderHint": "000", "planTitle": "B"}}
     client = RecordingClient({})
-    client.pin_planner_plan(PLAN, "New", {"@odata.etag": "e", "favoritePlanReferences": existing})
-    pins = client.calls[0][2]["json_body"]["favoritePlanReferences"]
-    assert pins["old"]["orderHint"] == " !" and pins["old"]["planTitle"] == "Old"
-    assert pins["kept"]["orderHint"] == "8584P7 !"
-    assert all(planner._valid_hint(ref["orderHint"]) for ref in pins.values())
+    client.unpin_planner_plan(PLAN, {"@odata.etag": 'W/"u1"', "favoritePlanReferences": pins})
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("PATCH", planner.BETA_PLANNER_USER)
+    assert kwargs["json_body"] == {"favoritePlanReferences": {PLAN: None}}
+    assert kwargs["extra_headers"]["If-Match"] == 'W/"u1"' and kwargs["max_retries"] == 0
 
 
 MEMBERS = [{"id": USER, "displayName": "Ross", "mail": "ross@example.com"}]
@@ -348,3 +348,82 @@ def test_member_add_posts_a_reference_and_never_retries():
     method, path, kwargs = client.calls[0]
     assert (method, path) == ("POST", "/groups/group-1/members/$ref")
     assert kwargs["json_body"]["@odata.id"].endswith("/directoryObjects/" + USER) and kwargs["max_retries"] == 0
+
+
+TWO_MEMBERS = [{"id": USER, "displayName": "Ross", "mail": "ross@example.com"},
+               {"id": OTHER, "displayName": "Ann", "mail": "ann@example.com"}]
+
+
+def _remove_fake(members=None, owners=None, **extra):
+    return FakeClient(
+        get_planner_plan={"id": PLAN, "title": "Triage", "owner": "group-1"},
+        list_planner_members=TWO_MEMBERS if members is None else members,
+        list_planner_owners=[{"id": USER}] if owners is None else owners,
+        list_planner_tasks=[{"assignments": {OTHER: {}}}, {"assignments": {OTHER: {}, USER: {}}}, {"assignments": {}}],
+        resolve_planner_user=lambda ref: {"id": USER if "ross" in ref else OTHER, "displayName": ref}, **extra)
+
+
+def test_member_remove_previews_counts_assigned_tasks_then_removes():
+    fake = _remove_fake()
+    preview = planner.remove_members(fake, PLAN, ["ann@example.com", "nobody-new@example.com"])
+    assert [(p["id"], p["assignedTasks"]) for p in preview["toRemove"]] == [(OTHER, 2)]
+    assert preview["applied"] is False and "remove_planner_member" not in fake.names()
+    done = planner.remove_members(fake, PLAN, ["ann@example.com"], confirm=True)
+    assert done["applied"] is True and [p["id"] for p in done["removed"]] == [OTHER]
+    assert fake.call("remove_planner_member")[0] == ("group-1", OTHER)
+
+
+def test_member_remove_lists_people_who_are_not_members_and_skips_them():
+    fake = _remove_fake(members=[TWO_MEMBERS[0]], owners=[{"id": USER}])
+    result = planner.remove_members(fake, PLAN, ["ann@example.com"], confirm=True)
+    assert result["toRemove"] == [] and [p["id"] for p in result["notMembers"]] == [OTHER]
+    assert "remove_planner_member" not in fake.names()
+
+
+def test_member_remove_refuses_owners_the_last_member_and_empty_input():
+    with pytest.raises(ValueError, match="owns the group"):
+        planner.remove_members(_remove_fake(), PLAN, ["ross@example.com"])
+    with pytest.raises(ValueError, match="every member"):
+        planner.remove_members(_remove_fake(owners=[]), PLAN, ["ross@example.com", "ann@example.com"])
+    with pytest.raises(ValueError):
+        planner.remove_members(_remove_fake(), PLAN, [])
+    with pytest.raises(ValueError):
+        planner.remove_members(_remove_fake(), "3", ["ann@example.com"])
+
+
+def test_member_remove_names_who_was_removed_before_a_failure():
+    def remove(group_id, user_id):
+        raise OutlookAPIError(403, "not an owner")
+
+    with pytest.raises(OutlookAPIError, match="Removed nobody before failing on ann@example.com"):
+        planner.remove_members(_remove_fake(remove_planner_member=remove), PLAN, ["ann@example.com"], confirm=True)
+
+
+def test_member_remove_deletes_the_reference_and_never_retries():
+    client = RecordingClient({})
+    client.remove_planner_member("group-1", USER)
+    method, path, kwargs = client.calls[0]
+    assert (method, path) == ("DELETE", f"/groups/group-1/members/{USER}/$ref") and kwargs["max_retries"] == 0
+
+
+def test_pin_and_unpin_send_no_other_pin_so_the_service_limit_is_not_hit():
+    client = RecordingClient({})
+    many = {f"p{i}": {"orderHint": "000"} for i in range(5)}
+    client.pin_planner_plan(PLAN, "T", {"@odata.etag": "e", "favoritePlanReferences": many})
+    client.unpin_planner_plan("p1", {"@odata.etag": "e", "favoritePlanReferences": many})
+    assert [len(c[2]["json_body"]["favoritePlanReferences"]) for c in client.calls] == [1, 1]
+
+
+def test_unpin_previews_then_unpins_and_works_for_a_plan_that_no_longer_exists():
+    user = {"@odata.etag": "e", "favoritePlanReferences": {PLAN: {"planTitle": "Gone plan"}}}
+    fake = FakeClient(get_planner_user=user)
+    preview = planner.unpin_plan(fake, PLAN)
+    assert preview == {"plan": {"id": PLAN, "title": "Gone plan"}, "wasPinned": True, "unpinned": False}
+    assert "unpin_planner_plan" not in fake.names() and "get_planner_plan" not in fake.names()
+    assert planner.unpin_plan(fake, PLAN, confirm=True)["unpinned"] is True
+    assert fake.call("unpin_planner_plan")[0] == (PLAN, user)
+
+    none = FakeClient(get_planner_user={"favoritePlanReferences": {}})
+    assert planner.unpin_plan(none, PLAN, confirm=True)["wasPinned"] is False and "unpin_planner_plan" not in none.names()
+    with pytest.raises(ValueError):
+        planner.unpin_plan(none, "3")

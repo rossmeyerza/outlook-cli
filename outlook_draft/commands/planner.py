@@ -69,6 +69,38 @@ def cmd_planner_member_add(args: argparse.Namespace) -> None:
                               "SharePoint site. Add --yes to apply.[/]")
 
 
+def cmd_planner_member_remove(args: argparse.Namespace) -> None:
+    result = _run(args, "Removing members...", lambda c: planner.remove_members(
+        c, args.plan_id, args.people, confirm=args.yes))
+    if args.json:
+        return runtime.print_json(result)
+    label = lambda people: ", ".join(p["displayName"] or p["id"] for p in people) or "nobody"
+    runtime.console.print(f"Not members: {label(result['notMembers'])}")
+    for person in result["toRemove"]:
+        if person["assignedTasks"]:
+            runtime.console.print(f"[yellow]{person['displayName'] or person['id']} has "
+                                  f"{person['assignedTasks']} assigned task(s). They stay assigned.[/]")
+    if result["applied"]:
+        runtime.console.print(f"[green]Removed: {label(result['removed'])}[/]")
+    else:
+        runtime.console.print(f"[yellow]Preview only. Nothing changed. Would remove: {label(result['toRemove'])}. "
+                              "They lose access to the plan, the group mailbox and the SharePoint site. "
+                              "Add --yes to apply.[/]")
+
+
+def cmd_planner_unpin(args: argparse.Namespace) -> None:
+    result = _run(args, "Unpinning plan...", lambda c: planner.unpin_plan(c, args.plan_id, confirm=args.yes))
+    if args.json:
+        return runtime.print_json(result)
+    title = result["plan"]["title"] or result["plan"]["id"]
+    if not result["wasPinned"]:
+        runtime.console.print(f"[green]{title} is not pinned.[/]")
+    elif result["unpinned"]:
+        runtime.console.print(f"[green]Unpinned {title}. My plans can take a few seconds to update.[/]")
+    else:
+        runtime.console.print(f"[yellow]Preview only. Nothing changed. Add --yes to unpin {title}.[/]")
+
+
 def cmd_planner_pin(args: argparse.Namespace) -> None:
     result = _run(args, "Pinning plan...", lambda c: planner.pin_plan(c, args.plan_id, confirm=args.yes))
     if args.json:
@@ -198,6 +230,19 @@ def register(sub) -> None:
     c.add_argument("people", nargs="+", help="Email addresses or user IDs")
     _yes(c)
     c.set_defaults(func=cmd_planner_member_add)
+
+    c = ps.add_parser("member-remove", help="Remove people from a plan's group (preview unless --yes)")
+    add_output_args(c)
+    c.add_argument("plan_id", help="Full plan ID")
+    c.add_argument("people", nargs="+", help="Email addresses or user IDs")
+    _yes(c)
+    c.set_defaults(func=cmd_planner_member_remove)
+
+    c = ps.add_parser("unpin", help="Remove a plan from My plans (preview unless --yes)")
+    add_output_args(c)
+    c.add_argument("plan_id", help="Full plan ID")
+    _yes(c)
+    c.set_defaults(func=cmd_planner_unpin)
 
     c = ps.add_parser("pin", help="Pin a plan to My plans (preview unless --yes)")
     add_output_args(c)

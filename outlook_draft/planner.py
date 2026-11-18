@@ -92,11 +92,6 @@ def task_changes(*, title: str | None = None, bucket_id: str | None = None, due:
     return changes
 
 
-def _valid_hint(hint: str | None) -> bool:
-    """A Planner order hint holds a space or an exclamation mark."""
-    return isinstance(hint, str) and (" " in hint or "!" in hint)
-
-
 def _assignment(add: bool) -> JsonDict | None:
     if not add:
         return None
@@ -149,20 +144,22 @@ class PlannerMixin:
         """Read your Planner preferences, including pinned plans. Only the beta API exposes them."""
         return self._request("GET", BETA_PLANNER_USER).json()
 
-    def pin_planner_plan(self, plan_id: str, title: str, user: JsonDict) -> JsonDict:
-        """Pin a plan, so it shows under My plans.
+    def _patch_pin(self, plan_id: str, reference: JsonDict | None, etag: str) -> JsonDict:
+        """Change exactly one pin. The service accepts only one pin change in a request and keeps the others.
 
-        Existing pins are sent back so none is lost. The service can return a pin with an order hint such as
-        "000" that it then rejects as invalid, so such a hint is replaced. The service also applies pins with
-        a short delay, so a read straight after a write can still show the old list.
+        Sending the other pins back counts as more changes and the service refuses it
+        (MaximumFavoritedPlanChangesInChangeIntent). It also applies the change at once on read-back
+        for the single key, but other reads can lag a few seconds.
         """
-        pins = {key: {**ref, "orderHint": ref["orderHint"] if _valid_hint(ref.get("orderHint")) else ORDER_HINT}
-                for key, ref in (user.get("favoritePlanReferences") or {}).items()}
-        pins[plan_id] = {"@odata.type": "microsoft.graph.plannerFavoritePlanReference",
-                         "orderHint": ORDER_HINT, "planTitle": title}
-        return self._request("PATCH", BETA_PLANNER_USER, json_body={"favoritePlanReferences": pins},
-                             extra_headers={"If-Match": user["@odata.etag"], "Prefer": "return=representation"},
+        return self._request("PATCH", BETA_PLANNER_USER, json_body={"favoritePlanReferences": {plan_id: reference}},
+                             extra_headers={"If-Match": etag, "Prefer": "return=representation"},
                              max_retries=0).json()
+
+    def pin_planner_plan(self, plan_id: str, title: str, user: JsonDict) -> JsonDict:
+        """Pin a plan, so it shows under My plans."""
+        reference = {"@odata.type": "microsoft.graph.plannerFavoritePlanReference",
+                     "orderHint": ORDER_HINT, "planTitle": title}
+        return self._patch_pin(plan_id, reference, user["@odata.etag"])
 
     def list_planner_members(self, group_id: str) -> list[JsonDict]:
         """List the members of the Microsoft 365 group that owns a plan."""
@@ -173,6 +170,20 @@ class PlannerMixin:
         """Add a user to the group. The service sends the person an invitation email. Never retried."""
         body = {"@odata.id": f"{config.GRAPH_BASE_URL}/directoryObjects/{user_id}"}
         self._request("POST", f"/groups/{quote(group_id, safe='')}/members/$ref", json_body=body, max_retries=0)
+
+    def list_planner_owners(self, group_id: str) -> list[JsonDict]:
+        """List the owners of the Microsoft 365 group that owns a plan."""
+        params = {"$select": "id,displayName,mail,userPrincipalName", "$top": "100"}
+        return self._planner_pages(f"/groups/{quote(group_id, safe='')}/owners", 5000, params)
+
+    def remove_planner_member(self, group_id: str, user_id: str) -> None:
+        """Remove a user from the group. They lose access to the plan. Never retried."""
+        self._request("DELETE", f"/groups/{quote(group_id, safe='')}/members/{quote(user_id, safe='')}/$ref",
+                      max_retries=0)
+
+    def unpin_planner_plan(self, plan_id: str, user: JsonDict) -> JsonDict:
+        """Remove a plan from My plans. A null value removes that one pin."""
+        return self._patch_pin(plan_id, None, user["@odata.etag"])
 
     def get_planner_task(self, task_id: str) -> JsonDict:
         return self._request("GET", f"/planner/tasks/{quote(task_id, safe='')}").json()
@@ -438,6 +449,71 @@ def add_members(client: Any, plan_id: str, people: list[str], *, confirm: bool =
                 raise OutlookAPIError(exc.status, f"Added {done} before failing on {person['displayName'] or person['id']}: {exc}") from exc
             result["added"].append(person)
         result["applied"] = True
+    return result
+
+
+def remove_members(client: Any, plan_id: str, people: list[str], *, confirm: bool = False) -> JsonDict:
+    """Preview removing people from a plan's group, or remove them when confirm is true.
+
+    The people lose access to the plan, the group mailbox and the SharePoint site. Tasks assigned to them
+    stay assigned, so the preview counts those tasks. A group owner is never removed here, and the last
+    member is never removed.
+    """
+    planner_id(plan_id, "plan_id")
+    if not people:
+        raise ValueError("Supply at least one person (email address or directory user ID).")
+    plan, group_id = _plan_group(client, plan_id)
+    members = {m["id"].lower(): m for m in client.list_planner_members(group_id)}
+    owners = {o["id"].lower() for o in client.list_planner_owners(group_id)}
+    unique = list({p["id"]: p for p in (client.resolve_planner_user(ref) for ref in people)}.values())
+    to_remove = [p for p in unique if p["id"].lower() in members]
+    for person in to_remove:
+        if person["id"].lower() in owners:
+            raise ValueError(f"{person['displayName'] or person['id']} owns the group. "
+                             "Owners are not removed by this command.")
+    if to_remove and len(members) - len(to_remove) < 1:
+        raise ValueError("This would remove every member of the group.")
+    assigned = _assigned_counts(client, plan_id, to_remove) if to_remove else {}
+    result: JsonDict = {"plan": plan, "groupId": group_id,
+                        "toRemove": [{**p, "assignedTasks": assigned.get(p["id"].lower(), 0)} for p in to_remove],
+                        "notMembers": [p for p in unique if p["id"].lower() not in members],
+                        "removed": [], "applied": False}
+    if confirm is True:
+        for person in to_remove:
+            try:
+                client.remove_planner_member(group_id, person["id"])
+            except OutlookAPIError as exc:
+                done = ", ".join(p["displayName"] or p["id"] for p in result["removed"]) or "nobody"
+                raise OutlookAPIError(exc.status, f"Removed {done} before failing on {person['displayName'] or person['id']}: {exc}") from exc
+            result["removed"].append(person)
+        result["applied"] = True
+    return result
+
+
+def _assigned_counts(client: Any, plan_id: str, people: list[JsonDict]) -> dict[str, int]:
+    """Count the tasks of a plan that are assigned to each person."""
+    wanted = {p["id"].lower() for p in people}
+    counts = {user_id: 0 for user_id in wanted}
+    for task in client.list_planner_tasks(plan_id=plan_id, top=1000):
+        for user_id in (task.get("assignments") or {}):
+            if user_id.lower() in wanted:
+                counts[user_id.lower()] += 1
+    return counts
+
+
+def unpin_plan(client: Any, plan_id: str, *, confirm: bool = False) -> JsonDict:
+    """Preview removing a plan from My plans, or remove it when confirm is true. It changes only your own list.
+
+    The title comes from the pin, so a pin for a plan that no longer exists can still be removed.
+    """
+    planner_id(plan_id, "plan_id")
+    user = client.get_planner_user()
+    pin = (user.get("favoritePlanReferences") or {}).get(plan_id)
+    result: JsonDict = {"plan": {"id": plan_id, "title": (pin or {}).get("planTitle", "")},
+                        "wasPinned": pin is not None, "unpinned": False}
+    if confirm is True and pin is not None:
+        client.unpin_planner_plan(plan_id, user)
+        result["unpinned"] = True
     return result
 
 

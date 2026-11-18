@@ -61,7 +61,8 @@ def build_server() -> FastMCP:
                                   "cal_delete", "cal_cancel", "cal_update", "contact_create", "contact_update",
                                   "task_update", "task_delete", "planner_task_create", "planner_task_update",
                                   "planner_task_delete", "planner_bucket_create", "planner_bucket_update", "planner_bucket_delete",
-                                  "planner_plan_pin", "planner_member_add", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
+                                  "planner_plan_pin", "planner_member_add", "planner_member_remove", "planner_plan_unpin",
+                                  "files_upload", "files_mkdir", "files_rename", "files_move"} or (
                 module is mail_organise and tool.__name__ not in READ_ONLY_TOOLS
             ) or module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(
