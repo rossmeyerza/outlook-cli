@@ -210,6 +210,18 @@ File attachments use an existing OneDrive folder and named chat-member access.
 Inline images use Teams hosted content.
 See [Teams media](docs/teams-media.md) for previews, limits, permissions and failure handling.
 
+#### Export a meeting transcript
+
+The [outlook-cli Chrome extension](#copilot-in-office-web-apps-experimental) also exports Teams transcripts. You do not need a separate extension.
+
+1. Run `outlook-cli copilot extension install`.
+2. Open `chrome://extensions` and reload **outlook-cli**, or use **Load unpacked** with the folder printed by the command.
+3. Open a Teams meeting recap and select **Transcript**.
+4. Open the **outlook-cli** toolbar icon, select Plain text, WebVTT or JSON, then select **Capture and download**.
+5. Keep the Teams tab active until Chrome shows the save dialog.
+
+Export only transcripts that you have permission to retain. The exporter reads the Teams page and the WPP SharePoint recap frame. It saves the transcript locally and does not send it to the CLI or a server.
+
 ### Teams Gateway
 
 ```bash

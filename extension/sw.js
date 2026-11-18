@@ -2,6 +2,8 @@
 // drives the controller in its frames, and relays adapter events to the host.
 "use strict";
 
+importScripts("transcript/capture.js");
+
 const PROTOCOL = 1;
 const HOST_NAME = "com.outlook_cli.copilot";
 const VERSION = chrome.runtime.getManifest().version;
@@ -614,10 +616,17 @@ async function onHostMessage(msg) {
   }
 }
 
-// Events from the controller in an editor frame. Only accept them from this
-// extension's own content scripts, for the request that armed the frame.
-chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (sender.id !== chrome.runtime.id || !sender.tab || !msg || msg.type !== "augloop") return;
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
+  if (msg?.type === "CAPTURE_TEAMS_TRANSCRIPT") {
+    if (sender.tab || sender.url !== chrome.runtime.getURL("transcript/popup.html")) return;
+    captureActiveTab(msg.format)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+    return true;
+  }
+  // Accept controller events only from the frame that the request armed.
+  if (!sender.tab || msg?.type !== "augloop") return;
   const req = requests.get(sender.tab.id);
   if (req && req.id === msg.requestId && req.armedFrames.includes(sender.frameId)) onEvent(req, msg.event);
 });

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Teams Transcript Exporter</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <img src="icons/icon-48.png" width="40" height="40" alt="">
+        <h1>Teams transcript exporter</h1>
+      </div>
+      <p class="intro">Open a Teams recap and select the Transcript tab before you start.</p>
+
+      <label for="format">Export format</label>
+      <select id="format">
+        <option value="txt">Plain text</option>
+        <option value="vtt">WebVTT</option>
+        <option value="json">JSON</option>
+      </select>
+
+      <button id="capture" type="button">Capture and download</button>
+      <p id="status" role="status" aria-live="polite">Ready.</p>
+      <details id="diagnostics" hidden>
+        <summary>Capture diagnostics</summary>
+        <pre id="diagnostics-output"></pre>
+      </details>
+
+      <p class="notice">Export only transcripts that you are allowed to retain.</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

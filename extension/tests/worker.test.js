@@ -16,6 +16,7 @@ function worker(ui = {}) {
   const chrome = {
     runtime: {
       id: "extension", getManifest: () => ({ version: "test" }),
+      getURL: (file) => `chrome-extension://extension/${file}`,
       connectNative: () => ({ postMessage: (m) => sent.push(m), onMessage: event("native"), onDisconnect: event("disconnect") }),
       onMessage: event("message"), onStartup: event("startup"), onInstalled: event("installed"),
     },
@@ -53,6 +54,7 @@ function worker(ui = {}) {
     alarms: { create() {}, onAlarm: event("alarm") },
   };
   const context = vm.createContext({ chrome, console, setTimeout, clearTimeout, URL });
+  context.importScripts = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context);
   const code = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
   vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented, reset, status, openPaneOnce };", context);
   // Fast settle polling for tests.
@@ -60,6 +62,40 @@ function worker(ui = {}) {
     panePollMs: 5, editorSettleMs: 40, beforeOpenMs: 0, paneFirstWaitMs: 40, paneWaitMs: 200, inputSettleMs: 0, frameCallMs: 100 });`, context);
   return { api: context.testApi, sent, calls, listeners, tab, chrome, ui, context };
 }
+
+test("only the Teams popup can start a local transcript export", async () => {
+  const { chrome, listeners, sent, tab } = worker();
+  tab.url = "https://teams.microsoft.com/v2/";
+  const msg = { type: "CAPTURE_TEAMS_TRANSCRIPT", format: "txt" };
+  const popup = { id: chrome.runtime.id, url: chrome.runtime.getURL("transcript/popup.html") };
+  const downloads = [];
+  chrome.downloads = { download: async (options) => downloads.push(options) };
+  let injections = 0;
+  chrome.scripting.executeScript = async ({ files, target, args }) => {
+    if (files) return [];
+    injections++;
+    assert.equal(target.tabId, tab.id);
+    assert.equal(target.allFrames, true);
+    assert.deepEqual([...args[0].origins], ["https://teams.microsoft.com", "https://wppcloud-my.sharepoint.com"]);
+    return [{ frameId: 0, result: { ok: true, entries: [{ timestamp: "0:04", speaker: "A", text: "Test." }] } }];
+  };
+  const unexpected = () => assert.fail("Unexpected response");
+  listeners.message(msg, { ...popup, id: "other" }, unexpected);
+  listeners.message(msg, { ...popup, tab }, unexpected);
+  listeners.message(msg, { ...popup, url: tab.url }, unexpected);
+  assert.equal(injections, 0);
+  const capture = () => new Promise((resolve) => assert.equal(listeners.message(msg, popup, resolve), true));
+  const result = await capture();
+  assert.equal(result.ok, true);
+  assert.equal(result.count, 1);
+  assert.equal(downloads.length, 1);
+  assert.equal(downloads[0].saveAs, true);
+  assert.equal(decodeURIComponent(downloads[0].url.split(",")[1]), "[0:04] A: Test.\n");
+  tab.url = "https://teams.microsoft.com.example/";
+  assert.equal((await capture()).ok, false);
+  assert.equal(injections, 1);
+  assert.deepEqual(sent.map((message) => message.type), ["hello"]);
+});
 
 test("host disconnect consumes lastError, reconnects transport and never replays prompts", async () => {
   const { api, chrome, listeners, sent, calls } = worker();

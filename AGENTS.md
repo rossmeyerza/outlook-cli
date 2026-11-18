@@ -199,6 +199,10 @@ Read-only and no-send modes also block Copilot prompts.
 The MCP server supports `OUTLOOK_CLI_READONLY`, `OUTLOOK_CLI_NO_SEND`, `OUTLOOK_CLI_ENABLE_TOOLS` and `OUTLOOK_CLI_DISABLE_TOOLS`.
 Restart the MCP server after code or environment changes.
 
+## Teams transcript export
+
+`extension/transcript/` is part of the same Chrome extension as the Copilot bridge. The existing installer and extension ID still apply. Only the extension popup can start an export. The exporter reads the Teams tab and the WPP recap frame and saves a local file. It does not use the native host.
+
 ## Teams media
 
 `teams send` and `teams new` accept repeatable `--attach` and `--image` options.

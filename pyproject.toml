@@ -40,6 +40,8 @@ exclude = ["session_state*", "tests*"]
 [tool.setuptools.data-files]
 "share/outlook-cli/extension" = ["extension/manifest.json", "extension/sw.js", "extension/hook.js", "extension/diagnostics.js", "extension/controller.js"]
 "share/outlook-cli/extension/adapters" = ["extension/adapters/common.js", "extension/adapters/excel.js", "extension/adapters/powerpoint.js"]
+"share/outlook-cli/extension/transcript" = ["extension/transcript/capture.js", "extension/transcript/popup.css", "extension/transcript/popup.html", "extension/transcript/popup.js"]
+"share/outlook-cli/extension/transcript/icons" = ["extension/transcript/icons/icon-*.png"]
 
 [tool.pytest.ini_options]
 markers = [
