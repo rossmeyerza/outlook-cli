@@ -15,10 +15,10 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **95 executable parser paths** and **98 distinct operations** in the table.
+There are **107 executable parser paths** and **110 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
-The MCP server registers **74 tools**.
+The MCP server registers **86 tools**.
 All **74 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
 Equivalent options can use different names or several tool calls.
 Confirmation and local-path safeguards remain stricter in MCP.
@@ -34,6 +34,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Calendar | 12 |
 | Contacts | 4 |
 | Tasks | 5 |
+| Planner | 12 |
 | Teams | 10 |
 | Mailbox | 2 |
 | Files | 9 |
@@ -159,6 +160,27 @@ Calendar deletion does not delete an invitation email from the mailbox.
 | `task update` | Full | `task_update` | Subject, due date, importance and status; previews unless confirmed. |
 | `task complete` | Full | `task_complete` | Completes the task immediately. |
 | `task delete` | Full | `task_delete` | Previews the exact task before confirmed deletion. |
+
+## Planner
+
+Planner uses Microsoft Graph with the existing Graph token. It has no comment API, so notes go in the task description.
+Writes preview unless confirmed (`--yes` in the CLI, `confirm=true` in MCP). Writes never retry automatically.
+Updates send the current etag, so a concurrent edit fails and is not overwritten. These commands take full IDs only.
+
+| CLI command | MCP coverage | MCP tool | Difference or limit |
+|---|---|---|---|
+| `planner plans` | Full | `planner_plans` | Recently used or pinned plans, or all plans of one group; caller controls the count. |
+| `planner groups` | Full | `planner_groups` | Microsoft 365 groups you belong to, with a name search; caller controls the count. |
+| `planner pin` | Full | `planner_plan_pin` | Pins a plan to your My plans list through the beta API; previews unless confirmed; changes only your own list. |
+| `planner buckets` | Full | `planner_buckets` | All buckets of one plan. |
+| `planner tasks` | Full | `planner_tasks` | Tasks of a plan or bucket, or tasks assigned to you; caller controls the count. |
+| `planner show` | Full | `planner_task_get` | Task with description and checklist. |
+| `planner create` | Full | `planner_task_create` | Title, bucket, assignees, due date, priority and description; previews unless confirmed. |
+| `planner update` | Full | `planner_task_update` | Edit, move, assign, unassign, progress and description; previews unless confirmed. |
+| `planner bucket-update` | Full | `planner_bucket_update` | Rename and move (first, or after another bucket of the same plan); the preview lists the new order; previews unless confirmed. |
+| `planner bucket-delete` | Full | `planner_bucket_delete` | Deletes an empty bucket only. A bucket with tasks is refused, because the API would leave the tasks orphaned and hidden; previews unless confirmed. |
+| `planner delete` | Full | `planner_task_delete` | Previews the exact task before confirmed deletion. |
+| `planner bucket-create` | Full | `planner_bucket_create` | Previews unless confirmed. |
 
 ## Teams
 

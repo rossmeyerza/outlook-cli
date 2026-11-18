@@ -150,6 +150,27 @@ outlook-cli task complete 1               # mark task as done by index
 outlook-cli task delete 1                 # delete task by index
 ```
 
+### Planner
+
+```bash
+outlook-cli planner plans                          # recently used or pinned plans; --group <id> lists one group's plans
+outlook-cli planner groups --search triage         # Microsoft 365 groups you belong to (they own plans)
+outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
+outlook-cli planner buckets <plan-id>              # columns of a plan
+outlook-cli planner tasks --plan <plan-id> --json  # also --bucket <id>; no flag lists tasks assigned to you
+outlook-cli planner show <task-id>                 # description and checklist
+outlook-cli planner create <plan-id> <bucket-id> "Title" --assign a@x.com --due "2026-11-25 10:00" --priority important
+outlook-cli planner update <task-id> --bucket <bucket-id> --percent 50 --yes   # move or edit
+outlook-cli planner delete <task-id> --yes
+outlook-cli planner bucket-create <plan-id> "Scoping" --yes
+outlook-cli planner bucket-update <bucket-id> --name "New" --after <other-bucket-id> --yes   # rename and/or move (or --first)
+outlook-cli planner bucket-delete <bucket-id> --yes   # empty buckets only: a bucket with tasks is refused (move or delete the tasks first)
+```
+
+Planner uses Microsoft Graph and the existing Graph token. Commands take full IDs from the list commands, not indexes. An ID can start with a dash: put `--` before the positional arguments (`planner show -- <task-id>`) and use `--option=value` for option values.
+Writes preview unless you add `--yes`. Writes never retry, and updates send the current etag so a concurrent edit fails.
+`--assign` notifies the person. Priorities: `urgent`, `important`, `medium`, `low`. Graph has no Planner comment API, so put notes in `--description`.
+
 ### Contacts
 
 ```bash
@@ -434,6 +455,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
 - Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
+- Planner: `planner_plans`, `planner_groups`, `planner_buckets`, `planner_tasks`, `planner_task_get`, `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin`
 - Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
 - Copilot: `copilot_ask` (prompt with optional `files`; pass `conversation_id` for a follow-up). Not read-only: Copilot can take actions with its own tools. The result lists `toolCalls` and `pendingConfirmations`. The tool never confirms an action.

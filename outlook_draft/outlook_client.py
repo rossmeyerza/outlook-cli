@@ -20,6 +20,7 @@ from .links import encode_share_id
 from .mail_compose import MailComposeMixin
 from .mail_organise import MailOrganiseMixin
 from .mail_query import MailQueryMixin
+from .planner import PlannerMixin
 from .safety import check_request
 from .teams_activity import TeamsChatList, activity_time
 from .token_manager import TokenManager
@@ -31,7 +32,7 @@ UPLOAD_CHUNK_SIZE = 10 * 320 * 1024
 ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentReference"
 
 
-class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, DirectoryMixin):
+class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, DirectoryMixin, PlannerMixin):
     """Sync HTTP client for Outlook and Microsoft Graph operations."""
 
     def __init__(

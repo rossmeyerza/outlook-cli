@@ -17,6 +17,7 @@ from .commands import (
     gateway_parser,
     mail,
     mcp,
+    planner,
     signature,
     tasks,
     teams,
@@ -153,6 +154,7 @@ def build_parser(account_override: str | None = None) -> argparse.ArgumentParser
     drafts.register(sub)
     mail.register(sub)
     tasks.register(sub)
+    planner.register(sub)
     calendar.register(sub)
     contacts.register(sub)
     teams.register(sub)

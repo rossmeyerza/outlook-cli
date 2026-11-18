@@ -235,6 +235,27 @@ outlook-cli task delete 1
 
 Valid task statuses: `NotStarted`, `InProgress`, `Completed`, `WaitingOnOthers`, `Deferred`.
 
+## Planner
+
+```bash
+outlook-cli planner plans                          # recently used or pinned plans; --group <id> lists one group's plans
+outlook-cli planner groups --search triage         # Microsoft 365 groups you belong to (they own plans)
+outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
+outlook-cli planner buckets <plan-id>              # columns of a plan
+outlook-cli planner tasks --plan <plan-id> --json  # also --bucket <id>; no flag lists tasks assigned to you
+outlook-cli planner show <task-id>                 # description and checklist
+outlook-cli planner create <plan-id> <bucket-id> "Title" --assign a@x.com --due "2026-11-25 10:00" --priority important
+outlook-cli planner update <task-id> --bucket <bucket-id> --percent 50 --yes   # move or edit
+outlook-cli planner delete <task-id> --yes
+outlook-cli planner bucket-create <plan-id> "Scoping" --yes
+outlook-cli planner bucket-update <bucket-id> --name "New" --after <other-bucket-id> --yes   # rename and/or move (or --first)
+outlook-cli planner bucket-delete <bucket-id> --yes   # empty buckets only: a bucket with tasks is refused (move or delete the tasks first)
+```
+
+Planner uses Microsoft Graph and the existing Graph token. Commands take full IDs from the list commands, not indexes. An ID can start with a dash: put `--` before the positional arguments (`planner show -- <task-id>`) and use `--option=value` for option values.
+Writes preview unless you add `--yes`. Writes never retry, and updates send the current etag so a concurrent edit fails.
+`--assign` notifies the person. Priorities: `urgent`, `important`, `medium`, `low`. Graph has no Planner comment API, so put notes in `--description`.
+
 ## Teams
 
 Teams support is for browsing and downloading attachments/links. Send with `outlook-cli teams send <chat-ref> "message" --yes` only when Ross explicitly asks.

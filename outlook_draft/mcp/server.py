@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 from ..safety import command_allowed, current_policy
-from . import auth, calendar, contacts, copilot, drafts, files, mail, mail_ops, mail_organise, sending, tasks, teams
+from . import auth, calendar, contacts, copilot, drafts, files, mail, mail_ops, mail_organise, planner, sending, tasks, teams
 
 INSTRUCTIONS = (
     "Outlook mail, drafts, calendar, contacts, tasks, Teams, OneDrive/SharePoint files "
@@ -25,7 +25,7 @@ INSTRUCTIONS = (
     "If a tool reports an expired token, ask the user to run 'outlook-cli auth' in a terminal."
 )
 
-MODULES = (mail, mail_ops, mail_organise, drafts, calendar, contacts, tasks, teams, files, copilot, auth, sending)
+MODULES = (mail, mail_ops, mail_organise, drafts, calendar, contacts, tasks, planner, teams, files, copilot, auth, sending)
 
 READ_ONLY_TOOLS = {
     "mail_search", "mail_unread", "mail_read", "mail_attachments", "mail_download_attachments",
@@ -35,6 +35,7 @@ READ_ONLY_TOOLS = {
     "teams_attachments", "teams_download_attachments", "files_sites", "files_libraries",
     "files_list", "files_search", "files_download", "auth_status",
     "mail_download_links", "cal_rooms", "teams_get", "teams_self",
+    "planner_plans", "planner_groups", "planner_buckets", "planner_tasks", "planner_task_get",
 }
 
 
@@ -58,7 +59,9 @@ def build_server() -> FastMCP:
                 continue
             if tool.__name__ in {"mail_bulk", "mail_trash", "mail_categorise", "draft_update", "draft_forward",
                                   "cal_delete", "cal_cancel", "cal_update", "contact_create", "contact_update",
-                                  "task_update", "task_delete", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
+                                  "task_update", "task_delete", "planner_task_create", "planner_task_update",
+                                  "planner_task_delete", "planner_bucket_create", "planner_bucket_update", "planner_bucket_delete",
+                                  "planner_plan_pin", "files_upload", "files_mkdir", "files_rename", "files_move"} or (
                 module is mail_organise and tool.__name__ not in READ_ONLY_TOOLS
             ) or module is sending or module is copilot:
                 server.tool(annotations=ToolAnnotations(

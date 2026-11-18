@@ -68,6 +68,20 @@ outlook-cli task update <n> --due "..." --importance High
 outlook-cli task complete <n>              # mark task as done
 outlook-cli task delete <n>                # delete task
 
+# Microsoft Planner (Graph; writes preview unless --yes)
+outlook-cli planner plans                  # recent/pinned plans (--group <id> for a group)
+outlook-cli planner groups --search triage         # Microsoft 365 groups you belong to (they own plans)
+outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
+outlook-cli planner buckets <plan-id>      # list buckets
+outlook-cli planner tasks --plan <plan-id> --json
+outlook-cli planner show <task-id>         # description and checklist
+outlook-cli planner create <plan-id> <bucket-id> "Title" --assign a@x.com --yes
+outlook-cli planner update <task-id> --bucket <bucket-id> --percent 50 --yes
+outlook-cli planner delete <task-id> --yes
+outlook-cli planner bucket-create <plan-id> "Name" --yes
+outlook-cli planner bucket-update <bucket-id> --name "New" --after <other-bucket-id> --yes   # rename and/or move (or --first)
+outlook-cli planner bucket-delete <bucket-id> --yes   # empty buckets only: a bucket with tasks is refused (move or delete the tasks first)
+
 # Search contacts
 outlook-cli contact search <query>         # search by name or email
 outlook-cli contact search ross -n 20      # with result limit
@@ -258,6 +272,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
 - Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
+- Planner: `planner_plans`, `planner_groups`, `planner_buckets`, `planner_tasks`, `planner_task_get` (read-only); `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin` (preview by default; `confirm=true` to write). Full IDs only. No comment API in Graph.
 - Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
 - Copilot: `copilot_ask` (prompt, optional `files`, `site`, `library`, `conversation_id`). Not read-only: registered with `readOnlyHint=false` and `destructiveHint=true`.
