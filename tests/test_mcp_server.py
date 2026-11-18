@@ -33,7 +33,7 @@ EXPECTED_TOOLS = {
     "planner_plans", "planner_buckets", "planner_tasks", "planner_task_get", "planner_task_create",
     "planner_task_update", "planner_task_delete", "planner_bucket_create", "planner_groups", "planner_plan_pin",
     "planner_bucket_update", "planner_bucket_delete",
-    "planner_members", "planner_member_add",
+    "planner_members", "planner_member_add", "planner_member_remove", "planner_plan_unpin",
 }
 
 
@@ -56,7 +56,7 @@ def test_only_approved_send_and_destructive_tools_are_registered():
     for name in _tool_names() - {"cal_delete", "cal_cancel", "draft_delete", "draft_update", "mail_category_update", "mail_rule_update",
                                 "mail_send", "draft_send", "teams_send", "teams_new", "cal_update", "contact_create",
                                 "contact_update", "task_update", "task_delete", "planner_task_create", "planner_task_update",
-                                "planner_task_delete", "planner_bucket_create", "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete", "planner_member_add", "files_upload", "files_mkdir", "files_rename", "files_move"}:
+                                "planner_task_delete", "planner_bucket_create", "planner_plan_pin", "planner_bucket_update", "planner_bucket_delete", "planner_member_add", "planner_member_remove", "planner_plan_unpin", "files_upload", "files_mkdir", "files_rename", "files_move"}:
         assert not any(word in name for word in forbidden), name
     tools = asyncio.run(build_server().list_tools())
     for tool in tools:

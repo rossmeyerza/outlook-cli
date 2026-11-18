@@ -109,6 +109,18 @@ def planner_member_add(plan_id: str, people: list[str], confirm: bool = False) -
         return planner.add_members(client, plan_id, people, confirm=confirm)
 
 
+def planner_member_remove(plan_id: str, people: list[str], confirm: bool = False) -> JsonDict:
+    """Preview removing people (emails or user IDs) from a plan's Microsoft 365 group. They lose access to the plan, the group mailbox and the SharePoint site. Tasks assigned to them stay assigned: the preview counts those tasks. Group owners and the last member are refused. You must own the group. Set confirm=true only after approval of the exact list of people. Never retry uncertain writes automatically."""
+    with graph_client() as client:
+        return planner.remove_members(client, plan_id, people, confirm=confirm)
+
+
+def planner_plan_unpin(plan_id: str, confirm: bool = False) -> JsonDict:
+    """Preview removing a plan from your My plans list. It changes only your own Planner list, not the plan. Set confirm=true only after approval. Never retry uncertain writes automatically."""
+    with graph_client() as client:
+        return planner.unpin_plan(client, plan_id, confirm=confirm)
+
+
 def planner_plan_pin(plan_id: str, confirm: bool = False) -> JsonDict:
     """Preview pinning a plan to your My plans list. It changes only your own Planner list, not the plan. Set confirm=true only after approval. Never retry uncertain writes automatically."""
     with graph_client() as client:
@@ -123,4 +135,5 @@ def planner_bucket_create(plan_id: str, name: str, confirm: bool = False) -> Jso
 
 TOOLS = [planner_plans, planner_groups, planner_buckets, planner_tasks, planner_task_get, planner_task_create,
          planner_task_update, planner_task_delete, planner_bucket_create, planner_bucket_update,
-         planner_bucket_delete, planner_plan_pin, planner_members, planner_member_add]
+         planner_bucket_delete, planner_plan_pin, planner_members, planner_member_add,
+         planner_member_remove, planner_plan_unpin]

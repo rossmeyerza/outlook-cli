@@ -3516,6 +3516,90 @@
     "execution": null
   },
   {
+    "name": "planner_member_remove",
+    "title": null,
+    "description": "Preview removing people (emails or user IDs) from a plan's Microsoft 365 group. They lose access to the plan, the group mailbox and the SharePoint site. Tasks assigned to them stay assigned: the preview counts those tasks. Group owners and the last member are refused. You must own the group. Set confirm=true only after approval of the exact list of people. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "people": {
+          "items": {
+            "type": "string"
+          },
+          "title": "People",
+          "type": "array"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "plan_id",
+        "people"
+      ],
+      "title": "planner_member_removeArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "planner_member_removeDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
+    "name": "planner_plan_unpin",
+    "title": null,
+    "description": "Preview removing a plan from your My plans list. It changes only your own Planner list, not the plan. Set confirm=true only after approval. Never retry uncertain writes automatically.",
+    "inputSchema": {
+      "properties": {
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "confirm": {
+          "default": false,
+          "title": "Confirm",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "plan_id"
+      ],
+      "title": "planner_plan_unpinArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "additionalProperties": true,
+      "title": "planner_plan_unpinDictOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": {
+      "title": null,
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true
+    },
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "teams_list",
     "title": null,
     "description": "List recent Teams chats. Set sort_received=true to sort the fetched chats by latest received message, not all historical chats. Read-only.",

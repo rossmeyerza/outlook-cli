@@ -74,6 +74,8 @@ outlook-cli planner groups --search triage         # Microsoft 365 groups you be
 outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
 outlook-cli planner members <plan-id>            # who can work on the plan (its group members)
 outlook-cli planner member-add <plan-id> a@x.com b@x.com --yes   # add people to the plan's group (they get an invitation email and group access)
+outlook-cli planner member-remove <plan-id> a@x.com --yes     # remove people from the plan's group (owners and the last member are refused)
+outlook-cli planner unpin <plan-id> --yes          # remove a plan from My plans
 outlook-cli planner buckets <plan-id>      # list buckets
 outlook-cli planner tasks --plan <plan-id> --json
 outlook-cli planner show <task-id>         # description and checklist
@@ -278,7 +280,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Calendar: `cal_agenda`, `cal_get`, `cal_availability`, `cal_find_time`, `cal_create`, `cal_respond`, `cal_delete`, `cal_cancel`, `cal_rooms`, `cal_update`
 - Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
-- Planner: `planner_plans`, `planner_groups`, `planner_buckets`, `planner_tasks`, `planner_task_get` (read-only); `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin`, `planner_members`, `planner_member_add` (preview by default; `confirm=true` to write). Full IDs only. No comment API in Graph.
+- Planner: `planner_plans`, `planner_groups`, `planner_buckets`, `planner_tasks`, `planner_task_get` (read-only); `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin`, `planner_members`, `planner_member_add`, `planner_member_remove`, `planner_plan_unpin` (preview by default; `confirm=true` to write). Full IDs only. No comment API in Graph.
 - Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
 - Copilot: `copilot_ask` (prompt, optional `files`, `site`, `library`, `conversation_id`). Not read-only: registered with `readOnlyHint=false` and `destructiveHint=true`.

@@ -243,6 +243,8 @@ outlook-cli planner groups --search triage         # Microsoft 365 groups you be
 outlook-cli planner pin <plan-id> --yes            # pin a plan to My plans (beta API, your own list only)
 outlook-cli planner members <plan-id>            # who can work on the plan (its group members)
 outlook-cli planner member-add <plan-id> a@x.com b@x.com --yes   # add people to the plan's group (they get an invitation email and group access)
+outlook-cli planner member-remove <plan-id> a@x.com --yes     # remove people from the plan's group (owners and the last member are refused)
+outlook-cli planner unpin <plan-id> --yes          # remove a plan from My plans
 outlook-cli planner buckets <plan-id>              # columns of a plan
 outlook-cli planner tasks --plan <plan-id> --json  # also --bucket <id>; no flag lists tasks assigned to you
 outlook-cli planner show <task-id>                 # description and checklist
