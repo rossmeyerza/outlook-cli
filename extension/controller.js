@@ -5,12 +5,12 @@
 (() => {
   "use strict";
 
-  const VERSION = 6;
+  const VERSION = 7;
   const childUrls = new WeakMap();
   const diagnostics = globalThis.OcliDiagnostics || (typeof require === "function" ? require("./diagnostics.js") : null);
   const CHANNEL = "__ocliCopilot";
   const CLICKABLE = {
-    openPane: ["Chat with Copilot"],
+    openPane: ["Chat with Copilot", "Open Copilot", "Open Copilot Chat"],
     send: ["Send"],
     newChat: ["New chat", "New conversation", "Start new chat"],
   };
@@ -49,8 +49,13 @@
     return r.width > 0 && r.height > 0;
   }
 
+  // Office adds a keyboard hint to some labels, such as "Open Copilot Chat (Alt+C)"
+  // in Excel (2026-11-18). Strip only a trailing modifier+key hint in brackets, so
+  // the allowlist and FORBIDDEN still compare the real name.
+  const SHORTCUT_HINT = /\s*\((?:(?:alt|ctrl|control|shift|cmd|command|option|meta)\s*\+\s*)+[a-z0-9]{1,3}\)$/i;
+
   function labelOf(el) {
-    return (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+    return (el.getAttribute("aria-label") || el.getAttribute("title") || "").trim().replace(SHORTCUT_HINT, "");
   }
 
   function findByLabel(labels, { editable = false, root = document } = {}) {
@@ -161,7 +166,9 @@
       try { url = new URL(childUrls.get(el) || el.src); } catch (e) { continue; }
       if (!/\.resources\.office\.net$|\.officeapps\.live\.com$/.test(url.hostname)) continue;
       const reason = diagnostics.visibilityReason(el, window);
-      frames.push({ url: url.origin + url.pathname, visible: reason === null, visibilityReason: reason });
+      const entry = { url: url.origin + url.pathname, visible: reason === null, visibilityReason: reason };
+      if (reason === "clipped" && diagnostics.clipDetail) entry.clip = diagnostics.clipDetail(el, window);
+      frames.push(entry);
     }
     return frames;
   }

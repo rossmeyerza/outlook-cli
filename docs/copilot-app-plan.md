@@ -5,6 +5,7 @@ Status: experimental implementation added (2026-10-22). Live tab discovery passe
 ## Implementation status
 
 - Version 0.4.0 (2026-11-06) fixes the problems in "Incident 2026-11-06" below. Synthetic tests pass. Live checks are still to do; see the release checklist.
+- Version 0.4.1 (2026-11-18) fixes Excel pane opening after an Office UI change: a new open-button label (`Open Copilot`) and a false `clipped` result for the open pane. One live Excel check passed; see "Live check 2026-11-18" below.
 
 - Bridge, installer, tab status, Excel and PowerPoint adapters, CLI and MCP entry points: implemented. CLI live reads and edits passed for Excel and PowerPoint. PowerPoint automatic pane opening passed with extension 0.2.0 after a refreshed tab was left closed. Earlier opening attempts failed, so cold-start reliability still needs more checks. MCP has fake-client tests, not live acceptance.
 - Version 0.3.1 corrects drawer readiness: a mounted pane frame can report a locally visible input even when its parent drawer is closed. Ross confirmed this after the first automated Word send failed. Parent-side iframe geometry, CSS, clipping and hidden ancestor checks now gate pane selection and pre-send readiness. A complete visible embedding chain to the top frame is required. Synthetic tests pass; live validation remains pending. Controller version 3 is reinjected on extension reload; the Word hook remains revision 3.
@@ -36,6 +37,8 @@ Status: experimental implementation added (2026-10-22). Live tab discovery passe
 - [ ] 0.4.0: `--new-chat` on a fresh pane (skipped) and on a pane with a conversation (clicked).
 - [ ] 0.4.0: a short `--timeout` ends with `status: timeout` and a phase; `app status` shows `uncertain`; `app reset` clears it.
 - [ ] 0.4.0: find the label of the PowerPoint Stop control with `inspect` while Copilot works. The settle fallback needs it, or a finished task status.
+- [x] 0.4.1: Excel with the pane closed: `ask` opens the pane by itself, and the edit is in the saved file after the user clicks Done (2026-11-18).
+- [ ] 0.4.1: check PowerPoint and Word pane opening with the new label list.
 
 Live checks (2026-10-23): after readiness and exact-prompt correlation changes, Excel returned the correct sample-table description. A follow-up set only Sheet1!E1 to `Bridge live check 2026-10-23`. The saved workbook was downloaded and checked: the marker is present, all 12 original cells are unchanged, and `xl/styles.xml` is unchanged. Graph reported a newer modification time before downloads contained the edit, so timestamp evidence is not sufficient. A later read was refused because the prompt box contained a draft; it was not cleared. Evidence files are in `/tmp/copilot-live-checks/`.
 
@@ -44,6 +47,8 @@ PowerPoint initially opened the disposable `Presentation 4.pptx`, but its Copilo
 Extension 0.2.0 diagnostics confirmed the closed PowerPoint pane was mounted but lacked a visible prompt. A subsequent CLI request opened it automatically and returned slide 1's correct title, with no action events. Word's dummy document has a ready prompt and an **Allow editing** menu; its protocol differs from Excel. No Word prompt was sent by the CLI.
 
 Word checks (2026-10-23, extension 0.3.2, controller v5): with the drawer open, the CLI sent a read-only prompt to `dummy_document.docx`. Copilot returned a one-sentence summary and called only `get_active_document_html`. With the drawer closed, the bridge opened the drawer and the same prompt completed. A third prompt added one paragraph at the end. The actions were `get_active_document_html`, `begin_edit_session`, `run_js_code` and `end_edit_session`. No approval came up. The saved `.docx` was downloaded and compared with a copy from before the edit. The new last paragraph is `Bridge live check 2026-10-23.` (Copilot added the full stop). All 17 original paragraphs keep their text and order. Word Online wrote the bold run of the previous last paragraph again as `<w:b w:val="1"/><w:bCs w:val="1"/>`, with the same meaning. Only `word/settings.xml` (one new rsid) and `docProps/core.xml` changed in the other parts. Evidence is in `/tmp/copilot-live-checks/word-v5-*` and `/tmp/copilot-live-checks/word-edit/`.
+
+Live check 2026-11-18 (extension 0.4.1, WSL Chrome, scratch `Book.xlsx` in the tester's OneDrive): extension 0.4.0 stopped at `wait_editor` with "no Copilot button", and nothing was sent. `inspect` showed the editor frame's button labelled `Open Copilot`, and with the pane opened by hand, the editor reported the pane iframe as `clipped`. The new `clip` detail named the clipping ancestor as `<html>` with `overflow: hidden` and zero height, while the pane sat on screen at 1528-1907 x 216-1009 in a 1908 x 1032 viewport. With 0.4.1 and the pane closed, the phases ran `wait_editor`, `open_pane`, `wait_pane`, `arm`, `send`, `wait_answer`, and the request completed. Copilot ran three `executeScript` actions (one on `A1:C1`) and said it added the header row. A Graph read straight afterwards showed `A1:C1` empty: Excel holds Copilot's edits until the user clicks Done in the pane, which the bridge never clicks. After Done, Graph read `Sheet1!A1:C1` as Name, Date, Amount, and the used range was `A1:C1`, so nothing else changed.
 
 Chrome reload initially raced the previous native host's socket lock. A bounded lock wait and regression test now cover that case.
 
@@ -69,7 +74,7 @@ A spike extension in the scratchpad controlled real tabs for `Book 1.xlsx` and `
 
 | | Excel | PowerPoint |
 |---|---|---|
-| Open the pane | Button `aria-label="Chat with Copilot"` in the editor frame | Same |
+| Open the pane | Button `aria-label="Chat with Copilot"` in the editor frame (2026-11-18: `Open Copilot`, bottom right, tooltip `Open Copilot Chat (Alt+C)`) | Same |
 | Editor frame | `*.officeapps.live.com/x/_layouts/xlviewerinternal.aspx` | `*.officeapps.live.com/pods/ppt.aspx` |
 | Pane frame | `*.resources.office.net/.../taskpane.html` ("Excel Copilot Chat Add-in") | Same host ("Copilot Chat") |
 | Prompt box | `contenteditable`, `aria-label="Chat input"` | `contenteditable`, `aria-label="Type your message"` |

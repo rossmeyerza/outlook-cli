@@ -36,6 +36,27 @@ test("the click allowlist cannot approve, keep, undo, or change editing", () => 
   assert.throws(() => controller.safeClick(fakeElement("Share"), controller.CLICKABLE.send), /refused/);
 });
 
+test("the Excel open button with a shortcut hint is found and clickable, other suffixes are not", () => {
+  const target = fakeElement("Open Copilot Chat (Alt+C)");
+  const nodes = [target];
+  let i = 0;
+  const root = { createTreeWalker: () => ({ currentNode: nodes[0], nextNode: () => nodes[++i] }) };
+  assert.equal(controller.findByLabel(controller.CLICKABLE.openPane, { root }), target);
+  let clicks = 0;
+  target.click = () => { clicks += 1; };
+  controller.safeClick(target, controller.CLICKABLE.openPane);
+  assert.equal(clicks, 1);
+  // Excel on the web, 2026-11-18: the button's accessible label is "Open Copilot";
+  // "Open Copilot Chat (Alt+C)" is only its tooltip.
+  const excel = fakeElement("Open Copilot");
+  const excelNodes = [excel];
+  let j = 0;
+  const excelRoot = { createTreeWalker: () => ({ currentNode: excelNodes[0], nextNode: () => excelNodes[++j] }) };
+  assert.equal(controller.findByLabel(controller.CLICKABLE.openPane, { root: excelRoot }), excel);
+  assert.throws(() => controller.safeClick(fakeElement("Approve (Alt+A)"), ["Approve"]), /refused/);
+  assert.throws(() => controller.safeClick(fakeElement("Open Copilot Chat (draft)"), controller.CLICKABLE.openPane), /refused/);
+});
+
 test("the Stop control is detected for status only and is never clickable", () => {
   for (const label of ["Stop", "Stop generating", "Stop responding"]) assert.match(label, controller.STOP_LABEL);
   assert.doesNotMatch("Stopwatch", controller.STOP_LABEL);
