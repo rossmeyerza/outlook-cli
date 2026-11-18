@@ -1,6 +1,6 @@
 # outlook-cli
 
-CLI tool for managing Outlook email, drafts, and contacts via the Outlook REST API v2.0.
+CLI tool and MCP server for Outlook mail, drafts, calendar, contacts and tasks, Microsoft Planner, Teams, OneDrive and SharePoint files, and Microsoft 365 Copilot. It uses the Outlook REST API v2.0 and Microsoft Graph. A Chrome extension adds Copilot in Office web apps and Teams transcript export.
 
 Authentication is built into this repo. The CLI uses Playwright to open Outlook Web, capture Microsoft bearer tokens, and cache them locally. Single-account installs use `~/.local/share/outlook-cli/session_state/`; account profiles use isolated stores under `~/.local/share/outlook-cli/accounts/<name>/`.
 
@@ -174,6 +174,17 @@ outlook-cli planner bucket-delete <bucket-id> --yes   # empty buckets only: a bu
 Planner uses Microsoft Graph and the existing Graph token. Commands take full IDs from the list commands, not indexes. An ID can start with a dash: put `--` before the positional arguments (`planner show -- <task-id>`) and use `--option=value` for option values.
 Writes preview unless you add `--yes`. Writes never retry, and updates send the current etag so a concurrent edit fails.
 `--assign` notifies the person. Priorities: `urgent`, `important`, `medium`, `low`. Graph has no Planner comment API, so put notes in `--description`.
+
+#### Planner notes
+
+- **Create plans in Planner or Teams.** This tool cannot create a plan or a group. It works on plans that exist.
+- **Find a plan.** `planner plans` lists only plans that you pinned or opened recently. To find any other plan, run `planner groups --search <name>` and then `planner plans --group <group-id>`.
+- **Who can work on a plan.** Planner has no member list of its own. Access comes from the Microsoft 365 group that owns the plan. `planner members` lists that group.
+- **Assign people.** `--assign` on `create` and `update` sets the assignee. The person must be a member of the group to open the plan. Use `planner member-add` first.
+- **Add and remove members.** `member-add` also gives the person the group mailbox and the SharePoint site, and the service emails them. `member-remove` takes that access away. Tasks that are assigned to a removed person stay assigned, and the preview counts them. You must own the group. The command refuses to remove a group owner or the last member.
+- **Bucket order.** `planner buckets` lists buckets from left to right, as the board shows them. A new bucket goes to the end. `bucket-update --first` puts a bucket on the left. `--after <bucket-id>` puts it right of that bucket.
+- **Delete a bucket.** `bucket-delete` works only on an empty bucket. The API leaves the tasks of a deleted bucket attached to a bucket that no longer exists, and Planner hides them. Move or delete the tasks first.
+- **Pins.** `pin` and `unpin` change only your own My plans list. They use the Graph beta API. The service accepts one pin change in each request, and a change can take a few seconds to show.
 
 ### Contacts
 
@@ -373,6 +384,8 @@ Use disposable test files first. Excel read-only and single-cell edit checks pas
 
 `--new-chat` starts a new pane conversation. Otherwise, the pane keeps its current conversation. `--open` permits a new tab. Without it, the file must already be open. `--wait-saved` checks Graph modification time. A changed timestamp is evidence of a file update, not proof that these specific edits were saved.
 
+The same extension also exports Teams meeting transcripts. See [Export a meeting transcript](#export-a-meeting-transcript).
+
 The `copilot_app` MCP tool returns the same result. It is marked as destructive and non-idempotent. The bridge uses a same-user Unix socket and Chrome native messaging. It does not capture Office tokens. See [the implementation plan and release checklist](docs/copilot-app-plan.md).
 
 ### Auth and config
@@ -457,7 +470,7 @@ Register it with Pi in `~/.pi/agent/mcp.json`:
 "outlook": {
   "command": "/home/ross/.local/lib/outlook-draft-cli/.venv/bin/outlook-cli",
   "args": ["mcp"],
-  "description": "Outlook mail, drafts, calendar, contacts, tasks, Teams and files, with confirmed sending",
+  "description": "Outlook mail, drafts, calendar, contacts, tasks, Planner, Teams and files, with confirmed sending",
   "timeout": 120
 }
 ```
@@ -487,6 +500,7 @@ Rules:
 - New contact, task, calendar and file changes preview by default and require explicit confirmation.
 - File uploads require explicit overwrite approval to replace an existing file. New remote writes have no automatic retries.
 - Mailbox settings, account administration, interactive authentication, signatures and the gateway remain outside this parity scope.
+- The Planner write tools preview by default: `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin`, `planner_plan_unpin`, `planner_member_add` and `planner_member_remove`. Set `confirm=true` only after approval. They never retry. `planner_member_add` emails the new members and gives them group access. `planner_member_remove` removes that access. `planner_bucket_delete` refuses a bucket that holds tasks.
 - Calendar removal tools preview by default. Set `confirm=true` only after explicit approval of the exact event and scope.
 - Whole-series removal also requires `allow_series=true`. Organiser meetings with attendees require `cal_cancel`, which notifies attendees.
 - Use `cal_respond` to decline an invitation. Calendar removal does not delete the invitation email.
@@ -544,19 +558,24 @@ outlook_draft/
   links.py             # SharePoint/OneDrive URL extraction and Graph share ID encoding
   copilot.py           # Microsoft 365 Copilot StreamHub client, file annotations, answer parsing
   outlook_client.py    # Outlook REST API v2.0 client (mail, drafts, contacts)
+  planner.py           # Planner Graph calls and the preview-then-confirm logic shared by CLI and MCP
   token_manager.py     # Token loading, validation, triggers reauth
   commands/
     calendar.py        # Calendar subcommands
     contacts.py        # Contacts subcommands
     copilot.py         # Copilot ask command and file resolution
     mail.py            # Mail subcommands
+    planner.py         # Planner subcommands
     signature.py       # Signature fetch via OWA API interception
     tasks.py           # Tasks subcommands
     teams.py           # Teams read subcommands
   mcp/
     server.py          # FastMCP app, tool registration, stdio run()
     clients.py         # Per-call clients with no-reauth token handling
-    mail.py drafts.py calendar.py contacts.py tasks.py teams.py files.py copilot.py auth.py  # Tool modules
+    mail.py drafts.py calendar.py contacts.py tasks.py planner.py teams.py files.py copilot.py auth.py  # Tool modules
+extension/
+  sw.js hook.js controller.js  # Chrome extension: Copilot bridge for Excel and PowerPoint on the web
+  transcript/                  # Same extension: Teams meeting transcript export (popup and capture script)
 ```
 
 Auth flow: `token_manager.py` reads local tokens from `~/.local/share/outlook-cli/session_state/tokens.json`. Outlook features use the Outlook token, Teams browsing and files use the Microsoft Graph token, and `copilot` uses the Copilot token (audience `https://substrate.office.com/sydney`, saved under the key `substrate.office.com/sydney`). If a token is expired, the CLI runs the built-in auth flow from `outlook_draft/auth.py`. For the Copilot token, it first tries the saved browser session.
