@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # outlook-cli installer and updater
-# Usage: curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/rossmeyerza/outlook-cli/main/install.sh | bash
 # Or run directly after download.
 
 set -euo pipefail

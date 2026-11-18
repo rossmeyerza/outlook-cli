@@ -9,7 +9,7 @@ Authentication is built into this repo. The CLI uses Playwright to open Outlook 
 ### One-line installer (recommended)
 
 ```bash
-curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rossmeyerza/outlook-cli/main/install.sh | bash
 ```
 
 Requires Python 3.12+ and `git`. The script will:
@@ -21,8 +21,7 @@ Requires Python 3.12+ and `git`. The script will:
 - Write your config to `~/.config/outlook-cli/.env` automatically
 - Symlink `outlook-cli` to `~/.local/bin`
 
-You can read the full script before running it at:
-`https://outlook-cli.21436587.xyz/install.sh`
+You can review the [installer source](https://github.com/rossmeyerza/outlook-cli/blob/main/install.sh) before you run it.
 
 ### Manual installation
 
@@ -50,7 +49,7 @@ outlook-cli --help
 Re-run the installer at any time to pull the latest changes:
 
 ```bash
-curl -fsSL https://outlook-cli.21436587.xyz/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/rossmeyerza/outlook-cli/main/install.sh | bash
 ```
 
 The script detects an existing install and runs `git pull` and updates dependencies without touching `~/.config/outlook-cli/.env`.
@@ -88,6 +87,27 @@ Results from `mail unread` or `mail search` are cached to disk, so `mail read <n
 See [Mail features](docs/mail-features.md) for bulk actions, complete conversations, search filters, attachments, draft edits, forward drafts, categories, rules and safety controls.
 Categories and rules need additional Microsoft Graph mailbox permissions.
 The current local token does not include those permissions.
+
+### Microsoft 365 group inboxes
+
+```bash
+outlook-cli groups list --search "Project"
+outlook-cli groups threads GROUP_ID -n 10
+outlook-cli groups posts GROUP_ID THREAD_ID
+outlook-cli groups watch GROUP_ID --poll 60 --json
+```
+
+Use the group ID from `groups list` and the thread ID from `groups threads`.
+These commands read the inboxes shown under **Groups** in Outlook through Microsoft Graph.
+The Graph token needs access to the group and the [group conversation read permission or an equivalent permission](https://learn.microsoft.com/en-us/graph/api/group-list-threads?view=graph-rest-1.0).
+
+The watcher reports new messages and replies from the time it starts.
+Use `--after 2026-11-18T09:00:00Z` to include messages received at or after a specific time.
+Press Ctrl+C to stop it.
+With `--json`, each line contains one message's metadata, including its post and thread IDs.
+Use `groups posts` to read the message body.
+The watcher keeps its position and suppresses repeat results during each run. After a restart, use `--after` to check for messages received while it was stopped.
+The watcher checks the last two minutes again on each poll to allow for delays in Graph.
 
 ### Drafts
 

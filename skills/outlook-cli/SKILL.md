@@ -1,6 +1,6 @@
 ---
 name: outlook-cli
-description: "Use when an agent needs to work with Microsoft 365 through the local outlook-cli: Outlook mail search/read/drafts/attachments/links, calendar agenda/events/availability/find-time/rooms/invitations, contacts, tasks, Teams chats/messages/attachments, OneDrive/SharePoint files, mailbox settings, signatures, or auth/config checks."
+description: "Use the local outlook-cli for Outlook mail, drafts, attachments, Microsoft 365 group inboxes and monitoring, calendar, contacts, tasks, Teams, OneDrive, SharePoint, mailbox settings, signatures, and authentication."
 ---
 
 # Outlook CLI
@@ -111,6 +111,24 @@ Typical workflows:
 - “Find the latest email about X”: `mail search "X" --json`, then `mail read <index> --json`.
 - “Get the deck from that email”: `mail attachments <index> --json`, then download the requested attachment.
 - “Find SharePoint links in that email”: `mail links <index> --share-only --json`.
+
+## Microsoft 365 Group Inboxes
+
+Use the CLI to read and monitor shared inboxes shown under **Groups** in Outlook.
+
+```bash
+outlook-cli groups list --search "Group name" --json
+outlook-cli groups threads GROUP_ID --count 10 --json
+outlook-cli groups posts GROUP_ID THREAD_ID --json
+outlook-cli groups watch GROUP_ID --poll 60 --json
+```
+
+Use the full group ID from `groups list` and the full thread ID from `groups threads`.
+The active account needs access to the group. The Microsoft Graph token needs `Group-Conversation.Read.All` or an equivalent permission.
+
+The watcher runs in the foreground and polls every 60 seconds by default. It reports new posts and replies from the time it starts. With `--json`, read stdout one line at a time. Each line contains one post's metadata. Use `groups posts` to read the body.
+
+Press Ctrl+C to stop. To check for messages received during a stop, add `--after 2026-11-18T09:00:00Z` with the required start time. Deduplication applies within each run.
 
 ## Drafts
 

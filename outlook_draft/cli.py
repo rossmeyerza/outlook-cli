@@ -15,6 +15,7 @@ from .commands import (
     drafts,
     files,
     gateway_parser,
+    groups,
     mail,
     mcp,
     planner,
@@ -91,7 +92,7 @@ def _selected_command(parser: argparse.ArgumentParser, args: argparse.Namespace)
 def _print_plan(args: argparse.Namespace, command: str) -> None:
     target_fields = {"message_id", "draft_id", "event_id", "task_id", "chat_id", "chat_ref",
                      "name", "folder", "parent", "site", "library", "item_id", "file_id",
-                     "message_ids", "action", "id"}
+                     "message_ids", "action", "id", "group_id", "thread_id"}
     targets = {key: value for key, value in vars(args).items()
                if key in target_fields and value is not None}
     plan = {"kind": "plan", "command": command, "targets": targets}
@@ -153,6 +154,7 @@ def build_parser(account_override: str | None = None) -> argparse.ArgumentParser
     account.register(sub)
     drafts.register(sub)
     mail.register(sub)
+    groups.register(sub)
     tasks.register(sub)
     planner.register(sub)
     calendar.register(sub)

@@ -15,7 +15,7 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **112 executable parser paths** and **115 distinct operations** in the table.
+There are **116 executable parser paths** and **119 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
 The MCP server registers **90 tools**.
@@ -30,6 +30,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Authentication | 4 |
 | Configuration | 1 |
 | Mail | 26 |
+| Microsoft 365 groups | 4 |
 | Drafts | 8 |
 | Calendar | 12 |
 | Contacts | 4 |
@@ -38,12 +39,12 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Teams | 10 |
 | Mailbox | 2 |
 | Files | 9 |
-| Copilot | 6 |
+| Copilot | 7 |
 | Signatures | 1 |
 | Gateway | 3 |
 | Shell completion | 1 |
 | MCP process | 1 |
-| **Total** | **98** |
+| **Total** | **119** |
 
 ## Account, authentication and configuration
 
@@ -96,6 +97,15 @@ Its counts cover fetched results, not an assumed mailbox total.
 Keyword searches can retain a limit that the server controls.
 The last live check returned HTTP 403 for category and rule reads because the token lacked mailbox-settings permissions.
 That permission failure is separate from MCP implementation coverage.
+
+## Microsoft 365 group inboxes
+
+| CLI command | MCP coverage | MCP tool | Difference or limit |
+|---|---|---|---|
+| `groups list` | Full | `planner_groups` | Lists the Microsoft 365 groups you belong to. |
+| `groups threads` | Missing | None | Lists threads in the group inbox. |
+| `groups posts` | Missing | None | Reads posts in a group thread. |
+| `groups watch` | Missing | None | Polls the group inbox in the foreground. |
 
 ## Drafts
 
