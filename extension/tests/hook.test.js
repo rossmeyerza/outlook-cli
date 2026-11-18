@@ -63,7 +63,8 @@ function hook(pathname = "/x/xlviewerinternal.aspx", prompt = "Read the table") 
   return { signal, pptSignal, recv, sending, reply, diagnostics,
     // Plain copies: objects from the vm context have another realm's prototypes.
     events: () => JSON.parse(JSON.stringify(emitted.filter((m) => m.kind === "event" && m.event.type !== "signal").map((m) => m.event))),
-    signals: () => emitted.filter((m) => m.kind === "event" && m.event.type === "signal").map((m) => m.event.kind) };
+    signals: () => emitted.filter((m) => m.kind === "event" && m.event.type === "signal").map((m) => m.event.kind),
+    signalEvents: () => emitted.filter((m) => m.kind === "event" && m.event.type === "signal").map((m) => m.event) };
 }
 
 test("startup signals do not bind the active request", () => {
@@ -87,7 +88,7 @@ test("schema diagnostics contain names, never frame values", () => {
   h.signal("PRIVATE_REQUEST", "PRIVATE_PROMPT");
   h.reply("PRIVATE_REQUEST");
   const result = h.diagnostics();
-  assert.equal(result.revision, 4);
+  assert.equal(result.revision, 6);
   // Diagnostics carry the binding mode and counts, never ids or prompt text.
   assert.equal(result.request.bound, null);
   assert.equal(result.request.signals, 1);
@@ -169,4 +170,40 @@ test("each prompt signal is counted by class, so a double send is visible", () =
   assert.deepEqual([...h.signals()], ["ignored", "bound", "same", "related", "repeated"]);
   const stats = h.diagnostics().request;
   assert.deepEqual({ ...stats }, { bound: "exact", signals: 5, ignored: 1, same: 1, related: 1, repeated: 1 });
+});
+
+
+test("an oversized frame while armed reports its size, never its content", () => {
+  const h = hook("/pods/ppt.aspx");
+  h.recv({ ops: [{ items: [{ body: { H_: { T_: "AugLoop_Big" }, blob: "PRIVATE_".repeat(1100000) } }] }] });
+  const events = h.events();
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, "oversized");
+  assert.equal(events[0].direction, "recv");
+  assert.equal(events[0].megabytes, 8);
+  assert(!JSON.stringify(events).includes("PRIVATE_"));
+});
+
+
+test("after Send, a prompt with task operation fields binds when its words match", () => {
+  const prompt = "Update slide 18:\n- Key activities\n- Deliverables and PICOS";
+  const h = hook("/pods/ppt.aspx", prompt);
+  h.sending();
+  // Seen 2026-11-16: the editor changed the text, and the signal had operation fields.
+  h.pptSignal("q1", "Update slide 18: Key activities; Deliverables & PICOS.", { taskOperationParams: { kind: "New", resumeId: "" } });
+  assert.deepEqual(h.events()[0], { type: "bound", mode: "similar" });
+});
+
+test("an ignored signal reports its reason, score and value types, never text", () => {
+  const h = hook("/pods/ppt.aspx", "Fix slide 2 title");
+  h.pptSignal("early", "Fix slide 2 title PRIVATE_EXTRA");
+  h.sending();
+  h.pptSignal("op", "Something PRIVATE_ else entirely", { taskOperationParams: { mode: "Resume", count: 2, note: "PRIVATE_ free text here", flag: true } });
+  const ignored = JSON.parse(JSON.stringify(h.signalEvents()));
+  assert.equal(ignored[0].reason, "outside_window");
+  assert.equal(ignored[1].reason, "operation");
+  assert.equal(ignored[1].score, 0);
+  assert.deepEqual(ignored[1].operation, { mode: "string:Resume", count: "number:2", note: "string", flag: "boolean:true" });
+  assert(!JSON.stringify(ignored).includes("PRIVATE_"));
+  assert.equal(h.events().length, 0);
 });

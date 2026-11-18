@@ -15,7 +15,7 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **107 executable parser paths** and **110 distinct operations** in the table.
+There are **108 executable parser paths** and **111 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
 The MCP server registers **86 tools**.
@@ -238,6 +238,7 @@ Uploads and downloads retain the CLI's in-memory file buffers.
 | `copilot ask` | Partial | `copilot_ask` | Files, site, library and explicit conversation ID; no cached continue, timeout or stream controls. |
 | `copilot app status` | Local only | None | No bridge-status tool. |
 | `copilot app inspect` | Local only | None | No bridge-inspection tool. |
+| `copilot app open-pane` | Local only | None | Diagnostic. No MCP tool. |
 | `copilot app reset` | Local only | None | No operation to clear an uncertain tab state. |
 | `copilot app ask` | Partial | `copilot_app` | File, app, site, library, new chat, open tab and save wait; no timeout option. |
 | `copilot extension install` | Local only | None | Installs the local browser extension and native host. |

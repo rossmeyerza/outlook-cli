@@ -5,7 +5,13 @@
   "use strict";
   if (window.__ocliCopilotHook) return;
 
-  const REVISION = 4;
+  const REVISION = 6;
+  // Share of the typed prompt's words that a signal query must contain to bind
+  // a signal that looks like a task operation, inside the window after Send.
+  const SIMILAR = 0.8;
+  // Larger frames are not parsed. PowerPoint sends the document model over
+  // AugLoop, so a large deck can exceed this. While armed, count them.
+  const MAX_FRAME = 8 * 1024 * 1024;
   const CHANNEL = "__ocliCopilot";
   const AUGLOOP_HOST = /(^|\.)(augloop\.office\.com|augloop\.svc\.cloud\.microsoft)$/i;
   const RELEVANT = /OfficeAgent|PptAgent|ExecutionCorrelated|Core_TaskInformation/;
@@ -49,7 +55,13 @@
   };
 
   function handle(direction, data) {
-    if (typeof data !== "string" || data.length > 8 * 1024 * 1024 || !data.includes("AugLoop_")) return;
+    if (typeof data !== "string") return;
+    if (data.length > MAX_FRAME) {
+      // Size only. Never the content.
+      if (armed) post({ kind: "event", event: { type: "oversized", direction, megabytes: Math.round(data.length / 1048576) } });
+      return;
+    }
+    if (!data.includes("AugLoop_")) return;
     for (const raw of adapters.common.parseFrame(data)) {
       // Schema names and property names only. Never retain values or raw frames.
       observeSchemas(direction, raw);
@@ -91,8 +103,36 @@
     post({ kind: "event", event: { type: "bound", mode } });
   }
 
-  // One event per prompt signal while armed, with its class only.
-  const noteSignal = (kind) => post({ kind: "event", event: { type: "signal", kind } });
+  // One event per prompt signal while armed: its class, and for an ignored
+  // signal the reason, a word-overlap score and value types. Never text or ids.
+  const noteSignal = (kind, detail) => post({ kind: "event", event: { type: "signal", kind, ...(detail || {}) } });
+
+  const words = (text) => text.toLowerCase().split(" ").map((w) => w.replace(/[^\p{L}\p{N}]/gu, "")).filter(Boolean);
+
+  // Share of the expected prompt's words that the query contains.
+  function overlap(query, wanted) {
+    const expectedWords = words(wanted);
+    if (!query || !expectedWords.length) return 0;
+    const have = new Set(words(query));
+    return expectedWords.filter((w) => have.has(w)).length / expectedWords.length;
+  }
+
+  // Field names with value types, plus short enum-like values. No free text.
+  function operationShape(signal) {
+    const params = signal.taskOperationParams || (signal.content && signal.content.taskOperationParams);
+    if (params === null || params === undefined) return null;
+    if (typeof params !== "object") return { _: typeof params };
+    const shape = {};
+    for (const [key, value] of Object.entries(params).slice(0, 12)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(key)) continue;
+      const kind = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+      // Booleans, numbers and one-word enum values only. Anything with spaces can be free text.
+      const shown = typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)) ? String(value)
+        : typeof value === "string" && /^[A-Za-z][A-Za-z0-9_]{0,30}$/.test(value) ? value : null;
+      shape[key] = shown !== null && kind !== "object" && kind !== "array" ? `${kind}:${shown}` : kind;
+    }
+    return shape;
+  }
 
   // Returns an error message, or null. Only the exact prompt of this request,
   // or the first prompt after Send, binds the request.
@@ -105,11 +145,17 @@
     const match = exact || (Boolean(query) && query === expected);
     if (!id) return null;
     if (!binding) {
+      const inWindow = Boolean(sendingAt) && Date.now() - sendingAt < FALLBACK_WINDOW_MS;
+      const operation = isOperation(signal);
+      const score = overlap(query, expected);
       if (match) bind(id, query, exact ? "exact" : "normalised");
-      else if (query && sendingAt && Date.now() - sendingAt < FALLBACK_WINDOW_MS && !isOperation(signal)) bind(id, query, "after_send");
+      else if (query && inWindow && !operation) bind(id, query, "after_send");
+      // PowerPoint (2026-11-16) can send task operation fields with a new prompt.
+      else if (query && inWindow && score >= SIMILAR) bind(id, query, "similar");
       else {
         stats.ignored += 1;
-        noteSignal("ignored");
+        noteSignal("ignored", { reason: !query ? "no_query" : !inWindow ? "outside_window" : operation ? "operation" : "mismatch",
+          score: Math.round(score * 100) / 100, operation: operationShape(signal) });
         return null;
       }
       noteSignal("bound");

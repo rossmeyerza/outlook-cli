@@ -5,7 +5,7 @@
 (() => {
   "use strict";
 
-  const VERSION = 7;
+  const VERSION = 8;
   const childUrls = new WeakMap();
   const diagnostics = globalThis.OcliDiagnostics || (typeof require === "function" ? require("./diagnostics.js") : null);
   const CHANNEL = "__ocliCopilot";
@@ -153,6 +153,19 @@
     return null;
   }
 
+  // The Office mode switcher shows Editing, Reviewing or Viewing. Evidence
+  // only: never clicked, and null when no such control is visible.
+  const MODE_LABEL = /^(editing|reviewing|viewing)\b/i;
+  function documentMode() {
+    for (const el of allElements(document)) {
+      if (!el.getAttribute || (el.tagName !== "BUTTON" && !["button", "combobox"].includes(el.getAttribute("role")))) continue;
+      const text = (el.getAttribute("aria-label") || el.getAttribute("title") || el.innerText || "").trim();
+      const found = MODE_LABEL.exec(text);
+      if (found && !/allow/i.test(text) && visible(el)) return found[1].toLowerCase();
+    }
+    return null;
+  }
+
   async function embeddedFrames() {
     const elements = [...allElements(document)].filter((el) => el.tagName === "IFRAME");
     for (const el of elements) {
@@ -182,6 +195,7 @@
       const button = findByLabel(CLICKABLE.openPane);
       info.paneButton = Boolean(button);
       info.paneButtonState = button ? (button.getAttribute("aria-expanded") || button.getAttribute("aria-pressed") || null) : null;
+      info.mode = documentMode();
     } else if (role === "pane") {
       info.promptBox = Boolean(findByLabel(PROMPT_LABELS, { editable: true }));
       info.sendButton = Boolean(findByLabel(CLICKABLE.send));

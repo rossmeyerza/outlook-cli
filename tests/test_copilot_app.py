@@ -117,3 +117,56 @@ def test_cli_reset(monkeypatch, capsys):
     out = capsys.readouterr()
     assert "cleared uncertain state" in out.out
     assert "Check it" in out.err
+
+
+class _Bridge:
+    def __init__(self, result):
+        self.result = result
+
+    def ask(self, *args, **kwargs):
+        yield {"type": "phase", "phase": "wait_answer"}
+        yield {"type": "sent"}
+        yield {"type": "result", "result": self.result}
+
+
+def test_sent_timeout_checks_graph_once_and_keeps_applied_unknown(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    calls = []
+    def modified(*args):
+        calls.append(args)
+        return datetime.now(UTC) + timedelta(seconds=5)
+    monkeypatch.setattr(app, "_modified_at", modified)
+    result = {"status": "timeout", "sent": True, "applied": None, "actions": []}
+    out = app.ask_app(object(), "Edit slide 18", {"app": "powerpoint"}, wait_saved=True, bridge=_Bridge(result))
+    assert out["saved"] is True
+    assert out["applied"] is None
+    assert len(calls) == 1
+    assert "not proof" in out["saveEvidence"]
+
+
+def test_unsent_error_skips_the_graph_check(monkeypatch):
+    monkeypatch.setattr(app, "_modified_at", lambda *a: pytest.fail("no Graph call expected"))
+    result = {"status": "error", "sent": False, "applied": False, "actions": []}
+    out = app.ask_app(object(), "Edit", {"app": "powerpoint"}, wait_saved=True, bridge=_Bridge(result))
+    assert out["saved"] is None
+
+
+def test_graph_failure_after_timeout_does_not_hide_the_result(monkeypatch):
+    def fail(*args):
+        raise OSError("network")
+    monkeypatch.setattr(app, "_modified_at", fail)
+    result = {"status": "timeout", "sent": True, "applied": None, "actions": []}
+    out = app.ask_app(object(), "Edit", {"app": "powerpoint"}, wait_saved=True, bridge=_Bridge(result))
+    assert out["status"] == "timeout"
+    assert out["saved"] is None
+    assert "Graph check failed" in out["saveEvidence"]
+
+
+def test_status_text_marks_a_tab_that_does_not_answer(monkeypatch, capsys):
+    class Client:
+        def status(self):
+            return {"host": 1, "extension": "0.4.1", "tabs": [
+                {"tabId": 5, "title": "Big.pptx", "unresponsive": True, "editorReady": False, "app": None, "paneOpen": False, "busy": False}]}
+    monkeypatch.setattr(command, "BridgeClient", Client)
+    command.cmd_status(argparse.Namespace(json=False))
+    assert "5: not answering (frozen or busy) | Big.pptx" in capsys.readouterr().out

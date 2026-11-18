@@ -122,6 +122,30 @@ Signal count: `inspect` showed two `PptAgentExperimentalSignal` sends. These cou
 
 Observed PowerPoint schemas (names and keys only): `PptAgentExperimentalOutputAnnotation` (`finalResponse`, `responseStatus`, `queryId`, `taskId`, `sydneyConversationId`), `PptAgentExperimentalOutputAnnotationV1` (`pptEditsPayload`, `responseStatus`, `queryId`), `Core_TaskInformationAnnotation` (`taskStatus`, `ownerId`). Five V1 annotations matched five `CopilotActionResponseObject` sends, so V1 carries the edit batches.
 
+## Incident 2026-11-13 (extension 0.3.2 still loaded)
+
+Target: a shared SharePoint deck of about 90 MB with 24 to 30 slides. The caller ran `copilot_app` from the MCP server with `wait_saved`.
+
+1. `open_tab` and `new_chat`: "The Copilot pane did not open in time." The same call again gave the same error.
+2. Ross opened the file and the pane by hand, in a new tab. The next call used that tab, so the tab ID changed. Copilot applied the edit, but the call ended with `timeout`, no conversation ID, no events and `applied: false`.
+3. The next call was refused because the tab was uncertain. After a tab reload, the pane again did not open in time. Other automation (`surf`) then could not control the tab, and a screenshot timed out.
+
+Cause: Chrome loads `~/.local/share/outlook-cli/copilot-extension`, which still held 0.3.2. The 0.4.0 fixes were on `main` but nobody ran `extension install`. The error texts match 0.3.2. Run 2 repeats the 2026-11-06 binding failure, which 0.4.0 fixes. On 2026-11-16, `app status` hung for 30 s while the host was connected. The probable cause is a frame call with no time limit in a frozen tab. This is not verified.
+
+The bridge did not cause the `surf` restriction: the extension has no `debugger` permission. A frozen or very busy renderer for the large deck can explain the `surf` and status timeouts. This is not verified.
+
+Version 0.4.1 adds frame call limits, `applied: null` after a sent request without an answer, one Graph check with `--wait-saved`, tab choice among duplicates, and a count of frames that the hook skips for size.
+
+- [ ] 0.4.1: install, reload the extension, refresh Office tabs. `app status` returns in about 12 s or less and shows 0.4.1, controller v6 and hook revision 5.
+- [ ] 0.4.1: on a large disposable deck in Ross's OneDrive, `--open --new-chat` opens the pane, and a multi-line edit prompt ends with `completion: event` or `settled`. Record `binding`, `oversizedFrames` and the phases.
+- [x] 0.4.1 live (2026-11-16, the shared deck, with Ross's approval): `app status` returned in about 2 to 9 s. Two `ask` runs failed in `wait_pane` with nothing sent. The single click left the mounted pane frame at zero size. Run 1: background tab, not refreshed. Run 2: front tab, refreshed shortly before. A manual click then opened the pane, and the bridge saw it as open.
+- [x] 0.4.1 live: after a manual pane open, the edit applied (checked by download and render), but the result was `completion: settled`, `binding: null`, `signals {"ignored":1}`, `applied: false`. Fixed in 0.4.3 (see `AGENTS.md`).
+- [ ] Ross reports that the deck tab opens and refreshes in Viewing mode, and must be changed to Editing by hand. Check with 0.4.3: `status` mode and `urlAction` on a freshly loaded tab, then after a manual change to Editing.
+- [ ] 0.4.3: a prompt after a manual pane open binds (`exact`, `normalised`, `after_send` or `similar`) and ends with `completion: event`. If not, record `ignoredSignals`.
+- [ ] 0.4.2: with the deck loaded, in front, and the pane closed by hand, run `open-pane`. If the pane opens, the failures are timing (load or background). If not, Office ignores `el.click()` on this button.
+- [ ] 0.4.1: reload the large deck's tab, then run `ask` without `--open`. The pane opens by itself (report step 3).
+- [ ] 0.4.1: the MCP tool with `open_tab`, `new_chat`, `wait_saved` and a multi-line prompt, after an MCP server restart.
+
 ## Architecture
 
 ```

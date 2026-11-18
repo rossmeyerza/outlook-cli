@@ -11,7 +11,7 @@ const OFFICE_URLS = [
   "https://*.cloud.microsoft/*",
 ];
 const HOOK_FILES = ["adapters/common.js", "adapters/excel.js", "adapters/powerpoint.js", "hook.js"];
-const HOOK_REVISION = 4;
+const HOOK_REVISION = 6;
 // Fallback end of a turn when no final answer event arrives: the pane shows no
 // Stop control for several polls, and the hook has been quiet for a while.
 const TIMING = {
@@ -21,6 +21,9 @@ const TIMING = {
   // the AugLoop socket, or this long after the button appears.
   editorSettleMs: 10000, beforeOpenMs: 1000,
   paneFirstWaitMs: 12000, paneWaitMs: 30000, inputSettleMs: 1500,
+  // A frozen or busy tab can leave executeScript waiting for ever. Each frame
+  // call has a limit, so status and the request waits keep checking time.
+  frameCallMs: 10000, sendCallMs: 30000,
 };
 const TASK_DONE = /^(complete|completed|success|succeeded|done|finished)$/i;
 
@@ -77,13 +80,26 @@ async function reinjectAll() {
   await Promise.all(tabs.map((tab) => inject(tab.id)));
 }
 
-async function runInFrames(tabId, cmd, frameIds) {
+// The tab did not answer a frame call in time. It can be frozen, or busy with a large file.
+class FrameTimeout extends Error {}
+
+async function runInFrames(tabId, cmd, frameIds, timeoutMs = TIMING.frameCallMs) {
   const target = frameIds ? { tabId, frameIds } : { tabId, allFrames: true };
-  const results = await chrome.scripting.executeScript({
-    target,
-    func: (c) => (globalThis.__ocliController ? globalThis.__ocliController.run(c) : null),
-    args: [cmd],
+  let timer;
+  const limit = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new FrameTimeout(
+      `The tab did not answer ${cmd.action} within ${Math.round(timeoutMs / 1000)} s. It can be frozen or busy.`)), timeoutMs);
   });
+  let results;
+  try {
+    results = await Promise.race([chrome.scripting.executeScript({
+      target,
+      func: (c) => (globalThis.__ocliController ? globalThis.__ocliController.run(c) : null),
+      args: [cmd],
+    }), limit]);
+  } finally {
+    clearTimeout(timer);
+  }
   return results.filter((r) => r.result).map((r) => ({ frameId: r.frameId, ...r.result }));
 }
 
@@ -99,15 +115,19 @@ function framePresented(frame, frames) {
 }
 
 async function probe(tabId) {
-  const frames = await runInFrames(tabId, { action: "describe" }).catch(() => []);
+  let unresponsive = false;
+  const frames = await runInFrames(tabId, { action: "describe" }).catch((e) => {
+    unresponsive = e instanceof FrameTimeout;
+    return [];
+  });
   const editors = frames.filter((f) => f.role === "editor");
   const panes = frames.filter((f) => f.role === "pane" && framePresented(f, frames));
   const mounted = frames.filter((f) => f.role === "pane").length;
-  return { frames, editors, panesMounted: mounted, pane: panes.find((p) => p.promptBox) || panes[0] || null };
+  return { frames, editors, panesMounted: mounted, unresponsive, pane: panes.find((p) => p.promptBox) || panes[0] || null };
 }
 
-async function runIn(tabId, frameId, cmd) {
-  const [result] = await runInFrames(tabId, cmd, [frameId]);
+async function runIn(tabId, frameId, cmd, timeoutMs) {
+  const [result] = await runInFrames(tabId, cmd, [frameId], timeoutMs);
   if (!result) throw new Error(`No controller answered ${cmd.action}.`);
   return result;
 }
@@ -128,6 +148,14 @@ function appOf(probeResult) {
   return editor ? editor.app : null;
 }
 
+// The action value of an Office URL (view, edit, default ...). Never the URL itself.
+function urlAction(url) {
+  let action = null;
+  try { action = new URL(url).searchParams.get("action"); } catch (e) { return null; }
+  if (!action) return null;
+  return /^[a-z]{1,20}$/i.test(action) ? action.toLowerCase() : "other";
+}
+
 const ageSeconds = (since) => (since ? Math.round((Date.now() - since) / 1000) : null);
 
 async function describeTab(tab) {
@@ -141,6 +169,9 @@ async function describeTab(tab) {
     active: tab.active,
     app: appOf(p),
     editorReady: Boolean(editor),
+    unresponsive: p.unresponsive,
+    urlAction: urlAction(tab.url),
+    mode: editor ? editor.mode || null : null,
     hooked: Boolean(editor && editor.hook && editor.hook.seen),
     hookRevision: editor && editor.hook ? editor.hook.revision : null,
     controllerVersion: editor ? editor.version : null,
@@ -158,30 +189,64 @@ async function describeTab(tab) {
 
 async function status() {
   const tabs = await chrome.tabs.query({ url: OFFICE_URLS });
-  const described = [];
-  for (const tab of tabs) {
-    const info = await describeTab(tab);
-    if (info.editorReady) described.push(info);
-  }
-  return { extension: VERSION, protocol: PROTOCOL, lastHostError, tabs: described };
+  // In parallel: each probe has its own limit, so one frozen tab cannot block the others.
+  const described = await Promise.all(tabs.map(describeTab));
+  return { extension: VERSION, protocol: PROTOCOL, lastHostError,
+    tabs: described.filter((info) => info.editorReady || info.unresponsive) };
 }
 
-async function inspectTab(tabId) {
+async function officeTab(tabId) {
   const tab = await chrome.tabs.get(tabId);
   let url;
   try { url = new URL(tab.url); } catch (e) { throw new Error("The tab has no valid URL."); }
   if (url.protocol !== "https:" || !/(^|\.)(sharepoint\.com|officeapps\.live\.com|cloud\.microsoft)$/.test(url.hostname))
-    throw new Error("Only Office browser tabs can be inspected.");
+    throw new Error("Only Office browser tabs can be used.");
+  return tab;
+}
+
+async function inspectTab(tabId) {
+  await officeTab(tabId);
   return { extension: VERSION, tabId, frames: await runInFrames(tabId, { action: "inspect" }) };
 }
 
+// Diagnostic: click the Copilot button once and report what the pane did.
+// It never types or sends. The button only shows or hides the pane.
+async function openPaneOnce(msg) {
+  const tab = await officeTab(msg.tabId);
+  if (requests.get(tab.id)) throw new Error("busy: a request is running in this tab.");
+  const before = await probe(tab.id);
+  const report = { extension: VERSION, tabId: tab.id, active: Boolean(tab.active), clicked: false,
+    paneOpenBefore: Boolean(before.pane && before.pane.promptBox), panesMountedBefore: before.panesMounted };
+  if (report.paneOpenBefore) return { ...report, paneOpen: true, message: "The pane was already open. Nothing was clicked." };
+  const editor = before.editors.find((e) => e.paneButton);
+  if (!editor) throw new Error(before.unresponsive ? "The tab did not answer." : "The Copilot button is not on the page.");
+  report.augloopSockets = editor.hook ? editor.hook.sockets : 0;
+  const clicked = await runIn(tab.id, editor.frameId, { action: "open_pane" });
+  if (!clicked.ok) throw new Error(clicked.error);
+  report.clicked = true;
+  const start = Date.now();
+  const waitMs = Math.min(Math.max(Number(msg.waitMs) || 15000, 1000), 60000);
+  let after = before;
+  while (Date.now() - start < waitMs) {
+    await sleep(TIMING.panePollMs);
+    after = await probe(tab.id);
+    if (after.pane && after.pane.promptBox) break;
+  }
+  const open = Boolean(after.pane && after.pane.promptBox);
+  return { ...report, paneOpen: open, openedAfterMs: open ? Date.now() - start : null,
+    panesMountedAfter: after.panesMounted, unresponsive: after.unresponsive };
+}
+
+// Several tabs can show the same file. Use the active one, then the one used
+// last: that is the tab where the user is most likely to have the pane open.
 async function findTab(file, open) {
-  const tabs = await chrome.tabs.query({});
-  const tab = tabs.find((t) => tabMatches(t, file));
-  if (tab) return tab;
+  const tabs = (await chrome.tabs.query({})).filter((t) => tabMatches(t, file));
+  tabs.sort((a, b) => (Number(Boolean(b.active)) - Number(Boolean(a.active))) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+  if (tabs.length) return { tab: tabs[0], matches: tabs };
   if (!open) throw new Error("Open the file in Chrome first, or use --open.");
   if (!file.webUrl) throw new Error("The file has no web URL to open.");
-  return chrome.tabs.create({ url: file.webUrl, active: true });
+  const created = await chrome.tabs.create({ url: file.webUrl, active: true });
+  return { tab: created, matches: [created] };
 }
 
 // Thrown by a wait when its request already ended (timeout, cancel, disconnect).
@@ -189,6 +254,11 @@ class Stopped extends Error {}
 
 function untilDone(req, timeoutMs) {
   return Math.min(Date.now() + timeoutMs, req ? req.deadline : Infinity);
+}
+
+// What the current wait saw last. A timeout message names it.
+function noteWait(req, state) {
+  if (req) req.waitState = state;
 }
 
 function checkActive(req) {
@@ -206,6 +276,8 @@ async function waitForEditor(tabId, timeoutMs, req) {
     checkActive(req);
     const p = await probe(tabId);
     last = p;
+    noteWait(req, p.unresponsive ? "the tab did not answer" : !p.editors.length ? "no editor frame"
+      : p.editors.some((e) => e.paneButton) ? "Copilot button seen" : "no Copilot button");
     if (p.editors.length && p.pane && p.pane.promptBox) return p;
     const editor = p.editors.find((e) => e.paneButton);
     if (editor) {
@@ -217,21 +289,27 @@ async function waitForEditor(tabId, timeoutMs, req) {
     }
     await sleep(TIMING.editorPollMs);
   }
-  const seen = !last || !last.editors.length ? "no editor frame" : buttonSince ? "Copilot button without an AugLoop connection" : "no Copilot button";
+  const seen = last && last.unresponsive ? "the tab did not answer; it can be frozen or busy with a large file"
+    : !last || !last.editors.length ? "no editor frame" : buttonSince ? "Copilot button without an AugLoop connection" : "no Copilot button";
   throw new Error(`The Office editor did not load in time (${seen}).`);
 }
 
 async function waitForPane(tabId, timeoutMs, req) {
   const end = untilDone(req, timeoutMs);
   let mounted = 0;
+  let unresponsive = false;
   while (Date.now() < end) {
     checkActive(req);
     const p = await probe(tabId);
     if (p.pane && p.pane.promptBox) return p;
-    mounted = p.panesMounted || 0;
+    // A probe that timed out says nothing about the pane: keep the last count.
+    if (!p.unresponsive) mounted = p.panesMounted || 0;
+    unresponsive = p.unresponsive;
+    noteWait(req, unresponsive ? "the tab did not answer" : mounted ? "pane frame loaded but not shown" : "pane frame not loaded");
     await sleep(TIMING.panePollMs);
   }
-  throw new Error(`The Copilot pane did not open in time (pane frame ${mounted ? "loaded but not shown" : "not loaded"}).`);
+  const state = unresponsive ? "the tab did not answer" : mounted ? "pane frame loaded but not shown" : "pane frame not loaded";
+  throw new Error(`The Copilot pane did not open in time (${state}).`);
 }
 
 // Click the Copilot button. If no pane frame loads at all, and the button
@@ -251,7 +329,7 @@ async function openPane(req, tabId, p) {
     if (e instanceof Stopped) throw e;
     const now = await probe(tabId);
     const button = now.editors.find((x) => x.paneButton);
-    if (!(now.pane && now.pane.promptBox) && !now.panesMounted && button && button.paneButtonState !== "true") {
+    if (!now.unresponsive && !(now.pane && now.pane.promptBox) && !now.panesMounted && button && button.paneButtonState !== "true") {
       setPhase(req, "open_pane_retry");
       const retry = await runIn(tabId, button.frameId, { action: "open_pane" });
       if (!retry.ok) throw new Error(retry.error);
@@ -294,6 +372,7 @@ function finish(req, status, extra = {}) {
     signals: req.signals,
     binding: req.binding || null,
     statuses: req.statuses,
+    ignoredSignals: req.ignoredSignals,
   };
   // A function invocation is not proof that edits were applied. Excel scripts
   // can be reads. Report only a successful client response after a write signal.
@@ -303,22 +382,36 @@ function finish(req, status, extra = {}) {
   const failed = req.actions.some((a) => a.type === "action_result" && a.ok === false);
   result.applied = status === "completed" && writeObserved && succeeded && !failed;
   result.appliedEvidence = "Observed write signals and client action responses, not an independent document check.";
-  if (req.sent && !req.binding && !req.hookEvents) {
-    // The hook emits nothing before it binds, so it never matched this request.
+  if (req.sent && status !== "completed") {
+    // Copilot can finish its edits after the request ends (seen 2026-11-13).
+    result.applied = null;
+    result.appliedEvidence = `Not known. The prompt was sent, and the request ended (${status}) before a final answer. Check the document.`;
+  } else if (req.sent && !req.binding) {
+    // The hook passes on answers and edits only after it binds. Without a
+    // binding it saw none of this turn (2026-11-16: an edit applied, applied was false).
     result.applied = null;
     result.appliedEvidence = "Not known. The hook did not see this request. Check the document.";
   }
+  result.matchingTabs = req.matchingTabs || 1;
+  result.oversizedFrames = req.oversizedFrames || 0;
   send({ id: req.id, done: true, result });
 }
 
 function onEvent(req, event) {
   if (req.done) return;
+  if (event.type === "oversized") {
+    // The hook skipped a large AugLoop frame. Evidence only: it does not mean the hook saw this turn.
+    req.oversizedFrames = (req.oversizedFrames || 0) + 1;
+    return;
+  }
   req.lastEventAt = Date.now();
   req.hookEvents += 1;
   if (event.type === "signal") {
     // Prompt signals seen while armed: bound, same, related, repeated or ignored.
     const kind = ["bound", "same", "related", "repeated", "ignored"].includes(event.kind) ? event.kind : "other";
     req.signals[kind] = (req.signals[kind] || 0) + 1;
+    if (kind === "ignored" && req.ignoredSignals.length < 5)
+      req.ignoredSignals.push({ reason: event.reason || null, score: typeof event.score === "number" ? event.score : null, operation: event.operation || null });
   } else if (event.type === "bound") {
     req.binding = event.mode || "unknown";
   } else if (event.type === "status" || event.type === "task_status") {
@@ -374,6 +467,7 @@ function watchSettle(req) {
 function setPhase(req, phase) {
   checkActive(req);
   req.phase = phase;
+  req.waitState = null;
   send({ id: req.id, event: { type: "phase", phase } });
 }
 
@@ -381,28 +475,34 @@ async function ask(msg) {
   const file = msg.file || {};
   const startedAt = Date.now();
   const timeoutMs = Math.max(TIMING.minTimeoutMs, (Number(msg.timeout) || 300) * 1000);
-  const tab = await findTab(file, msg.open === true);
+  const { tab, matches } = await findTab(file, msg.open === true);
   if (cancelledRequests.delete(msg.id) || !port) return;
-  const running = requests.get(tab.id);
-  if (running) throw new Error(`busy: another request is running in this tab (phase ${running.phase}, ${ageSeconds(running.startedAt)} s).`);
+  // Every tab of this file shows the same document. Check them all.
+  for (const other of matches) {
+    const running = requests.get(other.id);
+    if (running) throw new Error(`busy: another request is running in tab ${other.id} for this file (phase ${running.phase}, ${ageSeconds(running.startedAt)} s).`);
+    const doubt = other.id !== tab.id && uncertainTabs.get(other.id);
+    if (doubt) throw new Error(`Tab ${other.id} for this file ended a request without a final answer (${doubt.reason}, ${ageSeconds(doubt.since)} s ago). Check the document, then reload that tab or run 'outlook-cli copilot app reset --tab-id ${other.id}'.`);
+  }
   const uncertain = uncertainTabs.get(tab.id);
   if (uncertain) throw new Error(`The previous request ended without a final answer (${uncertain.reason}, ${ageSeconds(uncertain.since)} s ago). Copilot can still have changed the document. Check it, then reload the tab or run 'outlook-cli copilot app reset --tab-id ${tab.id}'.`);
   const req = {
     id: msg.id, tabId: tab.id, app: null, text: "", progress: [], actions: [], armedFrames: [], done: false,
-    startedAt, deadline: startedAt + timeoutMs, phase: "find_tab",
-    statuses: [], signals: {}, sendCalls: 0, binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
+    startedAt, deadline: startedAt + timeoutMs, phase: "find_tab", matchingTabs: matches.length,
+    statuses: [], signals: {}, ignoredSignals: [], sendCalls: 0, binding: null, hookEvents: 0, taskDone: false, sawBusy: false, idlePolls: 0, lastEventAt: Date.now(),
   };
   requests.set(tab.id, req);
   // One timer for every phase. The waits below also stop at this deadline.
   req.timer = setTimeout(() => finish(req, "timeout", {
-    message: `Copilot did not finish in time. Stopped in phase ${req.phase}.` }), Math.max(0, req.deadline - Date.now()));
+    message: `Copilot did not finish in time. Stopped in phase ${req.phase}${req.waitState ? ` (${req.waitState})` : ""}.` }),
+  Math.max(0, req.deadline - Date.now()));
   try {
     setPhase(req, "wait_editor");
     let p = await waitForEditor(tab.id, msg.open ? 90000 : 30000, req);
     if (req.done) return;
     req.app = appOf(p);
     if (msg.app && req.app && msg.app !== req.app) throw new Error(`The tab is ${req.app}, not ${msg.app}.`);
-    send({ id: req.id, event: { type: "tab", tabId: tab.id, app: req.app, title: tab.title } });
+    send({ id: req.id, event: { type: "tab", tabId: tab.id, app: req.app, title: tab.title, matchingTabs: matches.length } });
     if (!(p.pane && p.pane.promptBox)) p = await openPane(req, tab.id, p);
     if (req.done) return;
     if (msg.newChat) {
@@ -441,7 +541,7 @@ async function ask(msg) {
     req.sent = true; // Until the pane says otherwise: a lost reply can follow a real click.
     req.sentAt = Date.now();
     req.lastEventAt = req.sentAt;
-    const sent = await runIn(tab.id, p.pane.frameId, { action: "send_prompt", text: msg.prompt, requestId: req.id });
+    const sent = await runIn(tab.id, p.pane.frameId, { action: "send_prompt", text: msg.prompt, requestId: req.id }, TIMING.sendCallMs);
     if (!sent.ok) {
       // The pane answered and did not click Send, so Copilot did not start.
       if (!sent.clicked) req.sent = false;
@@ -498,6 +598,8 @@ async function onHostMessage(msg) {
       send({ id: msg.id, done: true, result: await status() });
     } else if (msg.type === "inspect") {
       send({ id: msg.id, done: true, result: await inspectTab(msg.tabId) });
+    } else if (msg.type === "open_pane") {
+      send({ id: msg.id, done: true, result: await openPaneOnce(msg) });
     } else if (msg.type === "reset") {
       send({ id: msg.id, done: true, result: reset(msg) });
     } else if (msg.type === "ask") {

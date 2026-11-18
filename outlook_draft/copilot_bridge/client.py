@@ -89,6 +89,16 @@ class BridgeClient:
                 return event["result"]
         raise CopilotError("The bridge did not return diagnostics.")
 
+    def open_pane(self, tab_id: int, wait_seconds: float = 15) -> dict:
+        """Click the Copilot button once. Diagnostic only: it never types or sends."""
+        if type(tab_id) is not int or tab_id < 0:
+            raise CopilotError("A non-negative Chrome tab ID is required.")
+        wait_ms = int(min(max(wait_seconds, 1), 60) * 1000)
+        for event in self.request({"type": "open_pane", "tabId": tab_id, "waitMs": wait_ms}, timeout=wait_ms / 1000 + 30):
+            if event["type"] == "result":
+                return event["result"]
+        raise CopilotError("The bridge did not report the pane state.")
+
     def reset(self, tab_id: int) -> dict:
         if type(tab_id) is not int or tab_id < 0:
             raise CopilotError("A non-negative Chrome tab ID is required.")

@@ -6,7 +6,7 @@
     "Allow", "Allow once", "Allow this time", "Allow access", "Approve", "Confirm", "Yes, allow", "Sign in",
   ]);
 
-  const UI_LABEL = /^(?:(?:open |close |chat with |start )?copilot(?: chat| pane| menu| options)?|new chat|new conversation|start new chat|allow editing|edit mode|editing|editing mode|approve|confirm|allow(?: once| this time| access)?|sign in|cancel|send(?: message)?|stop(?: generating| responding)?)(?:\s*\((?:(?:alt|ctrl|control|shift|cmd|command|option|meta)\s*\+\s*)+[a-z0-9]{1,3}\))?$/i;
+  const UI_LABEL = /^(?:(?:open |close |chat with |start )?copilot(?: chat| pane| menu| options)?|new chat|new conversation|start new chat|allow editing|edit mode|editing|editing mode|(?:editing|reviewing|viewing)\b.{0,60}|(?:switch|change) (?:to )?(?:editing|viewing) mode|approve|confirm|allow(?: once| this time| access)?|sign in|cancel|send(?: message)?|stop(?: generating| responding)?)(?:\s*\((?:(?:alt|ctrl|control|shift|cmd|command|option|meta)\s*\+\s*)+[a-z0-9]{1,3}\))?$/i;
 
   function label(el) {
     return (el.getAttribute("aria-label") || el.getAttribute("title") || el.innerText || "").trim().slice(0, 100);

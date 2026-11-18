@@ -8,7 +8,7 @@ function worker(ui = {}) {
   const sent = [];
   const calls = [];
   // Live UI state for the fake frames. Tests change it while a request runs.
-  ui = { stopButton: false, revision: 4, editorReady: true, sockets: 1, paneOpen: true, opensAfter: 1, clicks: 0, ...ui };
+  ui = { stopButton: false, revision: 6, editorReady: true, sockets: 1, paneOpen: true, opensAfter: 1, clicks: 0, ...ui };
   if (ui.paneMounted === undefined) ui.paneMounted = ui.paneOpen;
   const listeners = {};
   const event = (name) => ({ addListener: (fn) => { listeners[name] = fn; } });
@@ -54,10 +54,10 @@ function worker(ui = {}) {
   };
   const context = vm.createContext({ chrome, console, setTimeout, clearTimeout, URL });
   const code = fs.readFileSync(path.join(__dirname, "../sw.js"), "utf8");
-  vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented, reset, status };", context);
+  vm.runInContext(code + "\n globalThis.testApi = { ask, tabMatches, requests, uncertainTabs, onEvent, finish, framePresented, reset, status, openPaneOnce };", context);
   // Fast settle polling for tests.
   vm.runInContext(`Object.assign(TIMING, { settlePollMs: 5, settleQuietMs: 30, minTimeoutMs: 0, editorPollMs: 5,
-    panePollMs: 5, editorSettleMs: 40, beforeOpenMs: 0, paneFirstWaitMs: 40, paneWaitMs: 200, inputSettleMs: 0 });`, context);
+    panePollMs: 5, editorSettleMs: 40, beforeOpenMs: 0, paneFirstWaitMs: 40, paneWaitMs: 200, inputSettleMs: 0, frameCallMs: 100 });`, context);
   return { api: context.testApi, sent, calls, listeners, tab, chrome, ui, context };
 }
 
@@ -107,6 +107,7 @@ test("one request per tab, correlated controller events, final result", async ()
   const sendEvent = (frameId, event) => listeners.message({ type: "augloop", requestId: "req", event }, { id: "extension", tab: { id: 7 }, frameId });
   sendEvent(99, { type: "completed", text: "forged" });
   assert.equal(api.requests.size, 1);
+  sendEvent(1, { type: "bound", mode: "exact" });
   sendEvent(1, { type: "text", text: "Hello" });
   sendEvent(1, { type: "completed", text: "Hello world" });
   assert.equal(api.requests.size, 0);
@@ -120,6 +121,7 @@ test("an invocation alone does not prove edits were applied", async () => {
   const { api, sent } = worker();
   await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
   const req = api.requests.get(7);
+  api.onEvent(req, { type: "bound", mode: "exact" });
   api.onEvent(req, { type: "action", app: "excel", name: "executeScript", writes: true });
   api.onEvent(req, { type: "action_result", app: "excel", ok: false });
   api.onEvent(req, { type: "completed", text: "Could not edit" });
@@ -377,4 +379,130 @@ test("signal counts reach the result", async () => {
   for (const kind of ["bound", "related", "related"]) api.onEvent(req, { type: "signal", kind });
   api.onEvent(req, { type: "completed", text: "Hi" });
   assert.deepEqual({ ...sent.find((s) => s.done).result.signals }, { bound: 1, related: 2 });
+});
+
+
+test("a timeout after Send reports applied as unknown, not false", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "bound", mode: "after_send" });
+  api.finish(req, "timeout", { message: "Copilot did not finish in time." });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.status, "timeout");
+  assert.equal(result.sent, true);
+  assert.equal(result.applied, null);
+  assert.match(result.appliedEvidence, /ended \(timeout\) before a final answer/);
+  assert.equal(api.uncertainTabs.get(7).reason, "timeout");
+});
+
+test("a timeout before Send still reports nothing applied", async () => {
+  const { api, sent } = worker({ editorReady: false });
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, timeout: 0.05 });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.sent, false);
+  assert.equal(result.applied, false);
+});
+
+test("a tab that does not answer cannot block status", async () => {
+  const { api, chrome } = worker();
+  chrome.scripting.executeScript = () => new Promise(() => {}); // Frozen tab.
+  const started = Date.now();
+  const result = await api.status();
+  assert(Date.now() - started < 2000);
+  assert.equal(result.tabs.length, 1);
+  assert.equal(result.tabs[0].unresponsive, true);
+  assert.equal(result.tabs[0].editorReady, false);
+});
+
+test("a tab that does not answer ends the editor wait with a clear reason", async () => {
+  const { api, sent, chrome } = worker();
+  chrome.scripting.executeScript = () => new Promise(() => {});
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" }, timeout: 0.3 });
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.phase, "wait_editor");
+  assert.equal(result.sent, false);
+  assert.match(result.message, /did not answer/);
+});
+
+function twoTabs(chrome) {
+  const older = { id: 7, active: false, lastAccessed: 100, url: "https://tenant.sharepoint.com/_layouts/15/Doc.aspx?sourcedoc=%7Btest-guid%7D", title: "Test.pptx" };
+  const newer = { ...older, id: 8, lastAccessed: 200 };
+  chrome.tabs.query = async () => [older, newer, { id: 9, url: "https://example.com/" }];
+  return { older, newer };
+}
+
+test("of several tabs for one file, the most recently used tab is chosen", async () => {
+  const { api, sent, chrome } = worker();
+  twoTabs(chrome);
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  assert(api.requests.has(8));
+  const tabEvent = sent.find((s) => s.event && s.event.type === "tab").event;
+  assert.equal(tabEvent.tabId, 8);
+  assert.equal(tabEvent.matchingTabs, 2);
+  api.onEvent(api.requests.get(8), { type: "completed", text: "Hi" });
+  assert.equal(sent.find((s) => s.done).result.matchingTabs, 2);
+});
+
+test("an uncertain tab for the same file blocks a request in another tab", async () => {
+  const { api, calls, chrome } = worker();
+  twoTabs(chrome);
+  api.uncertainTabs.set(7, { since: Date.now(), reason: "timeout" });
+  await assert.rejects(api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } }), /Tab 7 for this file/);
+  assert(!calls.some((c) => c.action === "send_prompt"));
+});
+
+test("oversized frames are counted but do not count as hook events", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "oversized", direction: "send", megabytes: 40 });
+  assert.equal(req.hookEvents, 0);
+  api.finish(req, "completed");
+  const result = sent.find((s) => s.done).result;
+  assert.equal(result.oversizedFrames, 1);
+  assert.equal(result.applied, null); // The hook still did not see this request.
+});
+
+
+test("open-pane clicks the Copilot button once and never types", async () => {
+  const { api, calls, ui } = worker({ paneOpen: false, paneMounted: true, opensAfter: 1 });
+  const result = await api.openPaneOnce({ tabId: 7, waitMs: 1000 });
+  assert.equal(result.clicked, true);
+  assert.equal(result.paneOpen, true);
+  assert.equal(ui.clicks, 1);
+  assert(!calls.some((c) => ["send_prompt", "arm", "sending", "new_chat"].includes(c.action)));
+});
+
+test("open-pane reports a click that did not open the pane", async () => {
+  const { api, ui } = worker({ paneOpen: false, paneMounted: true, opensAfter: 99 });
+  const result = await api.openPaneOnce({ tabId: 7, waitMs: 1000 });
+  assert.equal(result.clicked, true);
+  assert.equal(result.paneOpen, false);
+  assert.equal(result.panesMountedAfter, 1);
+  assert.equal(ui.clicks, 1);
+});
+
+test("open-pane does nothing when the pane is open or a request runs", async () => {
+  const { api, ui } = worker();
+  assert.equal((await api.openPaneOnce({ tabId: 7 })).clicked, false);
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  await assert.rejects(api.openPaneOnce({ tabId: 7 }), /busy/);
+  assert.equal(ui.clicks, 0);
+  api.finish(api.requests.get(7), "completed"); // Stop the settle poll and the request timer.
+});
+
+
+test("a settled turn without a binding reports applied as unknown, with ignore reasons", async () => {
+  const { api, sent } = worker();
+  await api.ask({ id: "req", prompt: "Hello", file: { uniqueId: "test-guid" } });
+  const req = api.requests.get(7);
+  api.onEvent(req, { type: "signal", kind: "ignored", reason: "operation", score: 0.4, operation: { kind: "string:New" } });
+  api.onEvent(req, { type: "task_status", value: "Completed" });
+  await until(() => req.done);
+  const result = JSON.parse(JSON.stringify(sent.find((s) => s.done).result));
+  assert.equal(result.completion, "settled");
+  assert.equal(result.applied, null);
+  assert.match(result.appliedEvidence, /did not see this request/);
+  assert.deepEqual(result.ignoredSignals, [{ reason: "operation", score: 0.4, operation: { kind: "string:New" } }]);
 });

@@ -23,7 +23,11 @@ def cmd_status(args: argparse.Namespace) -> None:
     else:
         print(f"Host: protocol {result['host']}. Extension: {result.get('extension', 'unknown')}.")
         for tab in result.get("tabs", []):
-            print(f"  {tab['tabId']}: {tab['app']} | {tab['title']} | pane open: {tab['paneOpen']} | {_busy_text(tab)}")
+            if tab.get("unresponsive") and not tab.get("editorReady"):
+                print(f"  {tab['tabId']}: not answering (frozen or busy) | {tab['title']} | {_busy_text(tab)}")
+                continue
+            mode = f" | mode: {tab.get('mode') or 'unknown'}, URL action: {tab.get('urlAction') or 'none'}"
+            print(f"  {tab['tabId']}: {tab['app']} | {tab['title']} | pane open: {tab['paneOpen']}{mode} | {_busy_text(tab)}")
         if not result.get("tabs"):
             print("No Office editor tabs found.")
 
@@ -63,6 +67,21 @@ def cmd_inspect(args: argparse.Namespace) -> None:
     except CopilotError as exc:
         raise CliError(str(exc)) from exc
     print_json(result)
+
+
+def cmd_open_pane(args: argparse.Namespace) -> None:
+    try:
+        result = BridgeClient().open_pane(args.tab_id, args.wait)
+    except CopilotError as exc:
+        raise CliError(str(exc)) from exc
+    if args.json:
+        print_json(result)
+        return
+    if not result.get("clicked"):
+        print(result.get("message") or "Nothing was clicked.")
+        return
+    opened = f"opened after {result['openedAfterMs']} ms" if result.get("paneOpen") else "did not open"
+    print(f"Tab {result['tabId']}: clicked Copilot once. The pane {opened}. Tab active: {result.get('active')}.")
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -143,6 +162,11 @@ def register(sub) -> None:
     add_output_args(inspect)
     inspect.add_argument("--tab-id", type=int, required=True)
     inspect.set_defaults(func=cmd_inspect)
+    open_pane = commands.add_parser("open-pane", help="Click the Copilot button once and report the pane state; sends nothing")
+    add_output_args(open_pane)
+    open_pane.add_argument("--tab-id", type=int, required=True)
+    open_pane.add_argument("--wait", type=float, default=15, help="Seconds to wait for the pane (1 to 60)")
+    open_pane.set_defaults(func=cmd_open_pane)
     reset = commands.add_parser("reset", help="Clear a stale busy or uncertain tab state after you check the document")
     add_output_args(reset)
     reset.add_argument("--tab-id", type=int, required=True)

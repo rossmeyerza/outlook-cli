@@ -340,6 +340,19 @@ Implementation notes:
   - One send per request, guarded in the worker and the controller. A pane refusal before the click does not mark the tab uncertain.
   - `mail download-links` used a removed import. `files download` accepts SharePoint/OneDrive URLs. `--site` falls back to a Graph site search and accepts a site URL.
 - Reload after this change: run `outlook-cli copilot extension install`, reload the extension in `chrome://extensions`, then refresh each Office tab. `ask` refuses a tab with an older hook revision.
+- 2026-11-16, extension 0.4.1 (controller v6, hook revision 5). Fixes from "Incident 2026-11-13" in `docs/copilot-app-plan.md`. Chrome still ran 0.3.2 then, because nobody ran `extension install` after 0.4.0.
+  - Each frame call has a time limit (10 s, Send 30 s). A frozen or busy tab no longer blocks `status` or a wait. `status` probes tabs in parallel and lists a tab that does not answer as `unresponsive`.
+  - A sent request that ends without a final answer reports `applied: null`, not `false`. With `--wait-saved`, one Graph check then sets `saved`; it is not proof.
+  - Of several tabs for one file, the worker uses the active tab, then the most recently used tab. A busy or uncertain tab for the same file blocks the request. The result has `matchingTabs`.
+  - The hook counts AugLoop frames above 8 MB while armed (`oversizedFrames`, size only). This tests whether a large deck hides the prompt signal from the hook.
+  - Timeout messages name what the last wait saw, for example "the tab did not answer".
+- 2026-11-16, extension 0.4.2: `copilot app open-pane --tab-id ID [--wait S]` clicks the Copilot button once and reports if the pane opened. It never types or sends. Use it to test pane opening without a prompt. Live 0.4.1 runs on the large deck failed twice in `wait_pane`: one click, the pane frame stayed mounted at zero size. One run was in a background tab, one in a front tab that had just loaded.
+- 2026-11-16, extension 0.4.3 (controller v8, hook revision 6). Live run on the large deck after a manual pane open: the edit applied, but the hook ignored the only prompt signal (`signals {"ignored":1}`). The PowerPoint signal has `query`, `queryId` and `taskOperationParams`. The probable cause is that a new prompt carries non-empty `taskOperationParams`, which blocked the after-Send fallback.
+  - In the 60 s window after Send, a signal with operation fields binds as `similar` when its query has at least 80 % of the prompt's words.
+  - An ignored signal reports `reason` (`no_query`, `outside_window`, `operation`, `mismatch`), a word-overlap `score` and the value types of `taskOperationParams` (booleans, numbers and one-word values only). The result lists them in `ignoredSignals`.
+  - `applied` is null whenever the hook did not bind a sent request. Signal counts alone are not proof that the hook saw the turn.
+  - Evidence for Viewing mode: `status` shows `urlAction` (the URL `action` value only) and `mode` (editing, reviewing or viewing from the ribbon, or null). `inspect` lists the mode controls. Nothing clicks the mode control. Graph's `webUrl` for the deck already has `action=edit`, and Office still opened it read-only.
+- After an install, check `extension`, `controllerVersion` and `hookRevision` in `app status`. The installed copy in `~/.local/share/outlook-cli/copilot-extension` is what Chrome loads, not the repo folder.
 
 ### Handoff state (2026-10-23, second session)
 

@@ -6,8 +6,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
+
 from ..commands.copilot import resolve_copilot_file
-from ..errors import CopilotError
+from ..errors import CopilotError, OutlookDraftError
 from ..outlook_client import OutlookClient
 from .client import BridgeClient, BridgeTimeout
 from .protocol import timeout_seconds
@@ -135,4 +137,19 @@ def ask_app(gc: OutlookClient, prompt: str, file: dict, *, new_chat: bool = Fals
     if wait_saved and result.get("status") == "completed":
         result["saved"] = wait_for_save(gc, file, started, deadline)
         result["saveEvidence"] = "Graph lastModifiedDateTime changed after the request began. A co-author or another tab can also cause this change."
+    elif wait_saved and result.get("sent"):
+        _check_saved_once(gc, file, started, result)
     return result
+
+
+def _check_saved_once(gc: OutlookClient, file: dict, started: datetime, result: dict) -> None:
+    """After a sent request ends without an answer, Copilot can still have edited the file (2026-11-13)."""
+    try:
+        result["saved"] = wait_for_save(gc, file, started, time.monotonic())
+    except (OutlookDraftError, httpx.HTTPError, OSError, ValueError) as exc:
+        # A Graph failure must not hide the request result.
+        result["saveEvidence"] = f"The Graph check failed ({type(exc).__name__}). Check the document."
+        return
+    result["saveEvidence"] = ("One Graph check after the request ended without a final answer. A later "
+                              "lastModifiedDateTime can come from Copilot, a co-author or another tab, and OneDrive can "
+                              "save minutes after an edit. It is not proof. Check the document.")
