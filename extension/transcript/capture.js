@@ -1,6 +1,6 @@
 "use strict";
 
-async function captureActiveTab(format) {
+async function captureActiveTab(format, destination) {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
 
   if (!tab?.id || !isTeamsUrl(tab.url)) {
@@ -42,6 +42,17 @@ async function captureActiveTab(format) {
 
   const exportFormat = ["txt", "json", "vtt"].includes(format) ? format : "txt";
   const output = createExport(result, exportFormat);
+  const count = result.entries.length;
+
+  if (destination === "copy") {
+    return { ok: true, count, content: output.content };
+  }
+
+  const filename = await downloadExport(output, exportFormat);
+  return { ok: true, count, filename };
+}
+
+async function downloadExport(output, exportFormat) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `teams-transcript-${stamp}.${exportFormat}`;
   const url = `data:${output.mime};charset=utf-8,${encodeURIComponent(output.content)}`;
@@ -52,7 +63,7 @@ async function captureActiveTab(format) {
     saveAs: true,
   });
 
-  return { ok: true, count: result.entries.length, filename };
+  return filename;
 }
 
 function isTeamsUrl(value) {

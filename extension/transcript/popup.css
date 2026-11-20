@@ -66,6 +66,11 @@ select {
   color: #f5f5f5;
 }
 
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
 button {
   border-color: #6264a7;
   background: #6264a7;
@@ -76,6 +81,15 @@ button {
 
 button:hover:not(:disabled) {
   background: #7476b5;
+}
+
+button.secondary {
+  border-color: #666;
+  background: #252525;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #343434;
 }
 
 button:focus-visible,
