@@ -21,7 +21,10 @@
         <option value="json">JSON</option>
       </select>
 
-      <button id="capture" type="button">Capture and download</button>
+      <div class="actions">
+        <button id="capture" type="button">Capture and download</button>
+        <button id="copy" class="secondary" type="button">Capture and copy</button>
+      </div>
       <p id="status" role="status" aria-live="polite">Ready.</p>
       <details id="diagnostics" hidden>
         <summary>Capture diagnostics</summary>

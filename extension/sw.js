@@ -620,7 +620,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;
   if (msg?.type === "CAPTURE_TEAMS_TRANSCRIPT") {
     if (sender.tab || sender.url !== chrome.runtime.getURL("transcript/popup.html")) return;
-    captureActiveTab(msg.format)
+    captureActiveTab(msg.format, msg.destination)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
     return true;
