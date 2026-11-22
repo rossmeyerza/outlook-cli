@@ -17,7 +17,7 @@ from ..availability import (
     make_options,
 )
 from ..cache import CAL_CACHE, save_cache
-from ..calendar_time import outlook_datetime, parse_local_datetime
+from ..calendar_time import calendar_window, outlook_datetime, parse_local_datetime
 from ..errors import CliError, OutlookAPIError
 from ..formatting import html_to_text
 from ..parser import add_output_args
@@ -100,6 +100,8 @@ def _event_summary(event: JsonDict, index: int | None = None) -> dict[str, Any]:
         },
         "isAllDay": event.get("IsAllDay", False),
         "isCancelled": event.get("IsCancelled", False),
+        "showAs": event.get("ShowAs", ""),
+        "responseStatus": (event.get("ResponseStatus") or {}).get("Response", ""),
         "recurrence": _event_recurrence(event),
     }
 
@@ -115,16 +117,32 @@ def _print_plain_agenda(args: argparse.Namespace, events: list[JsonDict]) -> Non
         )
 
 
-def cmd_cal_agenda(args: argparse.Namespace) -> None:
-    """List upcoming calendar events."""
+def _agenda_window(args: argparse.Namespace) -> tuple[datetime, datetime] | None:
+    try:
+        return calendar_window(args.days, args.start, args.end, prefix="--")
+    except ValueError as exc:
+        raise CliError(f"[red]{exc}[/]", 2) from exc
+
+
+def _load_agenda(args: argparse.Namespace, window: tuple[datetime, datetime] | None) -> list[JsonDict]:
     client = runtime.get_client()
     try:
         with spinner(args, "Loading calendar agenda..."):
-            events = client.get_agenda(days=args.days, top=args.count)
+            if window is None:
+                days = 7 if args.days is None else args.days
+                count = 20 if args.count is None else args.count
+                return client.get_agenda(days=days, top=count)
+            return client.get_calendar_view(start=window[0], end=window[1], top=args.count)
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to fetch calendar: {e}[/]") from e
     finally:
         client.close()
+
+
+def cmd_cal_agenda(args: argparse.Namespace) -> None:
+    """List calendar events for the next days, or for an explicit range."""
+    window = _agenda_window(args)
+    events = _load_agenda(args, window)
 
     save_cache(CAL_CACHE, events)
 
@@ -133,14 +151,18 @@ def cmd_cal_agenda(args: argparse.Namespace) -> None:
         return
 
     if not events:
-        runtime.console.print("[dim]No upcoming events.[/]")
+        runtime.console.print("[dim]No upcoming events.[/]" if window is None else "[dim]No events in this range.[/]")
         return
+
+    if window is not None and args.count is not None and len(events) >= args.count:
+        runtime.console.print(f"[yellow]Showing the first {args.count} events. Remove --count to show all.[/]")
 
     if args.plain:
         _print_plain_agenda(args, events)
         return
 
-    table = Table(title=f"Agenda (next {args.days} days)")
+    label = f"next {7 if args.days is None else args.days} days" if window is None else f"{args.start} to {args.end}"
+    table = Table(title=f"Agenda ({label})")
     table.add_column("#", style="dim", width=3)
     table.add_column("Date", width=12)
     table.add_column("Time", width=12)
@@ -560,10 +582,18 @@ def register(sub) -> None:
 
 
 def _register_cmd_cal_agenda_parser(cal_sub) -> None:
-    cmd_cal_agenda_parser = cal_sub.add_parser("agenda", help="List upcoming calendar events")
+    cmd_cal_agenda_parser = cal_sub.add_parser("agenda", help="List upcoming calendar events, or events in a date range")
     add_output_args(cmd_cal_agenda_parser)
-    cmd_cal_agenda_parser.add_argument("--days", "-d", type=int, default=7, help="Days to look ahead")
-    cmd_cal_agenda_parser.add_argument("--count", "-n", type=int, default=20, help="Max events")
+    cmd_cal_agenda_parser.add_argument("--days", "-d", type=int, default=None, help="Days to look ahead (default 7)")
+    cmd_cal_agenda_parser.add_argument(
+        "--start", help="Range start: ISO date or datetime, can be in the past (needs --end)"
+    )
+    cmd_cal_agenda_parser.add_argument(
+        "--end", help="Range end: ISO date (inclusive) or datetime (needs --start)"
+    )
+    cmd_cal_agenda_parser.add_argument(
+        "--count", "-n", type=int, default=None, help="Max events (default 20; no limit with --start/--end)"
+    )
     cmd_cal_agenda_parser.add_argument("--plain", action="store_true", help="Output plain text instead of a table")
     cmd_cal_agenda_parser.set_defaults(func=cmd_cal_agenda)
 

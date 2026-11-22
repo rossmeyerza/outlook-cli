@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import time
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -12,7 +12,7 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from . import config
-from .calendar_time import outlook_timezone_prefer_header
+from .calendar_time import local_timezone, outlook_timezone_prefer_header
 from .concurrency import ordered_map
 from .directory import DirectoryMixin
 from .errors import OutlookAPIError, TokenExpiredError, TokenNotFoundError
@@ -28,8 +28,33 @@ from .token_manager import TokenManager
 log = logging.getLogger(__name__)
 
 GRAPH_BASE = config.GRAPH_BASE_URL
+AGENDA_SELECT = (
+    "id,subject,start,end,location,organizer,isAllDay,isCancelled,showAs,responseStatus,"
+    "type,seriesMasterId,recurrence"
+)
+CALENDAR_VIEW_PAGE_SIZE = 100
 UPLOAD_CHUNK_SIZE = 10 * 320 * 1024
 ITEM_SELECT = "id,name,size,lastModifiedDateTime,webUrl,file,folder,parentReference"
+
+
+def _all_day_in_window(event: dict[str, Any], start: datetime, end: datetime) -> bool:
+    """Return False for an all-day event whose dates are outside the window.
+
+    Outlook stores all-day events as dates in the time zone of their creator. A view can
+    return a neighbouring day's all-day event from a zone east or west of local time.
+    Timed events, and events without parsable dates, are always kept.
+    """
+    if not event.get("IsAllDay"):
+        return True
+    try:
+        event_start = datetime.fromisoformat(event["Start"]["DateTime"][:19])
+        event_end = datetime.fromisoformat(event["End"]["DateTime"][:19])
+    except (KeyError, TypeError, ValueError):
+        return True
+    zone = local_timezone()
+    window_start = start.astimezone(zone).replace(tzinfo=None)
+    window_end = end.astimezone(zone).replace(tzinfo=None)
+    return event_start < window_end and event_end > window_start
 
 
 class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, DirectoryMixin, PlannerMixin):
@@ -500,7 +525,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, Directo
 
     def get_agenda(self, days: int = 7, top: int = 20) -> list[dict[str, Any]]:
         """Get upcoming calendar events."""
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         now = datetime.now(UTC)
         start = now.isoformat()
         end = (now + timedelta(days=days)).isoformat()
@@ -512,12 +537,37 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, Directo
                 "startDateTime": start,
                 "endDateTime": end,
                 "$top": str(top),
-                "$select": "id,subject,start,end,location,organizer,isAllDay,isCancelled,type,seriesMasterId,recurrence",
+                "$select": AGENDA_SELECT,
                 "$orderby": "start/dateTime",
             },
             extra_headers=self._calendar_headers(),
         )
         return resp.json().get("value", [])
+
+    def get_calendar_view(
+        self, start: datetime, end: datetime, top: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Get calendar events between two aware datetimes, past or future.
+
+        Follows @odata.nextLink pages. With top=None, returns every event in the range.
+        """
+        page_size = min(top, CALENDAR_VIEW_PAGE_SIZE) if top else CALENDAR_VIEW_PAGE_SIZE
+        url: str | None = "/me/calendarview"
+        params: dict[str, str] | None = {
+            "startDateTime": start.astimezone(UTC).isoformat(),
+            "endDateTime": end.astimezone(UTC).isoformat(),
+            "$top": str(page_size),
+            "$select": AGENDA_SELECT,
+            "$orderby": "start/dateTime",
+        }
+        events: list[dict[str, Any]] = []
+        while url and (top is None or len(events) < top):
+            resp = self._request("GET", url, params=params, extra_headers=self._calendar_headers())
+            data = resp.json()
+            events.extend(e for e in data.get("value", []) if _all_day_in_window(e, start, end))
+            url = data.get("@odata.nextLink") or data.get("odata.nextLink")
+            params = None
+        return events if top is None else events[:top]
 
     def get_event(self, event_id: str) -> dict[str, Any]:
         """Get a single calendar event by ID, including body."""
@@ -526,7 +576,7 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, Directo
             f"/me/events/{quote(event_id, safe='')}",
             params={
                 "$select": (
-                    "id,subject,start,end,location,organizer,isAllDay,isCancelled,"
+                    "id,subject,start,end,location,organizer,isAllDay,isCancelled,showAs,responseStatus,"
                     "body,attendees,type,seriesMasterId,recurrence,"
                     "isOnlineMeeting,onlineMeetingProvider,onlineMeeting,isOrganizer,changeKey"
                 ),

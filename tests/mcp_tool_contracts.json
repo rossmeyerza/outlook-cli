@@ -1616,18 +1616,56 @@
   {
     "name": "cal_agenda",
     "title": null,
-    "description": "List upcoming calendar events for the next N days. Read-only. Returns event summaries with full IDs.",
+    "description": "List calendar events. Read-only. Returns event summaries with full IDs.\n\nWithout start and end, lists the next N days (days default 7, count default 50).\nWith start and end, lists that range, which can be in the past. Each takes an ISO\ndate or datetime in the configured local timezone; a date-only end is inclusive.\nIn range mode every event is returned unless count is set. Do not combine days\nwith start or end. Summaries include showAs and responseStatus.\n",
     "inputSchema": {
       "properties": {
         "days": {
-          "default": 7,
-          "title": "Days",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days"
         },
         "count": {
-          "default": 50,
-          "title": "Count",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
         }
       },
       "title": "cal_agendaArguments",

@@ -13,7 +13,7 @@ from ..availability import (
     interval_for_duration,
     make_options,
 )
-from ..calendar_time import outlook_datetime, parse_local_datetime
+from ..calendar_time import calendar_window, outlook_datetime, parse_local_datetime
 from ..commands.calendar import _event_recurrence, _event_summary, _event_when
 from .clients import clamp, outlook_client
 from .shaping import JsonDict, address, body_text, truncate
@@ -60,10 +60,29 @@ def _free_busy(attendees: list[str], start_dt: datetime, end_dt: datetime, inter
         )
 
 
-def cal_agenda(days: int = 7, count: int = 50) -> list[JsonDict]:
-    """List upcoming calendar events for the next N days. Read-only. Returns event summaries with full IDs."""
+def cal_agenda(
+    days: int | None = None,
+    count: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+) -> list[JsonDict]:
+    """List calendar events. Read-only. Returns event summaries with full IDs.
+
+    Without start and end, lists the next N days (days default 7, count default 50).
+    With start and end, lists that range, which can be in the past. Each takes an ISO
+    date or datetime in the configured local timezone; a date-only end is inclusive.
+    In range mode every event is returned unless count is set. Do not combine days
+    with start or end. Summaries include showAs and responseStatus.
+    """
+    window = calendar_window(days, start, end)
     with outlook_client() as client:
-        events = client.get_agenda(days=clamp(days), top=clamp(count))
+        if window is None:
+            return [_summary(e) for e in client.get_agenda(
+                days=clamp(7 if days is None else days), top=clamp(50 if count is None else count)
+            )]
+        events = client.get_calendar_view(
+            start=window[0], end=window[1], top=None if count is None else clamp(count)
+        )
     return [_summary(e) for e in events]
 
 
