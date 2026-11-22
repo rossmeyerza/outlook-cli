@@ -137,6 +137,8 @@ outlook-cli cal agenda --days 14        # list next 14 days
 outlook-cli cal agenda --plain          # plain text output
 outlook-cli cal agenda --json           # machine-readable JSON
 outlook-cli cal agenda --table          # explicit table output
+outlook-cli cal agenda --start 2026-11-16 --end 2026-11-20 --json   # a past or future range; the end date is inclusive
+outlook-cli cal agenda --start "2026-11-16T08:00" --end "2026-11-16T18:00"  # a range with times
 
 outlook-cli cal show 1                  # show event details by index from agenda
 outlook-cli cal show <event-id>         # show by full ID
@@ -156,6 +158,8 @@ outlook-cli cal decline 1 -m "Sorry, I can't make it"  # decline with comment
 outlook-cli cal accept 1 --no-send-response            # accept without emailing organizer
 outlook-cli cal cancel 1 -m "Cancelled due to conflict" # cancel an event you organize
 ```
+
+With `--start` and `--end`, `cal agenda` reads any date range, also in the past. Each takes an ISO date (`2026-11-16`) or datetime (`2026-11-16T09:00`) in `LOCAL_TIMEZONE`. A date-only `--end` is inclusive. A range returns every event unless you give `--count`; the default 20-event limit applies only to the `--days` look-ahead. Do not use `--days` with `--start` or `--end`. The CLI rejects a range with only one bound or a start that is not before the end. JSON output includes `isAllDay`, `isCancelled`, `showAs` (for example `Busy`, `Tentative` or `Free`) and `responseStatus` (for example `Accepted`, `Organizer`, `NotResponded` or `TentativelyAccepted`). A range leaves out an all-day event from another time zone when its dates are outside the range.
 
 Results from `cal agenda` are cached to disk so `cal show <n>`, `cal update <n>`, `cal delete <n>`, `cal accept <n>`, `cal tentative <n>`, `cal decline <n>`, and `cal cancel <n>` work across invocations. Room discovery is tenant/token dependent; use `cal availability` or `cal find-time` with known room email addresses if `cal rooms` is unavailable.
 

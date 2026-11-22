@@ -153,6 +153,12 @@ Read agenda and event details:
 ```bash
 outlook-cli cal agenda --days 7 --count 20 --json
 outlook-cli cal agenda --days 14 --plain
+outlook-cli cal agenda --start 2026-11-16 --end 2026-11-20 --json   # past or future range, end date inclusive
+```
+
+For a range, `--start` and `--end` take an ISO date or datetime in local time. Give both. Do not add `--days`. A range returns every event unless you give `--count`. For timesheets, use the JSON fields `start`, `end`, `isAllDay`, `isCancelled`, `showAs` and `responseStatus`. The MCP tool `cal_agenda` takes the same `start` and `end` parameters.
+
+```bash
 outlook-cli cal show 1 --json
 ```
 

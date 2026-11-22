@@ -128,7 +128,7 @@ Markdown is the default input format.
 
 | CLI command | MCP coverage | MCP tool | Difference or limit |
 |---|---|---|---|
-| `cal agenda` | Full | `cal_agenda` | Caller controls the days and count; no extra MCP upper limits. |
+| `cal agenda` | Full | `cal_agenda` | Caller controls the days and count, or a start and end range (also in the past); no extra MCP upper limits. |
 | `cal show` | Full | `cal_get` | Recurrence, organiser status and attendees; body limit 10,000 characters. |
 | `cal create` | Full | `cal_create` | Location, body, attendees and online meeting; invitations go out immediately when attendees exist. |
 | `cal rooms` | Full | `cal_rooms` | Discovers rooms, optionally within a room list; tenant support and permissions still apply. |
