@@ -15,11 +15,11 @@ MCP tools normally require full IDs.
 Safety controls can differ even when the main capability is full.
 Presence in this table does not prove that the active account has the required permissions.
 
-There are **116 executable parser paths** and **119 distinct operations** in the table.
+There are **117 executable parser paths** and **120 distinct operations** in the table.
 `auth` uses four positional operation choices rather than four subparsers, which accounts for the difference.
 The parser registers no command aliases.
-The MCP server registers **90 tools**.
-All **74 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
+The MCP server registers **91 tools**.
+All **75 CLI operations** in mail, drafts, calendar, contacts, tasks, Teams, OneDrive and SharePoint have MCP equivalents.
 Equivalent options can use different names or several tool calls.
 Confirmation and local-path safeguards remain stricter in MCP.
 Account administration, mailbox settings and Copilot are outside this parity change.
@@ -36,7 +36,7 @@ Account administration, mailbox settings and Copilot are outside this parity cha
 | Contacts | 4 |
 | Tasks | 5 |
 | Planner | 16 |
-| Teams | 10 |
+| Teams | 11 |
 | Mailbox | 2 |
 | Files | 9 |
 | Copilot | 7 |
@@ -208,6 +208,7 @@ Updates send the current etag, so a concurrent edit fails and is not overwritten
 | `teams messages` | Full | `teams_messages` | Caller controls the count; uses client pagination beyond 50 messages. |
 | `teams attachments` | Full | `teams_attachments` | Caller controls the message scan; no extra MCP upper limit. |
 | `teams download-attachments` | Full | `teams_download_attachments` | Selector and overwrite; caller controls the scan; absolute destination required. |
+| `teams download-inline-image` | Full | `teams_download_inline_image` | Downloads one hosted raster image by chat, message and image ID. MCP requires an absolute local file path. |
 | `teams send` | Full | `teams_send` | Message, HTML, attachments, inline images and upload folder; previews unless confirmed. |
 | `teams new` | Full | `teams_new` | Recipients, group topic and media; previews unless confirmed. |
 

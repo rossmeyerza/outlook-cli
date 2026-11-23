@@ -101,6 +101,8 @@ outlook-cli teams search <query> --scan 200 # search chat names/participants
 outlook-cli teams self                     # check access to Teams self-chat
 outlook-cli teams show <chat-ref>          # show chat details
 outlook-cli teams messages <chat-ref> -n 20 # read messages
+outlook-cli teams messages <chat-ref> --message-id <id> --json # copy full inline image IDs
+outlook-cli teams download-inline-image <chat-ref> <message-id> <image-id> --output ./image.png
 outlook-cli teams send <chat-ref> "Hi" --yes # send into an existing chat
 outlook-cli teams new --to <email|name> "Hi" --yes # start a 1:1 chat and send
 outlook-cli teams new --to a@x.com --to b@x.com --topic "Name" "Hi" --yes # new group chat
@@ -282,7 +284,7 @@ Tools (all IDs are full Outlook or Graph IDs; numeric index caches are not used)
 - Contacts: `contact_search`, `contact_create`, `contact_update`, `contact_org`
 - Tasks: `task_list`, `task_create`, `task_complete`, `task_update`, `task_delete`
 - Planner: `planner_plans`, `planner_groups`, `planner_buckets`, `planner_tasks`, `planner_task_get` (read-only); `planner_task_create`, `planner_task_update`, `planner_task_delete`, `planner_bucket_create`, `planner_bucket_update`, `planner_bucket_delete`, `planner_plan_pin`, `planner_members`, `planner_member_add`, `planner_member_remove`, `planner_plan_unpin` (preview by default; `confirm=true` to write). Full IDs only. No comment API in Graph.
-- Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`
+- Teams (read-only): `teams_list`, `teams_search`, `teams_get`, `teams_self`, `teams_messages`, `teams_attachments`, `teams_download_attachments`, `teams_download_inline_image`
 - Files: `files_sites`, `files_libraries`, `files_list`, `files_search`, `files_download`, `files_upload`, `files_mkdir`, `files_rename`, `files_move`
 - Copilot: `copilot_ask` (prompt, optional `files`, `site`, `library`, `conversation_id`). Not read-only: registered with `readOnlyHint=false` and `destructiveHint=true`.
 - Auth: `auth_status` (read-only)
@@ -293,7 +295,8 @@ Side effects to know about: `cal_create` with attendees emails invitations immed
 Rules:
 
 - Send tools `mail_send`, `draft_send`, `teams_send` and `teams_new` preview by default. Set `confirm=true` only when the user explicitly requests that send. Do not automatically retry an uncertain send result. CLI sending still requires `--yes`.
-- All 74 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
+- All 75 CLI operations across mail, drafts, calendar, contacts, tasks, Teams and files have MCP equivalents.
+- `teams_messages` returns `inlineImageIds` separately from `hasAttachments`. `teams_download_inline_image` writes one image locally and refuses overwrite by default.
 - New contact, task, calendar and file changes preview by default and require explicit confirmation.
 - File uploads require explicit overwrite approval to replace an existing file. New remote writes have no automatic retries.
 - Mailbox settings, account administration, interactive authentication, signatures and the gateway remain outside this parity scope.
