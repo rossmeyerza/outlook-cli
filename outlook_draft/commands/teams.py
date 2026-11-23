@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,9 @@ from ..links import extract_links_from_html, looks_like_share_url
 from ..parser import _add_yes_arg, add_output_args
 from ..progress import spinner
 from ..teams_activity import activity_fields, activity_time, is_system_event
+from ..teams_inline import inline_image_ids, is_supported_image
 from . import teams_media as media_commands
+from .files import _write_download
 
 JsonDict = dict[str, Any]
 SELF_CHAT_ID = "48:notes"
@@ -719,30 +723,59 @@ def cmd_teams_messages(args: argparse.Namespace) -> None:
         else:
             chat = client.get_teams_chat(chat_id)
             members = client.list_teams_chat_members(chat_id, top=20)
-        messages = client.list_teams_messages(chat_id, top=args.count)
+        message_id = getattr(args, "message_id", None)
+        messages = ([client.get_teams_message(chat_id, message_id)] if message_id is not None
+                    else client.list_teams_messages(chat_id, top=args.count))
     except OutlookAPIError as e:
         raise CliError(f"[red]Failed to fetch Teams messages: {e}[/]") from e
     finally:
         client.close()
 
+    messages.sort(key=lambda item: item.get("createdDateTime", ""), reverse=True)
+    if getattr(args, "json", False):
+        print(json.dumps([
+            {"id": message.get("id", ""), "created": message.get("createdDateTime", ""),
+             "sender": _teams_sender(message), "text": _teams_body(args, message),
+             "inlineImageIds": inline_image_ids(message, chat_id)} for message in messages
+        ]))
+        return
     if not messages:
         console.print("[dim]No messages found in this Teams chat.[/]")
         return
 
-    messages.sort(key=lambda item: item.get("createdDateTime", ""), reverse=True)
     table = Table(title=f"Messages, {_chat_title(chat, members)}")
     table.add_column("Time", style="dim", width=12)
     table.add_column("Sender", width=24)
     table.add_column("Message", ratio=1)
 
     for message in messages:
-        table.add_row(
-            format_datetime(message.get("createdDateTime", "")),
-            Text(_teams_sender(message)),
-            Text(_teams_body(args, message)),
-        )
+        body = _teams_body(args, message)
+        if image_ids := inline_image_ids(message, chat_id):
+            body += f"\nMessage ID: {message.get('id', '')}\nInline image IDs: " + ", ".join(image_ids)
+        table.add_row(format_datetime(message.get("createdDateTime", "")), Text(_teams_sender(message)), Text(body))
 
     console.print(table)
+
+
+def download_inline_image(client, chat_id: str, message_id: str, image_id: str, path: Path, *, overwrite: bool) -> str:
+    if not overwrite and (path.exists() or path.is_symlink()):
+        raise CliError(f"Output file already exists: {path}")
+    data = client.get_teams_inline_image(chat_id, message_id, image_id)
+    if not is_supported_image(data):
+        raise CliError("Teams did not return a supported raster image.")
+    try:
+        _write_download(path, data, overwrite=overwrite)
+    except OSError as exc:
+        raise CliError(f"Could not save Teams image: {exc}") from exc
+    return str(path)
+
+
+def cmd_teams_download_inline_image(args: argparse.Namespace) -> None:
+    chat_id = _resolve_teams_chat_id(args, args.chat_id)
+    with closing(runtime.get_graph_client()) as client:
+        path = download_inline_image(client, chat_id, args.message_id, args.image_id,
+                                     Path(args.output).expanduser().absolute(), overwrite=args.overwrite)
+    runtime.console.print(Text(path))
 
 
 def register(sub) -> None:
@@ -756,6 +789,13 @@ def register(sub) -> None:
     _register_cmd_teams_show_cmd(teams_sub)
     _register_cmd_teams_self_cmd(teams_sub)
     _register_cmd_teams_messages_cmd(teams_sub)
+    download = teams_sub.add_parser("download-inline-image", help="Download one Teams inline image")
+    download.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
+    download.add_argument("message_id", help="Full Teams message ID")
+    download.add_argument("image_id", help="Hosted image ID from teams messages")
+    download.add_argument("--output", "-o", required=True, help="Path to the local output file")
+    download.add_argument("--overwrite", action="store_true", help="Replace an existing local file")
+    download.set_defaults(func=cmd_teams_download_inline_image)
     _register_cmd_teams_attachments_cmd(teams_sub)
     _register_cmd_teams_download_attachments_cmd(teams_sub)
     _register_cmd_teams_send_cmd(teams_sub)
@@ -803,6 +843,9 @@ def _register_cmd_teams_messages_cmd(teams_sub) -> None:
     cmd_teams_messages_cmd = teams_sub.add_parser("messages", help="Read Teams chat messages")
     cmd_teams_messages_cmd.add_argument("chat_id", help="Chat index, cached ID suffix, or full ID")
     cmd_teams_messages_cmd.add_argument("--count", "-n", type=int, default=20, help="Max messages")
+    cmd_teams_messages_cmd.add_argument("--message-id", help="Read one message by full ID")
+    cmd_teams_messages_cmd.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                                        help="Return JSON with full image IDs")
     cmd_teams_messages_cmd.set_defaults(func=cmd_teams_messages)
 
 

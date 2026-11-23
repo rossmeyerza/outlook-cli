@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "cal_agenda", "cal_get", "cal_availability", "cal_find_time", "cal_create", "cal_respond", "cal_delete", "cal_cancel",
     "contact_search", "contact_org", "task_list", "task_create", "task_complete",
     "teams_list", "teams_search", "teams_messages", "teams_attachments", "teams_download_attachments",
+    "teams_download_inline_image",
     "files_sites", "files_libraries", "files_list", "files_search", "files_download",
     "copilot_ask", "copilot_app", "auth_status", "mail_send", "draft_send", "teams_send", "teams_new",
     "mail_download_links", "cal_rooms", "cal_update", "contact_create", "contact_update",

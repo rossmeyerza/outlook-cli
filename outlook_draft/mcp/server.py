@@ -32,7 +32,7 @@ READ_ONLY_TOOLS = {
     "mail_links", "mail_folders", "mail_query", "mail_conversation", "mail_categories", "mail_rules",
     "draft_list", "draft_get", "cal_agenda", "cal_get", "cal_availability", "cal_find_time",
     "contact_search", "contact_org", "task_list", "teams_list", "teams_search", "teams_messages",
-    "teams_attachments", "teams_download_attachments", "files_sites", "files_libraries",
+    "teams_attachments", "teams_download_attachments", "teams_download_inline_image", "files_sites", "files_libraries",
     "files_list", "files_search", "files_download", "auth_status",
     "mail_download_links", "cal_rooms", "teams_get", "teams_self",
     "planner_plans", "planner_groups", "planner_buckets", "planner_tasks", "planner_task_get", "planner_members",

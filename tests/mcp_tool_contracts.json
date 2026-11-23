@@ -3931,6 +3931,61 @@
     "execution": null
   },
   {
+    "name": "teams_download_inline_image",
+    "title": null,
+    "description": "Download one Teams inline image by full IDs to an absolute local file path. Writes files.",
+    "inputSchema": {
+      "properties": {
+        "chat_id": {
+          "title": "Chat Id",
+          "type": "string"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "image_id": {
+          "title": "Image Id",
+          "type": "string"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "overwrite": {
+          "default": false,
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chat_id",
+        "message_id",
+        "image_id",
+        "output_path"
+      ],
+      "title": "teams_download_inline_imageArguments",
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "result": {
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "teams_download_inline_imageOutput",
+      "type": "object"
+    },
+    "icons": null,
+    "annotations": null,
+    "meta": null,
+    "execution": null
+  },
+  {
     "name": "files_sites",
     "title": null,
     "description": "List SharePoint sites (Microsoft 365 groups) you are a member of. Read-only.",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from ..commands.files import _write_download
@@ -16,12 +17,14 @@ from ..commands.teams import (
     _resolve_chat_attachment_index,
     _search_members,
     _teams_sender,
+    download_inline_image,
     find_self_chat,
 )
 from ..concurrency import ordered_map
 from ..errors import OutlookAPIError
 from ..formatting import html_to_text
 from ..teams_activity import activity_fields, activity_time, is_system_event
+from ..teams_inline import inline_image_ids
 from .clients import clamp, graph_client
 from .shaping import JsonDict, require_absolute_dir
 
@@ -154,6 +157,7 @@ def teams_messages(chat_id: str, count: int = 20) -> JsonDict:
                 "sender": _teams_sender(m),
                 "text": _message_text(m),
                 "hasAttachments": bool(m.get("attachments")),
+                "inlineImageIds": inline_image_ids(m, chat_id),
             }
             for m in messages
         ],
@@ -195,6 +199,17 @@ def teams_download_attachments(
     return written
 
 
+def teams_download_inline_image(
+    chat_id: str, message_id: str, image_id: str, output_path: str, overwrite: bool = False,
+) -> str:
+    """Download one Teams inline image by full IDs to an absolute local file path. Writes files."""
+    path = Path(output_path)
+    if not path.is_absolute():
+        raise ValueError("output_path must be an absolute local file path.")
+    with graph_client() as client:
+        return download_inline_image(client, chat_id, message_id, image_id, path, overwrite=overwrite)
+
+
 def teams_get(chat_id: str) -> JsonDict:
     """Read chat details, created time and members without a message fetch. Use a full chat ID or 48:notes for self-chat discovery. Read-only."""
     with graph_client() as client:
@@ -219,4 +234,5 @@ def teams_self() -> JsonDict:
     return {"found": True, **_chat_summary(chat, members)}
 
 
-TOOLS = [teams_list, teams_search, teams_get, teams_self, teams_messages, teams_attachments, teams_download_attachments]
+TOOLS = [teams_list, teams_search, teams_get, teams_self, teams_messages, teams_attachments,
+         teams_download_attachments, teams_download_inline_image]

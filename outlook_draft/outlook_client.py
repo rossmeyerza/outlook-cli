@@ -23,6 +23,7 @@ from .mail_query import MailQueryMixin
 from .planner import PlannerMixin
 from .safety import check_request
 from .teams_activity import TeamsChatList, activity_time
+from .teams_inline import image_path, message_path
 from .token_manager import TokenManager
 
 log = logging.getLogger(__name__)
@@ -1018,6 +1019,12 @@ class OutlookClient(MailComposeMixin, MailOrganiseMixin, MailQueryMixin, Directo
             params = None
 
         return messages[:top]
+
+    def get_teams_message(self, chat_id: str, message_id: str) -> dict[str, Any]:
+        return self._request("GET", message_path(chat_id, message_id)).json()
+
+    def get_teams_inline_image(self, chat_id: str, message_id: str, image_id: str) -> bytes:
+        return self._request("GET", image_path(chat_id, message_id, image_id)).content
 
     def list_teams_messages(self, chat_id: str, top: int = 20) -> list[dict[str, Any]]:
         """List the newest messages for a Teams chat."""
