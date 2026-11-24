@@ -54,6 +54,20 @@ curl -fsSL https://raw.githubusercontent.com/rossmeyerza/outlook-cli/main/instal
 
 The script detects an existing install and runs `git pull` and updates dependencies without touching `~/.config/outlook-cli/.env`.
 
+Run `outlook-cli --version` to see the installed package version. The CLI checks the [latest stable GitHub release](https://github.com/rossmeyerza/outlook-cli/releases/latest) on normal commands and at MCP startup. It does not check on help, version, shell completion, config commands or dry runs.
+
+The CLI writes notices to stderr, so JSON and MCP protocol output stay unchanged. Some MCP hosts only show stderr in their logs. The check sends no Outlook credentials or account details. It does not install updates.
+
+The check uses a short network timeout. It caches successful checks for 24 hours and retries failed checks after one hour. The cache is shared across account profiles at `$XDG_CACHE_HOME/outlook-cli/update-check.json`, or `~/.cache/outlook-cli/update-check.json` by default. Set `OUTLOOK_CLI_NO_UPDATE_CHECK=1` to disable the check, also in the MCP server environment if applicable.
+
+#### Publish a stable release
+
+1. Increase `project.version` in `pyproject.toml` and merge that commit into `main`.
+2. Publish a GitHub release from that commit with a matching `vMAJOR.MINOR.PATCH` tag.
+3. Set the release as latest. Do not mark it as a pre-release.
+
+The installer still pulls `main`. The notice tracks published releases, not commits. Until the first stable release exists, the check shows no notice.
+
 ## Usage
 
 Interactive commands show Rich spinners while waiting on Microsoft APIs. Use `--no-spinner` or `OUTLOOK_CLI_NO_SPINNER=1` to disable them; spinner output goes to stderr so JSON stdout stays parseable.

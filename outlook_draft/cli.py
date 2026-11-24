@@ -5,7 +5,7 @@ import argparse
 import json
 import sys
 
-from . import config
+from . import config, updates
 from .commands import (
     account,
     calendar,
@@ -138,6 +138,7 @@ def build_parser(account_override: str | None = None) -> argparse.ArgumentParser
     parser.set_defaults(json=False)
     parser.set_defaults(account=account_override)
     add_output_args(parser)
+    parser.add_argument("--version", action="version", version=f"%(prog)s {updates.installed_version()}")
     parser.add_argument(
         "--no-spinner",
         action="store_true",
@@ -203,6 +204,8 @@ def _dispatch(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
         if not config.account_exists(args.account):
             raise CliError(f"[red]No account profile named '{args.account}'.[/]")
         config.activate_account(args.account)
+    if args.domain not in {"completion", "config"}:
+        updates.notify_if_update_available()
     account.refresh_account_paths()
 
     if args.domain == "auth":
