@@ -268,10 +268,10 @@ The [outlook-cli Chrome extension](#copilot-in-office-web-apps-experimental) als
 1. Run `outlook-cli copilot extension install`.
 2. Open `chrome://extensions` and reload **outlook-cli**, or use **Load unpacked** with the folder printed by the command.
 3. Open a Teams meeting recap and select **Transcript**.
-4. Open the **outlook-cli** toolbar icon, select Plain text, WebVTT or JSON, then select **Capture and download**.
-5. Keep the Teams tab active until Chrome shows the save dialog.
+4. Open the **outlook-cli** toolbar icon and select Plain text, WebVTT or JSON. Select **Capture and download** to save a file, or **Capture and copy** to copy the transcript to the clipboard.
+5. Keep the Teams tab active and the popup open until Chrome shows the save dialog or the popup confirms the copy. If the copy fails, select **Capture and copy** again or use **Capture and download**.
 
-Export only transcripts that you have permission to retain. The exporter reads the Teams page and the WPP SharePoint recap frame. It saves the transcript locally and does not send it to the CLI or a server.
+Export only transcripts that you have permission to retain. The exporter reads the Teams page and the WPP SharePoint recap frame. It saves the transcript locally or copies it to the clipboard, and does not send it to the CLI or a server.
 
 ### Teams Gateway
 

@@ -107,6 +107,7 @@ def test_calendar_rooms_and_native_suggestions(monkeypatch):
 
 @pytest.mark.parametrize("method", [drafts.draft_reply, drafts.draft_forward])
 def test_reply_and_forward_importance(monkeypatch, method):
+    monkeypatch.setattr(drafts, "load_signature", lambda _path: "")
     quoted = {"Id": "draft-id", "Body": {"ContentType": "HTML", "Content": "<p>Original</p>"}}
     fake = use_client(monkeypatch, drafts, "outlook_client", FakeClient(create_reply_draft=quoted, create_forward_draft=quoted, update_draft=quoted))
     options = {"to": ["person@example.test"]} if method is drafts.draft_forward else {}
